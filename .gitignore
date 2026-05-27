@@ -9,6 +9,9 @@ __pycache__/
 .gh-token-hankep
 .env
 
+# Auto-Backups der Kartendaten (von scripts/sync-cards.py)
+data/cards.data.js.bak.*
+
 # Lokale App-Backups (Export aus Import/Export-Tab)
 digimon-backup-*.json
 digimon-collection-*.json

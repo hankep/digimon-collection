@@ -159,6 +159,24 @@ def combine_effects(main, source, alt):
     return '\n\n'.join(parts)
 
 
+# Nur die zur Laufzeit (Web-App) gelesenen raw-Felder behalten. Die volle
+# digimoncard.io-Antwort macht ~66% von cards.data.js aus und wird sonst nicht
+# gebraucht (Effekttext liegt bereits in 'effect'). Genutzt: cards.js (set_name,
+# date_added), ui-wants/ui-trade (tcgplayer_name).
+RAW_KEEP = ('set_name', 'date_added', 'tcgplayer_name')
+
+
+def slim_raw(raw):
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for k in RAW_KEEP:
+        v = raw.get(k)
+        if v is not None:
+            out[k] = v
+    return out
+
+
 def map_card(raw):
     cid = raw.get('id') or ''
     return {
@@ -169,7 +187,7 @@ def map_card(raw):
         'color': [c for c in [raw.get('color'), raw.get('color2')] if c],
         'type': raw.get('type'),
         'image': f'{cid}.webp',
-        'raw': raw,
+        'raw': slim_raw(raw),
         'altImages': [],
         'level': raw.get('level'),
         'cost': raw.get('play_cost'),
@@ -214,6 +232,27 @@ def run_backfill_alts(existing, args):
     return 0
 
 
+def run_slim_raw(existing):
+    """Einmalige Migration: reduziert das raw-Objekt jeder bekannten Karte auf
+       die zur Laufzeit genutzten Felder (RAW_KEEP) und spart so ~66% Dateigröße."""
+    log('')
+    log(f'🪶 Slimme raw-Felder für {len(existing)} Karten (behalte: {", ".join(RAW_KEEP)}) …')
+    bak = backup_cards_data_js()
+    if bak:
+        log(f'   Backup: {bak.name}')
+    changed = 0
+    for card in existing:
+        r = card.get('raw')
+        if isinstance(r, dict):
+            slim = slim_raw(r)
+            if slim != r:
+                card['raw'] = slim
+                changed += 1
+    write_cards_data_js(existing)
+    log(f'✅ Fertig. {changed} Karten verschlankt. Lade die App neu.')
+    return 0
+
+
 def fetch_card_with_retry(cardnumber):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -249,6 +288,7 @@ def main():
     p.add_argument('--dry-run', action='store_true', help='Nur Diff zeigen, nichts schreiben')
     p.add_argument('--backfill-alts', action='store_true', help='Nur Alt-Arts nachprobieren für Karten mit leerem altImages, kein API-Sync')
     p.add_argument('--no-alt-probe', action='store_true', help='Beim Sync keine Alt-Arts probieren')
+    p.add_argument('--slim-raw', action='store_true', help='Nur raw-Felder auf das Noetige reduzieren (einmalige Migration), kein API-Sync')
     args = p.parse_args()
 
     log('🔄 Digimon Collection — Karten-Update')
@@ -262,6 +302,9 @@ def main():
     # Backfill-only Modus: kein API-Sync, nur Alt-Arts probieren.
     if args.backfill_alts:
         return run_backfill_alts(existing, args)
+
+    if args.slim_raw:
+        return run_slim_raw(existing)
 
     log('  Lade Index von digimoncard.io …')
     try:
