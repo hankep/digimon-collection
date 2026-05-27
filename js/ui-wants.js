@@ -552,7 +552,7 @@
   function exportSetAsList(setCode) {
     const block = blockFor(setCode);
     if (!block) return;
-    const text = block.items.map(it => `${it.count}x ${it.name} ${it.cardId} (V.${versionNumber(it.cardId, it.variant)})`).join('\n') + '\n';
+    const text = block.items.map(it => `${it.count}x ${it.name} ${it.cardId}${altVersion(it.cardId, it.variant)}`).join('\n') + '\n';
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text)
         .then(() => alert(`Liste „${setCode}" (${block.items.length} Karten) in die Zwischenablage kopiert.`))
@@ -573,7 +573,7 @@
     let total = 0;
     for (const block of blocks) {
       for (const it of block.items) {
-        lines.push(`${it.count}x ${it.name} ${it.cardId} (V.${versionNumber(it.cardId, it.variant)})`);
+        lines.push(`${it.count}x ${it.name} ${it.cardId}${altVersion(it.cardId, it.variant)}`);
         total += it.count;
       }
     }
@@ -607,15 +607,14 @@
     return card ? card.name : fallback;
   }
 
-  // Versionsnummer (immer gesetzt): Hauptvariante = 1, Alt-Art Nr. n (0-basiert)
-  // = n+2. Genutzt im Export als "ID (V.n)".
-  function versionNumber(cardId, variant) {
+  // " V.N" nur für Alt-Arts (n+2), sonst "" — Hauptvariante bekommt keinen Marker.
+  function altVersion(cardId, variant) {
     const card = CardDB.byId.get(cardId);
-    if (!card) return 1;
-    if (variant === CardDB.mainVariantKey(card)) return 1;
+    if (!card) return '';
+    if (variant === CardDB.mainVariantKey(card)) return '';
     const alts = CardDB.variantsOf(card).filter(v => v.isAlt);
     const idx = alts.findIndex(v => v.key === variant);
-    return idx < 0 ? 1 : idx + 2;
+    return idx < 0 ? '' : ` V.${idx + 2}`;
   }
 
   function escapeHtml(s) {
