@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Digimon Collection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Supabase-Zugangsdaten für Cloud-Sync (Teil B). Der anon-Key darf öffentlich
+    // im Client stehen — die Daten schützt Row-Level-Security in Supabase.
+    // Leer lassen, um die App rein lokal (ohne Sync) zu betreiben.
+    window.SUPABASE_URL = 'https://igjoqztcwwweemkrjtoj.supabase.co';
+    window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlnam9xenRjd3d3ZWVta3JqdG9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NTYwNzAsImV4cCI6MjA5NTQzMjA3MH0.zniEDljTq_T3tjRzPc5ENKzzoTcqJBEek29A2ktJHxc';
+  </script>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+  <header class="border-b border-slate-700 bg-slate-800 sticky top-0 z-20">
+    <div class="max-w-[2400px] mx-auto px-3 md:px-4 py-3 flex items-center gap-3">
+      <h1 class="text-base md:text-xl font-bold text-amber-400">Digimon Collection</h1>
+      <nav class="hidden md:flex gap-1" id="tabs">
+        <button data-tab="collection" class="tab-btn px-4 py-2 rounded font-medium">Collection</button>
+        <button data-tab="decks" class="tab-btn px-4 py-2 rounded font-medium">Decks &amp; Lists</button>
+        <button data-tab="stats" class="tab-btn px-4 py-2 rounded font-medium">Statistik</button>
+        <button data-tab="io" class="tab-btn px-4 py-2 rounded font-medium">Import / Export</button>
+      </nav>
+      <div class="ml-auto text-sm text-slate-400 hidden sm:block" id="status-line">Lade Karten…</div>
+      <span id="sync-status" class="text-sm hidden ml-auto sm:ml-2"></span>
+    </div>
+  </header>
+
+  <main class="max-w-[2400px] mx-auto px-3 md:px-4 py-4 pb-24 md:pb-4">
+    <section id="tab-collection" class="tab-panel"></section>
+    <section id="tab-decks" class="tab-panel hidden"></section>
+    <section id="tab-stats" class="tab-panel hidden"></section>
+    <section id="tab-io" class="tab-panel hidden"></section>
+  </main>
+
+  <div id="modal-root"></div>
+
+  <nav id="tabs-mobile"
+       class="md:hidden fixed bottom-0 inset-x-0 z-30 flex bg-slate-800 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
+    <button data-tab="collection" class="tab-btn flex-1 py-3 text-xs font-medium">Collection</button>
+    <button data-tab="decks"      class="tab-btn flex-1 py-3 text-xs font-medium">Listen</button>
+    <button data-tab="stats"      class="tab-btn flex-1 py-3 text-xs font-medium">Statistik</button>
+    <button data-tab="io"         class="tab-btn flex-1 py-3 text-xs font-medium">Im/Export</button>
+  </nav>
+
+  <!-- Daten zuerst -->
+  <script src="data/cards.data.js"></script>
+  <script src="data/prices.data.js"></script>
+
+  <!-- App-Module (Reihenfolge wichtig) -->
+  <script src="js/fmt.js"></script>
+  <script src="js/cm-prices.js"></script>
+  <script src="js/ui-notes.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/cards.js"></script>
+  <script src="js/cardmarket.js"></script>
+  <script src="js/formats/generic-json.js"></script>
+  <script src="js/formats/plain-text.js"></script>
+  <script src="js/formats/compact-text.js"></script>
+  <script src="js/formats/dcgo-text.js"></script>
+  <script src="js/formats/digimonmeta-json.js"></script>
+  <script src="js/ui-collection.js"></script>
+  <script src="js/ui-deckbuilder.js"></script>
+  <script src="js/ui-importexport.js"></script>
+  <script src="js/ui-stats.js"></script>
+  <script src="js/ui-card-menu.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

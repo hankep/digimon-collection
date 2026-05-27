@@ -1,0 +1,123 @@
+// Cardmarket-Bestelllisten-Parser.
+// Blöcke durch Leerzeilen getrennt. Pro Block lenient parsen:
+//   - Quantity:  ^(\d+)x\b
+//   - Card-ID:   \(([A-Z]+\d*-\d+[A-Z]?)\)
+//   - Version:   \(V\.(\d+)\)
+//   - Preis:     (\d+),(\d{1,2})\s*€
+//
+// Variant-Mapping:
+//   - Version 1 oder fehlend → Hauptvariante
+//   - Version N ≥ 2 → (N-2)-tes Element von variantsOf(card).filter(isAlt)
+
+(function () {
+  function parse(text) {
+    const blocks = String(text || '').split(/\r?\n\s*\r?\n/);
+    const items = [];
+    const unknown = [];
+
+    for (const block of blocks) {
+      const lines = block.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (!lines.length) continue;
+
+      let qty = null;
+      let rawId = null;
+      let version = 1;
+      let priceCents = null;
+
+      for (const line of lines) {
+        if (qty == null) {
+          const m = line.match(/^(\d+)x\b/);
+          if (m) qty = parseInt(m[1], 10);
+        }
+        if (!rawId) {
+          const m = line.match(/\(([A-Z]+\d*-\d+[A-Z]?)\)/);
+          if (m) rawId = m[1];
+        }
+        const v = line.match(/\(V\.(\d+)\)/);
+        if (v) version = parseInt(v[1], 10);
+
+        if (priceCents == null) {
+          const p = line.match(/(\d+),(\d{1,2})\s*€/);
+          if (p) {
+            const cents = parseInt(p[1], 10) * 100 + parseInt(p[2].padEnd(2, '0').slice(0, 2), 10);
+            priceCents = cents;
+          }
+        }
+      }
+      if (qty == null) qty = 1;
+      if (!rawId) {
+        // ignoriere leeren/dekorativen Block
+        continue;
+      }
+
+      const mapping = mapVariant(rawId, version);
+      if (!mapping) {
+        unknown.push({ rawId, version, qty, price: priceCents != null ? priceCents / 100 : null });
+        continue;
+      }
+      items.push({
+        rawId,
+        cardId: mapping.cardId,
+        cardName: mapping.cardName,
+        variant: mapping.variant,
+        isAlt: mapping.isAlt,
+        version,
+        qty,
+        unitPrice: priceCents != null ? priceCents / 100 : null
+      });
+    }
+
+    return { items, unknown };
+  }
+
+  function mapVariant(rawId, version) {
+    const card = CardDB.byId.get(rawId);
+    if (!card) return null;
+    const variants = CardDB.variantsOf(card);
+    if (!variants.length) return null;
+
+    let chosen;
+    if (!version || version === 1) {
+      chosen = variants.find(v => !v.isAlt) || variants[0];
+    } else {
+      const alts = variants.filter(v => v.isAlt);
+      const idx = version - 2;
+      chosen = (idx >= 0 && idx < alts.length) ? alts[idx] : (variants.find(v => !v.isAlt) || variants[0]);
+    }
+    return {
+      cardId: card.id,
+      cardName: card.name,
+      variant: chosen.key,
+      isAlt: chosen.isAlt
+    };
+  }
+
+  function apply(items) {
+    const coll = Store.loadCollection();
+    let addedCopies = 0;
+    let addedValue = 0;
+    for (const it of items) {
+      for (let i = 0; i < it.qty; i++) {
+        Store.addPrice(coll, it.variant, it.unitPrice);
+        addedCopies++;
+        if (it.unitPrice != null) addedValue += it.unitPrice;
+      }
+    }
+    Store.saveCollection(coll);
+    return { addedCopies, addedValue };
+  }
+
+  function summarize(items) {
+    let totalQty = 0;
+    let totalValue = 0;
+    let unpriced = 0;
+    for (const it of items) {
+      totalQty += it.qty;
+      if (it.unitPrice == null) unpriced += it.qty;
+      else totalValue += it.unitPrice * it.qty;
+    }
+    return { totalQty, totalValue, unpriced };
+  }
+
+  window.Cardmarket = { parse, apply, summarize };
+})();

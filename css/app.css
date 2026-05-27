@@ -1,0 +1,221 @@
+.tab-btn {
+  background: transparent;
+  color: #cbd5e1;
+}
+.tab-btn.active {
+  background: #f59e0b;
+  color: #1e293b;
+}
+.tab-btn:hover:not(.active) {
+  background: #334155;
+  color: #f1f5f9;
+}
+#tabs-mobile .tab-btn {
+  border-radius: 0;
+}
+
+.card-tile {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.card-tile:hover {
+  transform: translateY(-2px);
+  border-color: #f59e0b;
+}
+.card-tile img {
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  background: #0f172a;
+}
+.card-tile.missing {
+  opacity: 0.55;
+}
+.card-tile.playset {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px #10b981, 0 0 12px rgba(16, 185, 129, 0.45);
+}
+.deck-slottable {
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.45);
+}
+.card-tile.tile-slottable {
+  border-color: #facc15;
+  box-shadow: 0 0 0 2px #facc15, 0 0 12px rgba(250, 204, 21, 0.45);
+}
+.card-tile.tile-slottable:hover {
+  border-color: #fde047;
+  box-shadow: 0 0 0 2px #fde047, 0 0 14px rgba(253, 224, 71, 0.6);
+}
+.card-tile.playset:hover {
+  border-color: #34d399;
+  box-shadow: 0 0 0 2px #34d399, 0 0 14px rgba(52, 211, 153, 0.6);
+}
+.count-badge {
+  display: inline-block;
+  background: #f59e0b;
+  color: #1e293b;
+  font-weight: 800;
+  min-width: 2rem;
+  height: 1.75rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  line-height: 1.75rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.count-badge.zero {
+  background: #475569;
+  color: #cbd5e1;
+}
+.count-badge.full {
+  background: #10b981;
+  color: #052e1d;
+}
+.note-icon {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid #475569;
+  border-radius: 999px;
+  padding: 3px;
+  cursor: pointer;
+}
+.note-icon:hover {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: #f59e0b;
+}
+.tile-note {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+}
+.proxy-badge {
+  display: inline-block;
+  background: #a855f7;
+  color: #faf5ff;
+  font-weight: 700;
+  height: 1.25rem;
+  min-width: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.qty-controls {
+  display: flex;
+  padding: 4px;
+  gap: 6px;
+}
+.qty-controls .qty-group {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+}
+.qty-controls button {
+  flex: 1;
+  background: #334155;
+  color: #f1f5f9;
+  border-radius: 4px;
+  padding: 12px 2px;
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 600;
+}
+.qty-controls button:hover {
+  background: #475569;
+}
+.qty-controls .qty-group.proxy button {
+  background: #6b21a8;
+  color: #faf5ff;
+}
+.qty-controls .qty-group.proxy button:hover {
+  background: #7e22ce;
+}
+.qty-controls .entry-count {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #f1f5f9;
+  align-self: center;
+  padding: 0 4px;
+}
+.slot-controls {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 4px 4px;
+  align-items: stretch;
+}
+.slot-controls button {
+  flex: 0 0 auto;
+  background: #0c4a6e;
+  color: #e0f2fe;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1;
+  font-weight: 600;
+}
+.slot-controls button:hover:not(:disabled) {
+  background: #075985;
+}
+.slot-controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.slot-controls .slot-count {
+  flex: 1;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #7dd3fc;
+  align-self: center;
+}
+
+.color-Red    { background: #dc2626; }
+.color-Blue   { background: #2563eb; }
+.color-Yellow { background: #eab308; color: #1e293b; }
+.color-Green  { background: #16a34a; }
+.color-Black  { background: #0f172a; border: 1px solid #475569; }
+.color-Purple { background: #7c3aed; }
+.color-White  { background: #f8fafc; color: #1e293b; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal-content {
+  background: #1e293b;
+  border-radius: 8px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+@media (max-width: 639px) {
+  .modal-content {
+    max-width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+    padding: 1rem;
+  }
+  .qty-controls button {
+    min-height: 44px;
+  }
+  .slot-controls button {
+    min-height: 44px;
+  }
+}

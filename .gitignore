@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Lokale App-Backups (Export aus Import/Export-Tab)
+digimon-backup-*.json
+digimon-collection-*.json
+digimon-collection-*.csv
+deck-export*.txt
