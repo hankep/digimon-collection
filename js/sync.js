@@ -12,6 +12,7 @@
   let session = null;
   let onRemoteApplied = function () {};
   let pushTimer = null;
+  let dirty = false;        // lokale Änderungen, die noch nicht (bestätigt) hochgeladen sind
   let statusEl = null;
   const loginHosts = [];          // gemountete Login-UI-Container (re-render bei Auth-Wechsel)
 
@@ -73,6 +74,12 @@
 
   async function pull() {
     if (!client || !isLoggedIn()) return;
+    // Noch nicht gepushte lokale Änderungen haben IMMER Vorrang: niemals mit
+    // (evtl. zeit-verschobenen oder von einem zweiten Kontext stammenden)
+    // Remote-Daten überschreiben — stattdessen erst den lokalen Stand hochladen.
+    // Verhindert, dass z.B. frisch zugewiesene Deck-Slots beim Auto-Pull
+    // (Resume/Auth-Event auf dem Handy) zurückgesetzt werden.
+    if (dirty) { await push(); return; }
     setStatus('syncing');
     const { data, error } = await client
       .from(TABLE)
@@ -114,6 +121,7 @@
   }
 
   function debouncedPush() {
+    dirty = true; // lokaler Stand ist „noch nicht gesichert"
     if (!client || !isLoggedIn()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(push, PUSH_DEBOUNCE_MS);
@@ -123,16 +131,20 @@
     if (!client || !isLoggedIn()) return;
     clearTimeout(pushTimer);
     setStatus('syncing');
+    const snapshot = localUpdatedAt();   // Stand, den dieser Push hochlädt
     const payload = {
       user_id: session.user.id,
       collection: localCollection(),
       decks: localDecks(),
-      updated_at: localUpdatedAt() || new Date().toISOString()
+      updated_at: snapshot || new Date().toISOString()
     };
     const { error } = await client
       .from(TABLE)
       .upsert(payload, { onConflict: 'user_id' });
-    if (error) { console.warn('Sync push-Fehler:', error); setStatus('error'); return; }
+    if (error) { console.warn('Sync push-Fehler:', error); setStatus('error'); return; } // dirty bleibt → Retry
+    // Nur als „sauber" markieren, wenn während des (async) Push keine neue
+    // Änderung dazukam — sonst bleibt dirty und der nächste Push lädt sie nach.
+    if (localUpdatedAt() === snapshot) dirty = false;
     setStatus('synced');
   }
 
