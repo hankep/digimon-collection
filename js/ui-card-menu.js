@@ -177,16 +177,19 @@
       </div>
     `;
 
-    const close = () => { host.innerHTML = ''; };
+    function escListener(e) {
+      if (e.key === 'Escape') close();
+    }
+    const close = () => {
+      host.innerHTML = '';
+      document.removeEventListener('keydown', escListener);
+    };
     host.querySelector('#cm-close').addEventListener('click', close);
     host.querySelector('#cm-cancel').addEventListener('click', close);
     host.querySelector('#cardmenu-modal').addEventListener('click', e => {
       if (e.target.id === 'cardmenu-modal') close();
     });
     document.addEventListener('keydown', escListener);
-    function escListener(e) {
-      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escListener); }
-    }
 
     host.querySelector('#cm-confirm').addEventListener('click', () => {
       const qty = Math.max(1, parseInt(host.querySelector('#cm-qty').value, 10) || 1);

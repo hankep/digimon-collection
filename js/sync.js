@@ -136,6 +136,17 @@
     setStatus('synced');
   }
 
+  // Vor einem location.reload() lokale Änderungen noch pushen — der Debounce-Timer
+  // würde sonst vom Reload abgebrochen. Ohne Login/Client: einfach (verzögert) neu laden.
+  function flushThenReload(delayMs) {
+    const reload = () => location.reload();
+    if (client && isLoggedIn()) {
+      Promise.resolve(push()).catch(() => {}).then(reload);
+    } else {
+      setTimeout(reload, delayMs || 0);
+    }
+  }
+
   // ── Login-UI ────────────────────────────────────────────────────────────────
 
   // Hängt die Login-/Status-Oberfläche in hostEl. Wird bei Auth-Wechsel neu gerendert.
@@ -258,6 +269,7 @@
     signOut,
     pull,
     push,
+    flushThenReload,
     mountLoginUI,
     isLoggedIn: () => isLoggedIn()
   };

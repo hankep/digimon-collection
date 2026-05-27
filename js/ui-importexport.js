@@ -173,7 +173,8 @@
     if (!confirm(msg)) return;
     const res = Cardmarket.apply(items);
     showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}. Seite wird neu geladen…`, 'ok');
-    setTimeout(() => location.reload(), 800);
+    if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(800);
+    else setTimeout(() => location.reload(), 800);
   }
 
   function showCmMsg(msg, kind) {

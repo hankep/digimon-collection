@@ -100,7 +100,8 @@
         if (!confirm(`${n} Copies gefunden. Vorhandene Collection wird überschrieben. Fortfahren?`)) return;
         Store.saveCollection({ version: 3, copies: parsed.copies, notes: parsed.notes || {} });
         showCollMsg('Collection eingespielt. Seite wird neu geladen…', 'ok');
-        setTimeout(() => location.reload(), 600);
+        if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(600);
+        else setTimeout(() => location.reload(), 600);
       } catch (err) {
         showCollMsg('Import-Fehler: ' + err.message, 'err');
       }
@@ -204,7 +205,8 @@
         if (data.collection) Store.saveCollection(data.collection);
         if (data.decks) Store.saveDecks(data.decks);
         showBackupMsg('Backup eingespielt. Seite wird neu geladen…', 'ok');
-        setTimeout(() => location.reload(), 800);
+        if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(800);
+        else setTimeout(() => location.reload(), 800);
       } catch (err) {
         showBackupMsg('Restore-Fehler: ' + err.message, 'err');
       }

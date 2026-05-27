@@ -529,7 +529,6 @@
           onSave: txt => {
             Store.setCardNote(state.collection, cardId, txt);
             Store.saveCollection(state.collection);
-            document.dispatchEvent(new CustomEvent('collection-changed'));
             renderGrid();
           }
         });
@@ -769,7 +768,6 @@
       if (rootEl && rootEl.querySelector('#card-grid')) {
         renderGrid(); renderStats(); renderSetList();
       }
-      document.dispatchEvent(new CustomEvent('collection-changed'));
     };
     modalRoot.querySelector('#modal-close').addEventListener('click', close);
     modalRoot.querySelector('#card-modal').addEventListener('click', e => {

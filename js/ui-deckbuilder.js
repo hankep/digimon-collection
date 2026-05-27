@@ -415,7 +415,6 @@
           onSave: txt => {
             Store.setCardNote(collectionCache, cardId, txt);
             Store.saveCollection(collectionCache);
-            document.dispatchEvent(new CustomEvent('collection-changed'));
             renderDeckDetail();
           }
         });
@@ -502,42 +501,6 @@
         <span class="slot-count">${assignedReal}${assignedProxy > 0 ? '+' + assignedProxy + 'P' : ''} zugewiesen</span>
         <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal + freeProxy === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
       </div>
-    </div>`;
-  }
-
-  function renderEntryRow(entry) {
-    const card = CardDB.byId.get(entry.cardId);
-    const name = card ? card.name : entry.cardId;
-    const real = Store.getCount(collectionCache, entry.variant);
-    const proxy = Store.getProxyCount(collectionCache, entry.variant);
-    const ownedTotal = real + proxy;
-    const realNeed = Math.max(0, entry.count - real);
-    const playableNeed = Math.max(0, entry.count - ownedTotal);
-    const ownedClass = playableNeed === 0 ? 'text-emerald-400' : 'text-amber-400';
-    const ec = Store.computeEntryCost(entry, collectionCache);
-    const costLabel = ec.used > 0 && ec.total > 0 ? Fmt.eur(ec.total) : '';
-    const ownedDisplay = `Besitzt: ${ownedTotal}${proxy > 0 ? ` <span class="text-purple-400">(${proxy} Proxy)</span>` : ''}`;
-    const needDisplay = playableNeed > 0
-      ? ` · fehlt: <b>${playableNeed}</b>`
-      : (realNeed > 0 ? ` · <span class="text-purple-400">fehlt echt: ${realNeed}</span>` : ' ✓');
-    const cm = (window.CM && CM.hasData()) ? CM.get(entry.cardId) : null;
-    const cmInline = (cm && cm.low != null)
-      ? ` <span class="text-amber-400" title="Cardmarket low">· CM: ${CM.fmt(cm.low)}</span>`
-      : '';
-    const note = Store.getCardNote(collectionCache, entry.cardId);
-    return `<div class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 rounded p-2 cursor-pointer entry-row"
-      data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
-      <img src="${CardDB.imagePath(entry.variant)}" loading="lazy"
-        class="w-10 h-14 object-cover rounded" alt="" />
-      <div class="flex-1 min-w-0">
-        <div class="text-sm font-semibold truncate">${escapeHtml(name)}</div>
-        <div class="text-xs font-mono text-slate-400">${escapeHtml(entry.variant)}${cmInline}</div>
-        <div class="text-xs ${ownedClass}">${ownedDisplay}${needDisplay}${costLabel ? ` · <span class="text-emerald-400">${costLabel}</span>` : ''}</div>
-      </div>
-      ${Notes.iconHtml(!!note, 'shrink-0')}
-      <button data-entry-dec="${entry.cardId}|${entry.variant}" class="bg-slate-700 hover:bg-slate-600 w-7 h-7 rounded">−</button>
-      <span class="w-6 text-center font-bold">${entry.count}</span>
-      <button data-entry-inc="${entry.cardId}|${entry.variant}" class="bg-slate-700 hover:bg-slate-600 w-7 h-7 rounded">+</button>
     </div>`;
   }
 
@@ -938,7 +901,8 @@
   }
 
   function computeMainWants() {
-    // Supply-vs-Demand-Modell: Demand = Summe aller Deck- + Wants-Einträge je Variante.
+    // Supply-vs-Demand-Modell: Demand = Summe aller Deck-Einträge (kind='deck') je Variante.
+    // Wants-/Trade-Listen zählen NICHT in den Bedarf hinein.
     // Supply = global vorhandene reale Kopien (optional inkl. Proxies). So führt Kauf
     // einer neuen Kopie sofort zur Reduktion der Wants — egal welchem Deck zugewiesen.
     const includeProxy = !!state.mainWantsProxy;
@@ -1014,7 +978,7 @@
           <button id="mw-copy" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">In Clipboard kopieren</button>
         </div>
         <div class="text-xs text-slate-400 mt-1">
-          Automatisch aus allen Decks &amp; Wants-Listen. ${mw.uniqueCount} Karten · ${mw.totalCount} Kopien fehlend${(() => {
+          Automatisch aus allen Decks. ${mw.uniqueCount} Karten · ${mw.totalCount} Kopien fehlend${(() => {
             if (!window.CM || !CM.hasData()) return '';
             let sum = 0, noCm = 0;
             for (const it of mw.items) {
@@ -1072,7 +1036,6 @@
           onSave: txt => {
             Store.setCardNote(collectionCache, cardId, txt);
             Store.saveCollection(collectionCache);
-            document.dispatchEvent(new CustomEvent('collection-changed'));
             renderMainWantsDetail();
           }
         });
