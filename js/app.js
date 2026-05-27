@@ -4,6 +4,7 @@
   const tabs = {
     collection: { panel: 'tab-collection', initFn: () => UICollection.init(document.getElementById('tab-collection')) },
     decks:      { panel: 'tab-decks',      initFn: () => UIDeckbuilder.init(document.getElementById('tab-decks')) },
+    wants:      { panel: 'tab-wants',      initFn: () => UIWants.init(document.getElementById('tab-wants')) },
     stats:      { panel: 'tab-stats',      initFn: () => UIStats.init(document.getElementById('tab-stats')) },
     io:         { panel: 'tab-io',         initFn: () => UIImportExport.init(document.getElementById('tab-io')) }
   };

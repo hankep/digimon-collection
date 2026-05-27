@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script>
     // Supabase-Zugangsdaten für Cloud-Sync (Teil B). Der anon-Key darf öffentlich
     // im Client stehen — die Daten schützt Row-Level-Security in Supabase.
@@ -22,6 +23,7 @@
       <nav class="hidden md:flex gap-1" id="tabs">
         <button data-tab="collection" class="tab-btn px-4 py-2 rounded font-medium">Collection</button>
         <button data-tab="decks" class="tab-btn px-4 py-2 rounded font-medium">Decks &amp; Lists</button>
+        <button data-tab="wants" class="tab-btn px-4 py-2 rounded font-medium">Wants</button>
         <button data-tab="stats" class="tab-btn px-4 py-2 rounded font-medium">Statistik</button>
         <button data-tab="io" class="tab-btn px-4 py-2 rounded font-medium">Import / Export</button>
       </nav>
@@ -33,6 +35,7 @@
   <main class="max-w-[2400px] mx-auto px-3 md:px-4 py-4 pb-24 md:pb-4">
     <section id="tab-collection" class="tab-panel"></section>
     <section id="tab-decks" class="tab-panel hidden"></section>
+    <section id="tab-wants" class="tab-panel hidden"></section>
     <section id="tab-stats" class="tab-panel hidden"></section>
     <section id="tab-io" class="tab-panel hidden"></section>
   </main>
@@ -43,6 +46,7 @@
        class="md:hidden fixed bottom-0 inset-x-0 z-30 flex bg-slate-800 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
     <button data-tab="collection" class="tab-btn flex-1 py-3 text-xs font-medium">Collection</button>
     <button data-tab="decks"      class="tab-btn flex-1 py-3 text-xs font-medium">Listen</button>
+    <button data-tab="wants"      class="tab-btn flex-1 py-3 text-xs font-medium">Wants</button>
     <button data-tab="stats"      class="tab-btn flex-1 py-3 text-xs font-medium">Statistik</button>
     <button data-tab="io"         class="tab-btn flex-1 py-3 text-xs font-medium">Im/Export</button>
   </nav>
@@ -68,6 +72,7 @@
   <script src="js/ui-deckbuilder.js"></script>
   <script src="js/ui-importexport.js"></script>
   <script src="js/ui-stats.js"></script>
+  <script src="js/ui-wants.js"></script>
   <script src="js/ui-card-menu.js"></script>
   <script src="js/app.js"></script>
 </body>

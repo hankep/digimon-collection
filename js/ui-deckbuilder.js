@@ -34,23 +34,23 @@
 
   function render() {
     rootEl.innerHTML = `
-      <div class="flex flex-col lg:flex-row gap-4">
-        <aside class="w-full lg:w-48 lg:shrink-0">
-          <div class="flex items-center justify-between mb-2">
+      <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-7rem)]">
+        <aside class="w-full lg:w-48 lg:shrink-0 flex flex-col lg:min-h-0">
+          <div class="flex items-center justify-between mb-2 shrink-0">
             <h2 class="text-sm font-bold uppercase text-slate-400">Listen</h2>
             <button id="new-deck" class="bg-amber-500 text-slate-900 px-2 py-1 rounded text-sm font-semibold">+ Neu</button>
           </div>
-          <button id="bulk-missing" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-2 py-2 rounded font-semibold mb-3 text-xs">
+          <button id="bulk-missing" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-2 py-2 rounded font-semibold mb-3 text-xs shrink-0">
             Fehlende → Clipboard
           </button>
-          <div id="deck-list" class="space-y-1 max-h-[50vh] lg:max-h-none overflow-y-auto"></div>
+          <div id="deck-list" class="space-y-1 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto"></div>
         </aside>
-        <div class="flex-1 min-w-0">
-          <div id="deck-detail"></div>
+        <div class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col">
+          <div id="deck-detail" class="lg:flex lg:flex-col lg:flex-1 lg:min-h-0"></div>
         </div>
-        <div class="flex-1 min-w-0">
-          <h2 class="text-sm font-bold uppercase text-slate-400 mb-2">Karten hinzufügen</h2>
-          <div class="space-y-2 mb-2">
+        <div class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col">
+          <h2 class="text-sm font-bold uppercase text-slate-400 mb-2 shrink-0">Karten hinzufügen</h2>
+          <div class="space-y-2 mb-2 shrink-0">
             <input id="picker-search" type="text" placeholder="Name oder ID…" value="${escapeAttr(state.pickerQuery)}"
               class="bg-slate-800 border border-slate-600 rounded px-3 py-2 w-full" />
             <div class="flex gap-2 flex-wrap">
@@ -72,7 +72,7 @@
               </label>
             </div>
           </div>
-          <div id="picker-results" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 max-h-[50vh] lg:max-h-[78vh] overflow-y-auto pr-1"></div>
+          <div id="picker-results" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
         </div>
       </div>
     `;
@@ -227,7 +227,7 @@
             : '')
       : '';
     el.innerHTML = `
-      <div class="bg-slate-800 rounded p-3 mb-3">
+      <div class="bg-slate-800 rounded p-3 mb-3 shrink-0">
         <div class="flex items-center gap-2">
           <input id="deck-name" type="text" value="${escapeAttr(deck.name)}"
             class="bg-transparent text-xl font-bold flex-1 focus:outline-none focus:bg-slate-700 rounded px-1" />
@@ -241,7 +241,7 @@
         <div id="color-balance" class="mt-2"></div>
       </div>
 
-      <div class="flex items-center gap-2 mb-2 text-sm flex-wrap">
+      <div class="flex items-center gap-2 mb-2 text-sm flex-wrap shrink-0">
         <span class="text-slate-400">Gruppieren:</span>
         <select id="group-by" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
           <option value="level" ${state.deckGroupBy === 'level' ? 'selected' : ''}>Level</option>
@@ -263,7 +263,7 @@
           title="Exportiert nur Karten/Mengen, die in dieser Liste fehlen (Cardmarket-kompatibel)">Fehlende exportieren</button>
       </div>
 
-      <div id="deck-entries" class="space-y-4 max-h-[78vh] overflow-y-auto pr-1"></div>
+      <div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
     `;
 
     rootEl.querySelector('#deck-name').addEventListener('change', e => {
@@ -934,7 +934,7 @@
     const prevScroll = (el.querySelector('#deck-entries') || {}).scrollTop || 0;
     const mw = computeMainWants();
     el.innerHTML = `
-      <div class="bg-slate-800 rounded p-3 mb-3">
+      <div class="bg-slate-800 rounded p-3 mb-3 shrink-0">
         <div class="flex items-center gap-2 flex-wrap">
           <h2 class="text-xl font-bold flex-1">★ Main Wants</h2>
           <label class="text-xs text-slate-400 flex items-center gap-1">
@@ -963,7 +963,7 @@
           })()}.
         </div>
       </div>
-      <div id="deck-entries" class="space-y-4 max-h-[78vh] overflow-y-auto pr-1"></div>
+      <div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
     `;
     rootEl.querySelector('#mw-proxy').addEventListener('change', e => {
       state.mainWantsProxy = e.target.checked;
