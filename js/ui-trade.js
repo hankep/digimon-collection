@@ -3,6 +3,7 @@
 
 (function () {
   let rootEl = null;
+  let query = '';   // freie Textsuche (Name / ID / Variant), nicht persistiert
   const PREF_KEY = 'tradeSelectedLists';
   const SORT_KEY = 'tradeSort';
   const VIEW_KEY = 'tradeView';
@@ -101,6 +102,7 @@
         const setCode = card ? card.set : '—';
         const rarity = (card && card.rarity) || '—';
         const name = displayName(card, e.cardId);
+        if (!matchesQuery(name, e.cardId, e.variant)) continue; // Textsuche
         const price = cmLow(e.cardId);
         const bk = bucketOf(price);
         if (!active.has(bk)) continue; // ausgeblendete Preisspanne
@@ -162,8 +164,6 @@
   function render() {
     const lists = candidateLists();
     const selected = selectedIds(lists);
-    const blocks = collectBySet(lists, selected);
-    const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
 
     if (!lists.length) {
       rootEl.innerHTML = `
@@ -201,7 +201,9 @@
     rootEl.innerHTML = `
       <div class="bg-slate-800 rounded p-3 mb-3">
         <div class="flex items-center gap-2 flex-wrap">
-          <h2 class="text-xl font-bold flex-1">Trade</h2>
+          <h2 class="text-xl font-bold">Trade</h2>
+          <input id="trade-search" type="text" placeholder="Suche Name / ID…" value="${escapeAttr(query)}"
+            class="bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm flex-1 min-w-[160px]" />
           <label class="text-xs text-slate-400 flex items-center gap-1">
             Ansicht:
             <select id="trade-view" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
@@ -217,18 +219,33 @@
               <option value="rarity"     ${Prefs.get(SORT_KEY, 'price-desc') === 'rarity'     ? 'selected' : ''}>Rarity</option>
             </select>
           </label>
-          <div class="text-sm text-slate-400">${blocks.length} Sets · ${grandTotal} Karten</div>
+          <div class="text-sm text-slate-400" id="trade-count"></div>
         </div>
         <div class="text-xs text-slate-400 mt-2 mb-1">Einbezogene Trade-Listen:</div>
         <div class="flex flex-wrap gap-2" id="trade-lists">${listChips}</div>
         <div class="text-xs text-slate-400 mt-2 mb-1">Preisspannen:</div>
         <div class="flex flex-wrap gap-2" id="trade-buckets">${bucketChips}</div>
       </div>
-      <div id="trade-sets" class="columns-1 lg:columns-2 [column-gap:0.75rem]">
-        ${blocks.length ? blocks.map(renderSetBlock).join('') : `<div class="bg-slate-800 rounded p-4 text-slate-400">Keine Karten in der Auswahl.</div>`}
-      </div>`;
+      <div id="trade-sets" class="columns-1 lg:columns-2 [column-gap:0.75rem]"></div>`;
 
     wire();
+    renderSets();
+  }
+
+  // Rendert nur den Karten-Bereich (#trade-sets) + Zähler. Auch bei Sucheingabe,
+  // ohne die Toolbar (und das Suchfeld) neu zu bauen.
+  function renderSets() {
+    const lists = candidateLists();
+    const selected = selectedIds(lists);
+    const blocks = collectBySet(lists, selected);
+    const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
+    const cnt = rootEl.querySelector('#trade-count');
+    if (cnt) cnt.textContent = `${blocks.length} Sets · ${grandTotal} Karten`;
+    const host = rootEl.querySelector('#trade-sets');
+    if (host) host.innerHTML = blocks.length
+      ? blocks.map(renderSetBlock).join('')
+      : `<div class="bg-slate-800 rounded p-4 text-slate-400">${query ? 'Keine Treffer für die Suche.' : 'Keine Karten in der Auswahl.'}</div>`;
+    wireSets();
   }
 
   function renderSetBlock(block) {
@@ -367,6 +384,15 @@
       });
     });
 
+    const searchEl = rootEl.querySelector('#trade-search');
+    if (searchEl) searchEl.addEventListener('input', debounce(() => {
+      query = searchEl.value;
+      renderSets(); // nur Karten-Bereich neu rendern → Suchfeld behält Fokus
+    }, 200));
+  }
+
+  // Listener innerhalb von #trade-sets (bei jedem renderSets() neu gesetzt).
+  function wireSets() {
     rootEl.querySelectorAll('[data-trade-inc]').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); modifyTrade(btn.dataset.tradeInc, 1); });
     });
@@ -448,6 +474,16 @@
     return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
   function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+
+  function matchesQuery(name, cardId, variant) {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (name + ' ' + cardId + ' ' + variant).toLowerCase().includes(q);
+  }
+  function debounce(fn, ms) {
+    let t;
+    return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+  }
 
   // Live-Refresh: Trade-Listen sind Decks (decks-changed). Besitz ist hier
   // irrelevant, daher kein collection-changed. Nur bei sichtbarem Tab rendern,
