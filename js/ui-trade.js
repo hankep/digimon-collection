@@ -449,5 +449,18 @@
   }
   function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
 
+  // Live-Refresh: Trade-Listen sind Decks (decks-changed). Besitz ist hier
+  // irrelevant, daher kein collection-changed. Nur bei sichtbarem Tab rendern,
+  // RAF-gebündelt gegen Mehrfach-Renders.
+  let pendingRefresh = false;
+  document.addEventListener('decks-changed', () => {
+    if (!rootEl) return;
+    const panel = document.getElementById('tab-trade');
+    if (panel && panel.classList.contains('hidden')) return;
+    if (pendingRefresh) return;
+    pendingRefresh = true;
+    requestAnimationFrame(() => { pendingRefresh = false; render(); });
+  });
+
   window.UITrade = { init };
 })();

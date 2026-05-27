@@ -512,5 +512,22 @@
   }
   function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
 
+  // Live-Refresh: Main Wants hängt vom Besitz ab (collection-changed), die
+  // Wants-Listen sind Decks (decks-changed). Nur neu rendern, wenn der Tab
+  // sichtbar ist — bei verstecktem Tab rendert app.js beim nächsten Wechsel neu.
+  // RAF-gebündelt, damit mehrere Edits (z.B. im offenen Karten-Modal) nicht
+  // mehrfach hintereinander rendern.
+  let pendingRefresh = false;
+  function scheduleRefresh() {
+    if (!rootEl) return;
+    const panel = document.getElementById('tab-wants');
+    if (panel && panel.classList.contains('hidden')) return;
+    if (pendingRefresh) return;
+    pendingRefresh = true;
+    requestAnimationFrame(() => { pendingRefresh = false; render(); });
+  }
+  document.addEventListener('collection-changed', scheduleRefresh);
+  document.addEventListener('decks-changed', scheduleRefresh);
+
   window.UIWants = { init };
 })();
