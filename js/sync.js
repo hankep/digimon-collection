@@ -59,7 +59,9 @@
     setStatus('syncing');
     const { error } = await client.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: location.href }
+      // Kein Self-Signup: nur Accounts, die der Admin im Supabase-Dashboard
+      // angelegt hat, bekommen einen Magic-Link. Fremde E-Mails lösen nichts aus.
+      options: { emailRedirectTo: location.href, shouldCreateUser: false }
     });
     if (error) setStatus('error');
     return { error };
@@ -193,9 +195,14 @@
         if (!email) { msg.textContent = 'Bitte E-Mail eingeben.'; return; }
         msg.textContent = 'Sende Link…';
         const { error } = await signIn(email);
-        msg.textContent = error
-          ? ('Fehler: ' + error.message)
-          : 'Link gesendet — prüfe dein Postfach und klicke den Link.';
+        if (!error) {
+          msg.textContent = 'Link gesendet — prüfe dein Postfach und klicke den Link.';
+        } else if (/signup|not allowed|otp_disabled/i.test(error.message || '')) {
+          // shouldCreateUser:false → diese E-Mail hat keinen vom Admin angelegten Account.
+          msg.textContent = 'Diese E-Mail hat keinen Zugang. Bitte wende dich an den Betreiber.';
+        } else {
+          msg.textContent = 'Fehler: ' + error.message;
+        }
       };
       hostEl.querySelector('#sync-signin').addEventListener('click', send);
       hostEl.querySelector('#sync-email').addEventListener('keydown', e => {
