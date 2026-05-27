@@ -54,15 +54,13 @@
 
   function isLoggedIn() { return !!(session && session.user); }
 
-  async function signIn(email) {
+  async function signIn(email, password) {
     if (!client) return { error: { message: 'Sync nicht konfiguriert' } };
     setStatus('syncing');
-    const { error } = await client.auth.signInWithOtp({
-      email,
-      // Kein Self-Signup: nur Accounts, die der Admin im Supabase-Dashboard
-      // angelegt hat, bekommen einen Magic-Link. Fremde E-Mails lösen nichts aus.
-      options: { emailRedirectTo: location.href, shouldCreateUser: false }
-    });
+    // E-Mail + Passwort statt Magic-Link → kein Mailversand, keine Rate-Limits.
+    // Accounts werden ausschließlich vom Admin im Supabase-Dashboard angelegt
+    // (Self-Signup dort deaktiviert).
+    const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) setStatus('error');
     return { error };
   }
@@ -179,35 +177,39 @@
     } else {
       hostEl.innerHTML = `
         <p class="text-sm text-slate-400 mb-2">
-          Melde dich mit deiner E-Mail an, um deine Sammlung geräteübergreifend zu synchronisieren.
-          Du bekommst einen Login-Link per Mail (kein Passwort nötig).
+          Melde dich mit E-Mail und Passwort an, um deine Sammlung geräteübergreifend zu synchronisieren.
+          Zugänge werden vom Betreiber vergeben.
         </p>
         <div class="flex flex-wrap gap-2">
-          <input id="sync-email" type="email" placeholder="deine@email.de"
+          <input id="sync-email" type="email" placeholder="deine@email.de" autocomplete="username"
                  class="bg-slate-900 border border-slate-600 rounded px-3 py-2 flex-1 min-w-[200px]" />
-          <button id="sync-signin" class="bg-emerald-500 text-slate-900 px-4 py-2 rounded font-semibold">Login-Link senden</button>
+          <input id="sync-password" type="password" placeholder="Passwort" autocomplete="current-password"
+                 class="bg-slate-900 border border-slate-600 rounded px-3 py-2 flex-1 min-w-[200px]" />
+          <button id="sync-signin" class="bg-emerald-500 text-slate-900 px-4 py-2 rounded font-semibold">Einloggen</button>
         </div>
         <div id="sync-msg" class="mt-2 text-sm text-slate-400"></div>
       `;
       const send = async () => {
         const email = (hostEl.querySelector('#sync-email').value || '').trim();
+        const password = hostEl.querySelector('#sync-password').value || '';
         const msg = hostEl.querySelector('#sync-msg');
-        if (!email) { msg.textContent = 'Bitte E-Mail eingeben.'; return; }
-        msg.textContent = 'Sende Link…';
-        const { error } = await signIn(email);
+        if (!email || !password) { msg.textContent = 'Bitte E-Mail und Passwort eingeben.'; return; }
+        msg.textContent = 'Logge ein…';
+        const { error } = await signIn(email, password);
         if (!error) {
-          msg.textContent = 'Link gesendet — prüfe dein Postfach und klicke den Link.';
-        } else if (/signup|not allowed|otp_disabled/i.test(error.message || '')) {
-          // shouldCreateUser:false → diese E-Mail hat keinen vom Admin angelegten Account.
-          msg.textContent = 'Diese E-Mail hat keinen Zugang. Bitte wende dich an den Betreiber.';
+          msg.textContent = '';  // onAuthStateChange rendert die UI neu
+        } else if (/invalid login|invalid credentials/i.test(error.message || '')) {
+          msg.textContent = 'E-Mail oder Passwort falsch.';
+        } else if (/not confirmed|confirm/i.test(error.message || '')) {
+          msg.textContent = 'Konto noch nicht bestätigt – wende dich an den Betreiber.';
         } else {
           msg.textContent = 'Fehler: ' + error.message;
         }
       };
       hostEl.querySelector('#sync-signin').addEventListener('click', send);
-      hostEl.querySelector('#sync-email').addEventListener('keydown', e => {
-        if (e.key === 'Enter') send();
-      });
+      const onEnter = e => { if (e.key === 'Enter') send(); };
+      hostEl.querySelector('#sync-email').addEventListener('keydown', onEnter);
+      hostEl.querySelector('#sync-password').addEventListener('keydown', onEnter);
     }
   }
 
