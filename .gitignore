@@ -5,6 +5,10 @@
 __pycache__/
 *.pyc
 
+# GitHub-Token (hankep) – niemals committen
+.gh-token-hankep
+.env
+
 # Lokale App-Backups (Export aus Import/Export-Tab)
 digimon-backup-*.json
 digimon-collection-*.json
