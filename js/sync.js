@@ -12,7 +12,6 @@
   let session = null;
   let onRemoteApplied = function () {};
   let pushTimer = null;
-  let suppressPush = false;       // verhindert Rück-Push direkt nach applyRemote
   let statusEl = null;
   const loginHosts = [];          // gemountete Login-UI-Container (re-render bei Auth-Wechsel)
 
@@ -101,20 +100,21 @@
   }
 
   function applyRemote(row) {
-    suppressPush = true;
-    try {
-      if (row.collection && row.collection.copies) Store.saveCollection(row.collection);
-      if (row.decks && Array.isArray(row.decks.decks)) Store.saveDecks(row.decks);
-    } finally {
-      // Nach dem Tick wieder freigeben — die saveX-Events feuern synchron davor.
-      setTimeout(() => { suppressPush = false; }, 0);
+    // Remote-Blob unverändert übernehmen: updatedAt NICHT neu setzen (sonst gilt der
+    // lokale Stand sofort als neuer → unnötiger Rück-Push, Last-Write-Wins kaputt) und
+    // kein change-Event feuern (kein Spurious-Push). Re-Render läuft über onRemoteApplied.
+    if (row.collection && row.collection.copies) {
+      Store.saveCollection(row.collection, { touch: false, silent: true });
+    }
+    if (row.decks && Array.isArray(row.decks.decks)) {
+      Store.saveDecks(row.decks, { touch: false, silent: true });
     }
     setStatus('synced');
     try { onRemoteApplied(); } catch (e) { console.warn('onRemoteApplied-Fehler:', e); }
   }
 
   function debouncedPush() {
-    if (!client || !isLoggedIn() || suppressPush) return;
+    if (!client || !isLoggedIn()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(push, PUSH_DEBOUNCE_MS);
   }

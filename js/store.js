@@ -37,10 +37,16 @@
     return raw;
   }
 
-  function saveCollection(collection) {
-    collection.updatedAt = new Date().toISOString();
+  // opts.touch === false  → updatedAt NICHT neu setzen (z.B. beim Übernehmen von
+  //                          Remote-Daten, damit der Zeitstempel erhalten bleibt).
+  // opts.silent === true   → kein 'collection-changed'-Event (kein Auto-Sync-Push).
+  function saveCollection(collection, opts) {
+    opts = opts || {};
+    if (opts.touch !== false) collection.updatedAt = new Date().toISOString();
     writeJSON(COLLECTION_KEY, collection);
-    try { document.dispatchEvent(new CustomEvent('collection-changed')); } catch (e) {}
+    if (!opts.silent) {
+      try { document.dispatchEvent(new CustomEvent('collection-changed')); } catch (e) {}
+    }
   }
 
   // ── Copy-Primitive ────────────────────────────────────────────────────────
@@ -361,10 +367,14 @@
     return readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
   }
 
-  function saveDecks(state) {
-    state.updatedAt = new Date().toISOString();
+  // opts wie bei saveCollection: { touch, silent }.
+  function saveDecks(state, opts) {
+    opts = opts || {};
+    if (opts.touch !== false) state.updatedAt = new Date().toISOString();
     writeJSON(DECKS_KEY, state);
-    try { document.dispatchEvent(new CustomEvent('decks-changed')); } catch (e) {}
+    if (!opts.silent) {
+      try { document.dispatchEvent(new CustomEvent('decks-changed')); } catch (e) {}
+    }
   }
 
   function createDeck(state, name, kind) {
