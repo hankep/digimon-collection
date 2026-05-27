@@ -217,6 +217,46 @@
     }
   }
 
+  // ── Reprints / Cross-Set-Verfügbarkeit ─────────────────────────────────────
+  // card.raw.set_name listet alle Produkte, in denen eine Karte erscheint
+  // (z.B. BT16-025 → ["AD-01: …", "BT-16: …"]). Daraus leiten wir ab, in welchen
+  // anderen Sets dieselbe Karte (teils unter alter ID) erhältlich ist.
+
+  // "AD-01: Advanced Booster …" → "AD1" (Bindestrich raus, führende Nullen weg).
+  // Nur gültig, wenn der Code ein existierendes Set ist (sonst null → filtert
+  // Promos/Sonderpacks wie "BT01-03", "BTC-01", "Tamer Battle Pack" automatisch).
+  function setNameToCode(productStr) {
+    const head = String(productStr || '').split(':')[0].trim();
+    const m = head.match(/^([A-Za-z]+)-?0*(\d+)$/);
+    if (!m) return null;
+    const code = m[1] + m[2];
+    return bySet.has(code) ? code : null;
+  }
+
+  // Alle Produkt-Strings einer Karte (roh), z.B. für die Modal-Liste.
+  function productsOf(card) {
+    const sn = card && card.raw && card.raw.set_name;
+    return Array.isArray(sn) ? sn : [];
+  }
+
+  // Eindeutige, gültige Set-Codes ≠ eigenem Set — wo die Karte als Reprint erhältlich ist.
+  function reprintSetsOf(card) {
+    if (!card) return [];
+    const out = [], seen = new Set();
+    for (const p of productsOf(card)) {
+      const code = setNameToCode(p);
+      if (code && code !== card.set && !seen.has(code)) { seen.add(code); out.push(code); }
+    }
+    return out;
+  }
+
+  // Kompaktes Label (Code vor ":") für die Anzeige; Vollname bleibt als Tooltip nutzbar.
+  function productLabel(productStr) {
+    const s = String(productStr || '');
+    const head = s.split(':')[0].trim();
+    return head || s;
+  }
+
   window.CardDB = {
     all: CARDS,
     byId,
@@ -230,6 +270,10 @@
     variantsOf,
     variantKeyFromImage,
     imagePath,
-    search
+    search,
+    setNameToCode,
+    productsOf,
+    reprintSetsOf,
+    productLabel
   };
 })();

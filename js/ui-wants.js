@@ -147,7 +147,16 @@
     // Pro Set: Statistik (aggregiert), Gruppen je Quell-Liste, und eine
     // variantenaggregierte Flachliste für Export/Bild-Export.
     const active = activeBuckets();
+    const showReprints = Prefs.get('wantsShowReprints', true);
     const sets = new Map(); // setCode -> block
+    const getBlock = (code) => {
+      let b = sets.get(code);
+      if (!b) {
+        b = { code, name: setName.get(code) || code, total: 0, perRarity: new Map(), perBucket: new Map(), groups: new Map(), _agg: new Map(), _reprintAgg: new Map() };
+        sets.set(code, b);
+      }
+      return b;
+    };
     lists.forEach((list, listIdx) => {
       if (!selected.has(list.id)) return;
       const editable = !isMainId(list.id);
@@ -161,11 +170,7 @@
         const bk = bucketOf(price);
         if (!active.has(bk)) continue; // ausgeblendete Preisspanne
 
-        let block = sets.get(setCode);
-        if (!block) {
-          block = { code: setCode, name: setName.get(setCode) || setCode, total: 0, perRarity: new Map(), perBucket: new Map(), groups: new Map(), _agg: new Map() };
-          sets.set(setCode, block);
-        }
+        const block = getBlock(setCode);
         block.total += e.count;
         block.perRarity.set(rarity, (block.perRarity.get(rarity) || 0) + e.count);
         block.perBucket.set(bk, (block.perBucket.get(bk) || 0) + e.count);
@@ -179,6 +184,17 @@
         let a = block._agg.get(e.variant);
         if (!a) { a = { cardId: e.cardId, variant: e.variant, count: 0, name, rarity, price }; block._agg.set(e.variant, a); }
         a.count += e.count;
+
+        // Reprint-Referenzen: dieselbe Karte ist (teils unter alter ID) auch in
+        // anderen Sets erhältlich → in deren Block anzeigen, aber NICHT zählen.
+        if (showReprints && card) {
+          for (const rc of CardDB.reprintSetsOf(card)) {
+            const rb = getBlock(rc);
+            let ra = rb._reprintAgg.get(e.variant);
+            if (!ra) { ra = { cardId: e.cardId, variant: e.variant, count: 0, name, rarity, price, originSet: setCode }; rb._reprintAgg.set(e.variant, ra); }
+            ra.count += e.count;
+          }
+        }
       }
     });
 
@@ -206,6 +222,8 @@
       b.groups.forEach(g => g.items.sort(itemCmp));
       b.items = Array.from(b._agg.values()).sort(itemCmp); // für Export
       delete b._agg;
+      b.reprints = Array.from(b._reprintAgg.values()).sort(itemCmp); // Reprint-Refs (ungezählt)
+      delete b._reprintAgg;
     }
     blocks.sort((a, b) => {
       const ai = setOrder.has(a.code) ? setOrder.get(a.code) : Infinity;
@@ -275,6 +293,10 @@
               <option value="rarity" ${Prefs.get(GROUP_KEY, 'source') === 'rarity' ? 'selected' : ''}>Nach Rarity</option>
             </select>
           </label>
+          <label class="text-xs text-slate-400 flex items-center gap-1" title="Karten, die auch in anderen Sets als Reprint erhältlich sind, dort zusätzlich (ungezählt) anzeigen">
+            <input type="checkbox" id="wants-reprints" ${Prefs.get('wantsShowReprints', true) ? 'checked' : ''} />
+            Reprints
+          </label>
           <div class="text-sm text-slate-400" id="wants-count"></div>
           <button id="wants-export-all" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold" title="Alle sichtbaren Karten über alle Sets (mit aktiven Quellen-/Preisfiltern) als Cardmarket-kompatible Liste kopieren">Alles → Cardmarket</button>
         </div>
@@ -296,8 +318,9 @@
     const selected = selectedIds(lists);
     const blocks = collectBySet(lists, selected);
     const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
+    const realSets = blocks.reduce((n, b) => n + (b.total > 0 ? 1 : 0), 0);
     const cnt = rootEl.querySelector('#wants-count');
-    if (cnt) cnt.textContent = `${blocks.length} Sets · ${grandTotal} Karten`;
+    if (cnt) cnt.textContent = `${realSets} Sets · ${grandTotal} Karten`;
     const host = rootEl.querySelector('#wants-sets');
     if (host) host.innerHTML = blocks.length
       ? blocks.map(renderSetBlock).join('')
@@ -306,21 +329,30 @@
   }
 
   function renderSetBlock(block) {
-    const rarityPills = Array.from(block.perRarity.entries())
+    const view = Prefs.get(VIEW_KEY, 'text');
+    const groupBy = Prefs.get(GROUP_KEY, 'source');
+    const hasReal = block.total > 0;
+
+    const rarityPills = !hasReal ? '' : Array.from(block.perRarity.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([r, n]) => `<span class="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs">${escapeHtml(r)}: <span class="font-semibold">${n}</span></span>`)
       .join(' ');
 
-    const bucketPills = BUCKETS
+    const bucketPills = !hasReal ? '' : BUCKETS
       .filter(b => (block.perBucket.get(b.key) || 0) > 0)
       .map(b => `<span class="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs">${b.label}: <span class="font-semibold">${block.perBucket.get(b.key)}</span></span>`)
       .join(' ');
 
-    const view = Prefs.get(VIEW_KEY, 'text');
-    const groupBy = Prefs.get(GROUP_KEY, 'source');
-    const groupsHtml = groupBy === 'rarity'
+    const groupsHtml = !hasReal ? '' : (groupBy === 'rarity'
       ? renderRarityGroups(block, view)
-      : block.groups.map(g => renderGroup(g, view)).join('');
+      : block.groups.map(g => renderGroup(g, view)).join(''));
+
+    const reprintsHtml = (block.reprints && block.reprints.length)
+      ? `<div class="mt-3 pt-2 border-t border-slate-700/60">
+           <div class="text-xs text-slate-500 italic mb-1">Auch hier erhältlich · Reprint, nicht gezählt</div>
+           ${renderReprintBody(block.reprints, view)}
+         </div>`
+      : '';
 
     return `
       <div class="bg-slate-800 rounded p-3 mb-3 break-inside-avoid" data-set-block="${escapeAttr(block.code)}">
@@ -329,15 +361,39 @@
             <span class="font-mono text-amber-400">${escapeHtml(block.code)}</span>
             <span class="text-slate-300 font-normal text-sm">${escapeHtml(block.name)}</span>
           </h3>
-          <span class="text-sm text-slate-400">${block.total} Karten</span>
-          <div class="ml-auto flex gap-2">
-            <button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button>
-          </div>
+          ${hasReal
+            ? `<span class="text-sm text-slate-400">${block.total} Karten</span>
+               <div class="ml-auto flex gap-2"><button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button></div>`
+            : `<span class="text-xs text-slate-500 italic">nur Reprints</span>`}
         </div>
-        <div class="flex flex-wrap gap-1.5 mb-1"><span class="text-xs text-slate-500 mr-1">Rarity:</span>${rarityPills}</div>
-        <div class="flex flex-wrap gap-1.5 mb-3"><span class="text-xs text-slate-500 mr-1">Preis:</span>${bucketPills}</div>
+        ${hasReal ? `<div class="flex flex-wrap gap-1.5 mb-1"><span class="text-xs text-slate-500 mr-1">Rarity:</span>${rarityPills}</div>
+        <div class="flex flex-wrap gap-1.5 mb-3"><span class="text-xs text-slate-500 mr-1">Preis:</span>${bucketPills}</div>` : ''}
         ${groupsHtml}
+        ${reprintsHtml}
       </div>`;
+  }
+
+  // Reprint-Referenzen (gedämpft, ohne +/-): zeigen, dass eine anderswo gewünschte
+  // Karte auch in diesem Set erhältlich ist. Klick öffnet wie gewohnt das Modal.
+  function renderReprintBody(items, view) {
+    if (view === 'images') {
+      return `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${items.map(it => `
+        <div class="card-tile cursor-pointer opacity-60" data-card-id="${escapeAttr(it.cardId)}" data-variant-key="${escapeAttr(it.variant)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
+          <img loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="${escapeAttr(it.name)}" />
+          <div class="p-2 pt-1">
+            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(it.variant)} <span class="text-slate-500">(aus ${escapeHtml(it.originSet)})</span></div>
+            <div class="text-sm font-semibold truncate" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</div>
+          </div>
+        </div>`).join('')}</div>`;
+    }
+    return `<table class="wants-table"><tbody>${items.map(it => `
+      <tr class="wants-row group cursor-pointer hover:bg-slate-700/60 opacity-60" data-card-id="${escapeAttr(it.cardId)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
+        <td class="py-1 pr-4 whitespace-nowrap"><span class="font-bold text-slate-400 tabular-nums">${it.count}×</span></td>
+        <td class="py-1 pr-4 relative"><span class="block truncate max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="" /></td>
+        <td class="py-1 pr-4 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(it.variant)}</td>
+        <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap">aus ${escapeHtml(it.originSet)}</td>
+        <td class="py-1 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—'}</td>
+      </tr>`).join('')}</tbody></table>`;
   }
 
   // Rendert die Item-Liste (Tabelle oder Bilder-Grid). group liefert listId/editable
@@ -464,6 +520,12 @@
     if (groupSel) groupSel.addEventListener('change', e => {
       Prefs.set(GROUP_KEY, e.target.value);
       render();
+    });
+
+    const reprintsCb = rootEl.querySelector('#wants-reprints');
+    if (reprintsCb) reprintsCb.addEventListener('change', e => {
+      Prefs.set('wantsShowReprints', e.target.checked);
+      renderSets(); // betrifft nur den Karten-Bereich
     });
 
     const exportAllBtn = rootEl.querySelector('#wants-export-all');

@@ -751,6 +751,13 @@
     const colorPills = (card.color || []).map(c => `<span class="color-${c} px-2 py-0.5 rounded text-xs font-bold">${c}</span>`).join(' ');
     const effect = card.effect || (card.raw && card.raw.main_effect) || '';
 
+    // Reprints / Cross-Set: alle Produkte, in denen die Karte erhältlich ist.
+    const products = (CardDB.productsOf ? CardDB.productsOf(card) : []);
+    const productsHtml = products.length
+      ? `<div class="text-xs text-slate-400 mt-2">Erhältlich in:
+          ${products.map(p => `<span class="inline-block bg-slate-700 rounded px-1.5 py-0.5 mr-1 mb-1 font-mono" title="${escapeAttr(p)}">${escapeHtml(CardDB.productLabel(p))}</span>`).join('')}</div>`
+      : '';
+
     const cols = Math.min(variants.length, 3);
     const html = `
       <div class="modal-backdrop" id="card-modal">
@@ -765,6 +772,7 @@
                 ${card.level != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Lv ${card.level}</span>` : ''}
                 ${card.cost != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Cost ${card.cost}</span>` : ''}
               </div>
+              ${productsHtml}
             </div>
             <button id="modal-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
           </div>
