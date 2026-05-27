@@ -150,6 +150,10 @@
           if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
         }
       }
+      // Vollständig, aber mit zugewiesenen Proxies → Name lila markieren.
+      const hasSlottedProxy = complete && d.entries.some(e =>
+        Store.assignedProxyTo(collectionCache, d.id, e.variant) > 0
+      );
       const cls = active
         ? 'bg-amber-500 text-slate-900'
         : (complete
@@ -157,9 +161,10 @@
             : (slottable
                 ? 'bg-yellow-500/15 border border-yellow-400 hover:bg-yellow-500/25 deck-slottable'
                 : 'hover:bg-slate-800'));
+      const nameCls = (hasSlottedProxy && !active) ? 'text-purple-400' : '';
       return `<div class="flex items-center gap-1">
         <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
-          <div class="font-semibold text-sm">${escapeHtml(d.name)}${complete && !active ? ' <span class="text-emerald-300">✓</span>' : ''}</div>
+          <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
           <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
         </button>
         <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
@@ -261,6 +266,8 @@
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
         <button id="export-missing" class="bg-amber-500 text-slate-900 px-3 py-1 rounded font-semibold"
           title="Exportiert nur Karten/Mengen, die in dieser Liste fehlen (Cardmarket-kompatibel)">Fehlende exportieren</button>
+        <button id="export-full" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1 rounded font-semibold"
+          title="Kopiert die vollständige Liste (Anzahl Name ID) in die Zwischenablage">Exportieren</button>
       </div>
 
       <div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
@@ -287,6 +294,7 @@
       renderDeckDetail();
     });
     rootEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
+    rootEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
     rootEl.querySelector('#import-into').addEventListener('click', () => openImportIntoDeck(deck));
     rootEl.querySelector('#deck-note-host [data-note-trigger]').addEventListener('click', () => {
       Notes.openDialog({
@@ -439,7 +447,7 @@
       ? 'zero'
       : (complete ? 'full' : '');
     const slottable = !complete && totalFree > 0;
-    return `<div class="card-tile entry-tile cursor-pointer ${complete ? 'playset' : ''} ${assignedTotal === 0 ? 'missing' : ''} ${slottable ? 'tile-slottable' : ''}"
+    return `<div class="card-tile entry-tile cursor-pointer ${complete ? 'playset' : ''} ${assignedTotal === 0 ? 'missing' : ''} ${slottable ? 'tile-slottable' : ''} ${assignedProxy > 0 ? 'tile-proxy-slotted' : ''}"
         data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
       <img loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="${escapeAttr(name)}" />
       <span class="tile-note">${Notes.iconHtml(!!note)}</span>
@@ -767,6 +775,34 @@
       if (!btn) return;
       const orig = btn.textContent;
       btn.textContent = ok ? `✓ ${total} fehlende kopiert` : 'Kopieren fehlgeschlagen';
+      setTimeout(() => { btn.textContent = orig; }, 1800);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => finish(true), () => fallbackCopy(text, finish));
+    } else {
+      fallbackCopy(text, finish);
+    }
+  }
+
+  // Kopiert die vollständige Liste im Standard-Textformat: "Anzahl Name ID".
+  function exportFull(deck) {
+    if (!deck.entries.length) { alert('Diese Liste ist leer.'); return; }
+    const lines = deck.entries.map(e => {
+      const card = CardDB.byId.get(e.cardId);
+      const cardName = card ? card.name : e.cardId;
+      const id = card ? card.id : e.cardId;
+      const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
+      return `${e.count} ${cardName} ${id}${vSuffix}`;
+    });
+    const text = lines.join('\n') + '\n';
+    const total = deck.entries.reduce((s, e) => s + e.count, 0);
+
+    const finish = ok => {
+      const btn = rootEl.querySelector('#export-full');
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = ok ? `✓ ${total} kopiert` : 'Kopieren fehlgeschlagen';
       setTimeout(() => { btn.textContent = orig; }, 1800);
     };
 

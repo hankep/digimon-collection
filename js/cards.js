@@ -16,7 +16,25 @@
     return imgFilename.replace(/\.[^.]+$/, '');
   }
 
+  // Manche Karten haben in den Quelldaten Kurz-/Kleinschreib-Rarities
+  // (z.B. "c", "sr", "p"). Auf die kanonische Langform normalisieren, damit
+  // sie nicht als eigene Rarity-Gruppe auftauchen und korrekt einsortiert sind.
+  const RARITY_CANON = {
+    c: 'Common', common: 'Common',
+    u: 'Uncommon', uncommon: 'Uncommon',
+    r: 'Rare', rare: 'Rare',
+    sr: 'Super Rare', 'super rare': 'Super Rare',
+    sec: 'Secret Rare', 'secret rare': 'Secret Rare',
+    ur: 'UR',
+    p: 'Promo', promo: 'Promo'
+  };
+  function canonRarity(r) {
+    if (r == null) return r;
+    return RARITY_CANON[String(r).toLowerCase()] || r;
+  }
+
   for (const card of CARDS) {
+    card.rarity = canonRarity(card.rarity);
     byId.set(card.id, card);
 
     if (!bySet.has(card.set)) bySet.set(card.set, []);
@@ -133,8 +151,7 @@
     const colorsFilter = Array.isArray(opts.colors) && opts.colors.length ? opts.colors : null;
     const typeFilter = opts.type || null;
     const rarityFilter = opts.rarity || null;
-    const minCost = (opts.minCost != null && opts.minCost !== '') ? Number(opts.minCost) : null;
-    const maxCost = (opts.maxCost != null && opts.maxCost !== '') ? Number(opts.maxCost) : null;
+    const levelsFilter = Array.isArray(opts.levels) && opts.levels.length ? opts.levels : null;
 
     let pool;
     if (setCode && bySet.has(setCode)) {
@@ -164,8 +181,7 @@
       }
       if (typeFilter && card.type !== typeFilter) continue;
       if (rarityFilter && card.rarity !== rarityFilter) continue;
-      if (minCost != null && (card.cost == null || card.cost < minCost)) continue;
-      if (maxCost != null && (card.cost == null || card.cost > maxCost)) continue;
+      if (levelsFilter && (card.level == null || !levelsFilter.includes(card.level))) continue;
       results.push(card);
     }
 

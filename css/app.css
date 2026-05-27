@@ -224,7 +224,7 @@
 .wants-preview {
   display: none;
   position: absolute;
-  left: 3rem;
+  left: 0;
   bottom: 100%;
   z-index: 50;
   width: 180px;
@@ -234,4 +234,43 @@
 }
 .wants-row:hover .wants-preview {
   display: block;
+}
+
+/* Wants-Tab: Text-Ansicht als Tabelle */
+.wants-table {
+  width: auto;
+  border-collapse: collapse;
+}
+.wants-table td {
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  vertical-align: middle;
+}
+.wants-table tr:last-child td {
+  border-bottom: none;
+}
+/* Übergang in ein neues Preis-Bracket (nur bei Preis-Sortierung) */
+.wants-table tr.wants-bracket-start td {
+  border-top: 2px solid var(--bracket-color);
+}
+
+/* Wants-Tab: kleine +/- Buttons in der Text-Ansicht */
+.wants-qty-btn {
+  width: 1.4rem;
+  height: 1.4rem;
+  line-height: 1;
+  border-radius: 4px;
+  background: #334155;
+  color: #e2e8f0;
+  font-weight: 700;
+}
+.wants-qty-btn:hover { background: #475569; }
+
+/* Decklisten: Karten mit zugewiesenen (geslotteten) Proxies lila umranden */
+.card-tile.tile-proxy-slotted {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px #a855f7, 0 0 12px rgba(168, 85, 247, 0.45);
+}
+.card-tile.tile-proxy-slotted:hover {
+  border-color: #c084fc;
+  box-shadow: 0 0 0 2px #c084fc, 0 0 14px rgba(192, 132, 252, 0.6);
 }

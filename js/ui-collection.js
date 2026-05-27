@@ -8,15 +8,24 @@
     colors: [],               // Multi-Select
     type: null,
     rarity: null,
-    minCost: '',
-    maxCost: '',
+    levels: [],               // Multi-Select Lv 2–7
     sortBy: 'id',
     sortDir: 'asc',
     missingOnly: false,
-    ownedOnly: false,
+    ownedOnly: true,
+    proxyOnly: false,
     showAlts: false,
     setGroups: { BT: true, EX: true, ST: true, Andere: true }
   };
+
+  // Anzeige-Label je Rarity (UR → Ultimate Rare). Wert bleibt intern "UR".
+  const RARITY_DISPLAY = { 'UR': 'Ultimate Rare' };
+  function rarityLabel(r) { return RARITY_DISPLAY[r] || r; }
+  // Effektive Rarity einer Variante: Alt-Arts gelten als "Alternative Art".
+  const ALT_RARITY = 'Alternative Art';
+  function entryRarity(entry) { return entry.isAlt ? ALT_RARITY : entry.card.rarity; }
+  // Reihenfolge im Rarity-Filter (Special Rare entfällt mangels Daten).
+  const RARITY_FILTER_ORDER = [ALT_RARITY, 'Secret Rare', 'UR', 'Super Rare', 'Rare', 'Uncommon', 'Common', 'Promo'];
 
   let rootEl = null;
   let renderedCount = 0;
@@ -53,6 +62,7 @@
           <div id="stats-bar" class="mb-3"></div>
           <details class="mb-3" open>
             <summary class="md:hidden cursor-pointer text-sm text-slate-400 mb-2 select-none">Filter</summary>
+            <!-- Reihe 1: kartenspezifische Filter & Sortierung -->
             <div class="flex flex-wrap gap-2 items-center">
             <input id="search" type="text" placeholder="Suche Name oder ID…" value="${escapeAttr(state.query)}"
               class="bg-slate-800 border border-slate-600 rounded px-3 py-2 min-h-[40px] flex-1 min-w-[140px]" />
@@ -65,43 +75,50 @@
             </select>
             <select id="filter-rarity" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]">
               <option value="">Rarity: alle</option>
-              ${CardDB.rarities.map(r => `<option value="${r}" ${state.rarity === r ? 'selected' : ''}>${r}</option>`).join('')}
+              ${RARITY_FILTER_ORDER
+                .filter(r => r === ALT_RARITY || CardDB.rarities.includes(r))
+                .map(r => `<option value="${escapeAttr(r)}" ${state.rarity === r ? 'selected' : ''}>${escapeHtml(rarityLabel(r))}</option>`).join('')}
             </select>
 
             <div class="flex items-center gap-1">
-              <span class="text-xs text-slate-400">Cost</span>
-              <input id="min-cost" type="number" min="0" placeholder="min" value="${escapeAttr(state.minCost)}"
-                class="w-14 bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]" />
-              <span class="text-slate-500">–</span>
-              <input id="max-cost" type="number" min="0" placeholder="max" value="${escapeAttr(state.maxCost)}"
-                class="w-14 bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]" />
+              <span class="text-xs text-slate-400">Lv</span>
+              <div id="level-pills" class="flex gap-1 flex-wrap"></div>
             </div>
 
             <select id="sort-by" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]">
               <option value="id"    ${state.sortBy === 'id' ? 'selected' : ''}>Sort: ID</option>
               <option value="name"  ${state.sortBy === 'name' ? 'selected' : ''}>Sort: Name</option>
               <option value="level" ${state.sortBy === 'level' ? 'selected' : ''}>Sort: Level</option>
-              <option value="cost"  ${state.sortBy === 'cost' ? 'selected' : ''}>Sort: Cost</option>
               <option value="price" ${state.sortBy === 'price' ? 'selected' : ''}>Sort: Preis (CM low)</option>
             </select>
             <button id="sort-dir" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px] w-10" title="Richtung">
               ${state.sortDir === 'asc' ? '▲' : '▼'}
             </button>
 
-            <label class="flex items-center gap-2 text-sm">
-              <input id="missing-only" type="checkbox" ${state.missingOnly ? 'checked' : ''} />
-              Nur fehlende
-            </label>
-            <label class="flex items-center gap-2 text-sm">
-              <input id="owned-only" type="checkbox" ${state.ownedOnly ? 'checked' : ''} />
-              Nur im Besitz
-            </label>
-            <label class="flex items-center gap-2 text-sm" title="Alt-Arts als eigene Karten im Grid anzeigen">
-              <input id="show-alts" type="checkbox" ${state.showAlts ? 'checked' : ''} />
-              Alt-Arts einzeln
-            </label>
-
             <button id="reset-filters" class="text-slate-400 hover:text-slate-200 text-sm ml-auto">Filter zurücksetzen</button>
+            </div>
+
+            <!-- Reihe 2: Besitz-/Anzeige-Filter + Proxy-Export -->
+            <div class="flex flex-wrap gap-4 items-center mt-2">
+              <label class="flex items-center gap-2 text-sm">
+                <input id="missing-only" type="checkbox" ${state.missingOnly ? 'checked' : ''} />
+                Nur fehlende
+              </label>
+              <label class="flex items-center gap-2 text-sm">
+                <input id="owned-only" type="checkbox" ${state.ownedOnly ? 'checked' : ''} />
+                Nur im Besitz
+              </label>
+              <label class="flex items-center gap-2 text-sm" title="Nur Karten anzeigen, für die Proxies eingetragen sind">
+                <input id="proxy-only" type="checkbox" ${state.proxyOnly ? 'checked' : ''} />
+                Nur Proxy
+              </label>
+              <label class="flex items-center gap-2 text-sm" title="Alt-Arts als eigene Karten im Grid anzeigen">
+                <input id="show-alts" type="checkbox" ${state.showAlts ? 'checked' : ''} />
+                Alt-Arts einzeln
+              </label>
+
+              <button id="proxies-export" class="bg-purple-500 hover:bg-purple-400 text-white px-3 py-1.5 rounded text-sm font-semibold ml-auto">Proxies → Clipboard</button>
+              <span id="proxies-msg" class="text-xs"></span>
             </div>
           </details>
 
@@ -115,6 +132,7 @@
 
     renderSetList();
     renderColorPills();
+    renderLevelPills();
     renderStats();
     renderBulkBar();
     renderGrid();
@@ -130,14 +148,16 @@
       state.type = e.target.value || null; renderGrid(); renderStats();
     });
     rootEl.querySelector('#filter-rarity').addEventListener('change', e => {
-      state.rarity = e.target.value || null; renderGrid(); renderStats();
+      state.rarity = e.target.value || null;
+      // "Alternative Art" existiert nur als Alt-Variante → Alt-Tiles aktivieren.
+      if (state.rarity === ALT_RARITY && !state.showAlts) {
+        state.showAlts = true;
+        Prefs.set('showAlts', true);
+        const sa = rootEl.querySelector('#show-alts');
+        if (sa) sa.checked = true;
+      }
+      renderGrid(); renderStats();
     });
-    rootEl.querySelector('#min-cost').addEventListener('input', debounce(e => {
-      state.minCost = e.target.value; renderGrid(); renderStats();
-    }, 200));
-    rootEl.querySelector('#max-cost').addEventListener('input', debounce(e => {
-      state.maxCost = e.target.value; renderGrid(); renderStats();
-    }, 200));
     rootEl.querySelector('#sort-by').addEventListener('change', e => {
       state.sortBy = e.target.value; renderGrid();
     });
@@ -145,43 +165,94 @@
       state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       render();
     });
-    rootEl.querySelector('#missing-only').addEventListener('change', e => {
-      state.missingOnly = e.target.checked;
-      if (state.missingOnly) {
-        state.ownedOnly = false;
-        rootEl.querySelector('#owned-only').checked = false;
-      }
+    // Die drei Besitz-Filter schließen sich gegenseitig aus (nur einer aktiv).
+    const setExclusive = active => {
+      state.missingOnly = active === 'missing';
+      state.ownedOnly   = active === 'owned';
+      state.proxyOnly   = active === 'proxy';
+      rootEl.querySelector('#missing-only').checked = state.missingOnly;
+      rootEl.querySelector('#owned-only').checked   = state.ownedOnly;
+      rootEl.querySelector('#proxy-only').checked   = state.proxyOnly;
       renderGrid(); renderStats();
-    });
-    rootEl.querySelector('#owned-only').addEventListener('change', e => {
-      state.ownedOnly = e.target.checked;
-      if (state.ownedOnly) {
-        state.missingOnly = false;
-        rootEl.querySelector('#missing-only').checked = false;
-      }
-      renderGrid(); renderStats();
-    });
+    };
+    rootEl.querySelector('#missing-only').addEventListener('change', e => setExclusive(e.target.checked ? 'missing' : null));
+    rootEl.querySelector('#owned-only').addEventListener('change', e => setExclusive(e.target.checked ? 'owned' : null));
+    rootEl.querySelector('#proxy-only').addEventListener('change', e => setExclusive(e.target.checked ? 'proxy' : null));
     rootEl.querySelector('#show-alts').addEventListener('change', e => {
       state.showAlts = e.target.checked;
       Prefs.set('showAlts', state.showAlts);
       renderGrid(); renderStats();
     });
+    rootEl.querySelector('#proxies-export').addEventListener('click', exportProxies);
     rootEl.querySelector('#reset-filters').addEventListener('click', () => {
       state.query = '';
       state.colors = [];
       state.type = null;
       state.rarity = null;
-      state.minCost = '';
-      state.maxCost = '';
+      state.levels = [];
       state.missingOnly = false;
       state.ownedOnly = false;
+      state.proxyOnly = false;
       render();
     });
   }
 
+  // Proxy-Kopien der Sammlung als einfache Liste in die Zwischenablage.
+  function exportProxies() {
+    const coll = state.collection;
+    const counts = new Map();
+    for (const c of Object.values(coll.copies || {})) {
+      if (!c.isProxy) continue;
+      counts.set(c.variant, (counts.get(c.variant) || 0) + 1);
+    }
+    if (!counts.size) { showProxiesMsg('Keine Proxies in der Sammlung.', 'err'); return; }
+    const lines = [];
+    let total = 0;
+    for (const [variant, n] of Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
+      const info = CardDB.allVariants.get(variant);
+      const card = info ? CardDB.byId.get(info.cardId) : null;
+      const name = card ? card.name : variant;
+      const id = card ? card.id : variant;
+      lines.push(`${n} ${name} ${id}`);
+      total += n;
+    }
+    const text = lines.join('\n') + '\n';
+    const finish = ok => showProxiesMsg(ok ? `${total} Proxies (${counts.size} unique) kopiert.` : 'Kopieren fehlgeschlagen.', ok ? 'ok' : 'err');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => finish(true), () => proxyFallbackCopy(text, finish));
+    } else {
+      proxyFallbackCopy(text, finish);
+    }
+  }
+
+  function proxyFallbackCopy(text, finish) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    finish(ok);
+  }
+
+  function showProxiesMsg(msg, kind) {
+    const el = rootEl.querySelector('#proxies-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'text-xs ' + (kind === 'err' ? 'text-red-400' : kind === 'ok' ? 'text-emerald-400' : 'text-slate-400');
+  }
+
+  const COLOR_ORDER = ['Red', 'Blue', 'Green', 'Yellow', 'Black', 'Purple', 'White'];
   function renderColorPills() {
     const wrap = rootEl.querySelector('#color-pills');
-    wrap.innerHTML = CardDB.colors.map(c => {
+    const orderedColors = CardDB.colors.slice().sort((a, b) => {
+      const ai = COLOR_ORDER.indexOf(a), bi = COLOR_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+    wrap.innerHTML = orderedColors.map(c => {
       const active = state.colors.includes(c);
       return `<button data-color="${c}" class="color-pill px-2 py-1 rounded text-xs font-bold color-${c} ${active ? 'ring-2 ring-amber-400' : 'opacity-60 hover:opacity-100'}">${c}</button>`;
     }).join('');
@@ -191,6 +262,24 @@
         if (state.colors.includes(c)) state.colors = state.colors.filter(x => x !== c);
         else state.colors = state.colors.concat([c]);
         renderColorPills(); renderGrid(); renderStats();
+      });
+    });
+  }
+
+  const LEVELS = [2, 3, 4, 5, 6, 7];
+  function renderLevelPills() {
+    const wrap = rootEl.querySelector('#level-pills');
+    if (!wrap) return;
+    wrap.innerHTML = LEVELS.map(lv => {
+      const active = state.levels.includes(lv);
+      return `<button data-level="${lv}" class="px-2 py-1 rounded text-xs font-bold border ${active ? 'bg-amber-500 text-slate-900 border-amber-500' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'}">${lv}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-level]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const lv = Number(btn.dataset.level);
+        if (state.levels.includes(lv)) state.levels = state.levels.filter(x => x !== lv);
+        else state.levels = state.levels.concat([lv]);
+        renderLevelPills(); renderGrid(); renderStats();
       });
     });
   }
@@ -311,13 +400,13 @@
   }
 
   function filteredCards() {
+    // Rarity wird entry-basiert gefiltert (Alt-Arts = "Alternative Art"),
+    // daher hier nicht an die karten-basierte Suche weitergeben.
     return CardDB.search(state.query, {
       set: state.selectedSet,
       colors: state.colors,
       type: state.type,
-      rarity: state.rarity,
-      minCost: state.minCost,
-      maxCost: state.maxCost,
+      levels: state.levels,
       sortBy: state.sortBy,
       sortDir: state.sortDir
     });
@@ -338,29 +427,27 @@
     }
     const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
     const variantOwned = k => { const s = idx[k]; return s ? (s.real + s.proxy) : 0; };
+    const variantProxy = k => { const s = idx[k]; return s ? s.proxy : 0; };
+
+    // Filter verketten (alle auf list aufbauen, nicht auf out).
+    let list = out;
+    // Rarity entry-basiert (Alt-Arts = "Alternative Art").
+    if (state.rarity) list = list.filter(e => entryRarity(e) === state.rarity);
     if (state.missingOnly) {
-      if (state.showAlts) {
-        return out.filter(e => variantOwned(e.variantKey) === 0);
-      }
-      return out.filter(e => {
-        for (const v of CardDB.variantsOf(e.card)) {
-          if (variantOwned(v.key) > 0) return false;
-        }
-        return true;
-      });
+      list = state.showAlts
+        ? list.filter(e => variantOwned(e.variantKey) === 0)
+        : list.filter(e => !CardDB.variantsOf(e.card).some(v => variantOwned(v.key) > 0));
+    } else if (state.ownedOnly) {
+      list = state.showAlts
+        ? list.filter(e => variantOwned(e.variantKey) > 0)
+        : list.filter(e => CardDB.variantsOf(e.card).some(v => variantOwned(v.key) > 0));
     }
-    if (state.ownedOnly) {
-      if (state.showAlts) {
-        return out.filter(e => variantOwned(e.variantKey) > 0);
-      }
-      return out.filter(e => {
-        for (const v of CardDB.variantsOf(e.card)) {
-          if (variantOwned(v.key) > 0) return true;
-        }
-        return false;
-      });
+    if (state.proxyOnly) {
+      list = state.showAlts
+        ? list.filter(e => variantProxy(e.variantKey) > 0)
+        : list.filter(e => CardDB.variantsOf(e.card).some(v => variantProxy(v.key) > 0));
     }
-    return out;
+    return list;
   }
 
   function renderGrid() {
@@ -558,14 +645,14 @@
     const freeReal = s.freeReal;
     const inUseReal = Math.max(0, count - freeReal);
     return `
-      <div class="card-tile ${missing ? 'missing' : ''} ${playset ? 'playset' : ''}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}">
+      <div class="card-tile ${missing ? 'missing' : ''} ${playset ? 'playset' : ''} ${proxy > 0 ? 'tile-proxy-slotted' : ''}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}">
         <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(card.name)}" />
         ${badge}
         <span class="tile-note">${Notes.iconHtml(!!note)}</span>
         ${renderPriceRow(card.id)}
         <div class="p-2 pt-1 flex items-center gap-2">
           <div class="min-w-0 flex-1">
-            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}${state.showAlts && entry.isAlt ? ` <span class="text-amber-400">·${entry.altIdx}</span>` : ''}</div>
+            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${entryRarity(entry) ? ` <span class="text-slate-300">${escapeHtml(rarityLabel(entryRarity(entry)))}</span>` : ''}${state.showAlts && entry.isAlt ? ` <span class="text-amber-400">·${entry.altIdx}</span>` : ''}</div>
             <div class="text-sm font-semibold truncate" title="${escapeAttr(card.name)}">${escapeHtml(card.name)}</div>
             ${count > 0 ? `<div class="text-[10px] text-slate-500" title="frei / in Decks">${freeReal} frei${inUseReal > 0 ? ` · ${inUseReal} in Decks` : ''}</div>` : ''}
           </div>
@@ -646,7 +733,7 @@
         <div class="modal-content w-[920px] max-w-[95vw]">
           <div class="flex justify-between items-start mb-3">
             <div>
-              <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)} · ${escapeHtml(card.set)} · ${escapeHtml(card.rarity || '')}</div>
+              <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)} · ${escapeHtml(card.set)} · ${escapeHtml(rarityLabel(card.rarity || ''))}</div>
               <h2 class="text-2xl font-bold">${escapeHtml(card.name)}</h2>
               <div class="flex gap-2 mt-1 text-xs flex-wrap">
                 ${colorPills}
