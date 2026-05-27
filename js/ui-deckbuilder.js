@@ -110,6 +110,9 @@
     });
   }
 
+  // Wants- und Trade-Listen sind reine Kartenlisten (kein Besitz-/Slot-Abgleich).
+  function isListKind(kind) { return kind === 'wants' || kind === 'trade'; }
+
   function renderDeckList() {
     const el = rootEl.querySelector('#deck-list');
     // Pinned "Main Wants" oben
@@ -133,16 +136,18 @@
       return;
     }
     const idx = Store.buildVariantIndex(collectionCache);
-    el.innerHTML = mainWantsHtml + state.decksState.decks.map(d => {
+
+    const renderItem = d => {
       const active = d.id === state.activeDeckId;
       const total = d.entries.reduce((s, e) => s + e.count, 0);
-      // Wants-Listen sind per Definition "alles fehlt" — kein Komplett-Marker.
-      const complete = d.kind !== 'wants' && total > 0 && d.entries.every(e =>
+      // Wants-/Trade-Listen sind reine Kartenlisten — kein Komplett-Marker.
+      const listMode = isListKind(d.kind);
+      const complete = !listMode && total > 0 && d.entries.every(e =>
         Store.assignedTo(collectionCache, d.id, e.variant) >= e.count
       );
       // Slottable: noch offene Slots UND mindestens 1 freie Kopie passend dazu
       let slottable = false;
-      if (!complete && d.kind !== 'wants' && total > 0) {
+      if (!complete && !listMode && total > 0) {
         for (const e of d.entries) {
           const assigned = Store.assignedTo(collectionCache, d.id, e.variant);
           if (assigned >= e.count) continue;
@@ -169,7 +174,29 @@
         </button>
         <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
       </div>`;
-    }).join('');
+    };
+
+    // Gruppiert nach Art: Decks / Wants / Trades.
+    const GROUPS = [
+      { kind: 'wants', label: 'Wants' },
+      { kind: 'trade', label: 'Trades' },
+      { kind: 'deck',  label: 'Decks' }
+    ];
+    let groupedHtml = '';
+    for (const g of GROUPS) {
+      const items = state.decksState.decks.filter(d => d.kind === g.kind);
+      if (!items.length) continue;
+      groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">${g.label} · ${items.length}</div>`
+        + `<div class="space-y-1">${items.map(renderItem).join('')}</div>`;
+    }
+    // Unbekannte Arten (Fallback) ans Ende.
+    const known = new Set(GROUPS.map(g => g.kind));
+    const rest = state.decksState.decks.filter(d => !known.has(d.kind));
+    if (rest.length) {
+      groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">Sonstige · ${rest.length}</div>`
+        + `<div class="space-y-1">${rest.map(renderItem).join('')}</div>`;
+    }
+    el.innerHTML = mainWantsHtml + groupedHtml;
 
     el.querySelectorAll('.deck-item').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -207,7 +234,7 @@
     let missingCmSum = 0;
     let missingCmCount = 0;
     let missingNoCm = 0;
-    const isWants = deck.kind === 'wants';
+    const isWants = isListKind(deck.kind);
     if (window.CM && CM.hasData()) {
       for (const entry of deck.entries) {
         const need = isWants
@@ -398,7 +425,7 @@
 
   function renderEntryTile(entry) {
     const deck = currentDeck();
-    const isWants = deck && deck.kind === 'wants';
+    const isWants = deck && isListKind(deck.kind);
     const card = CardDB.byId.get(entry.cardId);
     const name = card ? card.name : entry.cardId;
     const cm = (window.CM && CM.hasData()) ? CM.get(entry.cardId) : null;
@@ -608,7 +635,7 @@
     const [cardId, variant] = key.split('|');
     Store.addToDeck(deck, cardId, variant, delta);
     // Wenn Soll unter den Zugewiesenen-Stand fällt, überzählige Slots freigeben.
-    if (delta < 0 && deck.kind !== 'wants') {
+    if (delta < 0 && !isListKind(deck.kind)) {
       const entry = deck.entries.find(e => e.cardId === cardId && e.variant === variant);
       const assigned = Store.assignedTo(collectionCache, deck.id, variant);
       const newCount = entry ? entry.count : 0;
@@ -624,7 +651,7 @@
 
   function modifySlot(key, delta) {
     const deck = currentDeck();
-    if (!deck || deck.kind === 'wants') return;
+    if (!deck || isListKind(deck.kind)) return;
     const [cardId, variant] = key.split('|');
     if (delta > 0) {
       // Slot+ nur erlaubt wenn Bedarf noch nicht voll
@@ -732,7 +759,7 @@
       btn.addEventListener('click', () => {
         const [cardId, variant] = btn.dataset.add.split('|');
         Store.addToDeck(deck, cardId, variant, 1);
-        if (deck.kind !== 'wants') {
+        if (!isListKind(deck.kind)) {
           Store.autoClaim(collectionCache, deck.id, variant, 1);
         }
         Store.saveDecks(state.decksState);
@@ -744,7 +771,7 @@
   }
 
   function exportMissing(deck) {
-    const isWants = deck.kind === 'wants';
+    const isWants = isListKind(deck.kind);
     const missingEntries = deck.entries
       .map(e => ({
         cardId: e.cardId,
@@ -1101,8 +1128,8 @@
 
   function computeDeckMissing(deck) {
     // Pro Eintrag: echter Slot-Fehlbestand (Proxies zählen als „fehlt", weil ersetzt).
-    // Wants-Listen sind explizit Listen fehlender Karten — der ganze Count zählt.
-    const isWants = deck.kind === 'wants';
+    // Wants-/Trade-Listen sind explizit Listen fehlender Karten — der ganze Count zählt.
+    const isWants = isListKind(deck.kind);
     const out = [];
     for (const e of deck.entries) {
       const need = isWants

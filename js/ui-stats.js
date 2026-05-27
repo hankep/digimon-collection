@@ -5,12 +5,16 @@
 
   function init(el) {
     rootEl = el;
-    const coll = Store.loadCollection();
-    const stats = computeStats(coll);
-    render(stats);
+    rerender();
   }
 
-  function computeStats(coll) {
+  function rerender() {
+    const includeProxy = !!Prefs.get('statsInclProxy', false);
+    const coll = Store.loadCollection();
+    render(computeStats(coll, includeProxy), includeProxy);
+  }
+
+  function computeStats(coll, includeProxy) {
     const cards = CardDB.all;
     let uniqueOwned = 0;
     let totalCopies = 0;
@@ -20,23 +24,68 @@
     const perType = new Map();
     const topOwned = []; // { card, count }
 
+    const cmField = (id, field) => {
+      if (!window.CM || !CM.hasData()) return null;
+      const p = CM.get(id);
+      return (p && p[field] != null) ? p[field] : null;
+    };
+    const cmLow = id => cmField(id, 'low');
+
+    // Einmaliger Index über alle Copies (sonst O(Karten×Varianten×Copies)).
+    const vidx = Object.create(null);
+    for (const id in (coll.copies || {})) {
+      const c = coll.copies[id];
+      let slot = vidx[c.variant];
+      if (!slot) { slot = { real: 0, proxy: 0, paid: 0, priced: 0 }; vidx[c.variant] = slot; }
+      if (c.isProxy) {
+        slot.proxy++;
+      } else {
+        slot.real++;
+        if (c.price != null) { slot.paid += c.price; slot.priced++; }
+      }
+    }
+
     let totalProxies = 0;
+    let proxyValue = 0;        // CM-low-Wert aller Proxy-Kopien (immer voll)
+    // "Singles gekauft": Summe der an Copies hinterlegten Preise (tatsächlich bezahlt).
+    let paidTotal = 0, paidKnown = 0, paidCopies = 0;
+    // "Sammlungs Wert": CM-low / -trend aller echten Kopien (ohne Proxy).
+    let collLowValue = 0, collTrendValue = 0;
     for (const card of cards) {
       const variants = CardDB.variantsOf(card);
-      let copies = 0;
-      let cardValue = 0;
+      let realCopies = 0;
+      let realValue = 0;
+      let knownReal = 0;
       let proxies = 0;
       for (const v of variants) {
-        const prices = Store.getPrices(coll, v.key);
-        copies += prices.length;
-        for (const p of prices) if (p != null) cardValue += p;
-        proxies += Store.getProxyCount(coll, v.key);
+        const slot = vidx[v.key];
+        if (!slot) continue;
+        realCopies += slot.real;
+        realValue += slot.paid;
+        knownReal += slot.priced;
+        proxies += slot.proxy;
       }
       totalProxies += proxies;
-      const owned = (copies + proxies) > 0 ? 1 : 0;
+      const low = cmLow(card.id);
+      const proxyValForCard = low != null ? low * proxies : 0;
+      proxyValue += proxyValForCard;
+
+      // Effektive Werte je nach Proxy-Einbezug.
+      const copies = realCopies + (includeProxy ? proxies : 0);
+      const cardValue = realValue + (includeProxy ? proxyValForCard : 0);
+      const owned = copies > 0 ? 1 : 0;
 
       uniqueOwned += owned;
       totalCopies += copies;
+
+      // Singles gekauft (bezahlte Preise, echte Kopien)
+      paidTotal += realValue;
+      paidKnown += knownReal;
+      paidCopies += realCopies;
+      // Sammlungs Wert (CM low / trend, ohne Proxy)
+      if (low != null) collLowValue += low * realCopies;
+      const trend = cmField(card.id, 'trend');
+      if (trend != null) collTrendValue += trend * realCopies;
 
       // Set
       const s = perSet.get(card.set) || { total: 0, owned: 0, copies: 0, value: 0 };
@@ -64,7 +113,7 @@
       if (copies > 0) topOwned.push({ card, count: copies, value: cardValue });
     }
 
-    const value = Store.collectionValue(coll);
+    const singlesPaid = { total: paidTotal, known: paidKnown, copies: paidCopies };
 
     topOwned.sort((a, b) => b.count - a.count);
 
@@ -73,7 +122,10 @@
       totalCards: cards.length,
       totalCopies,
       totalProxies,
-      value,
+      proxyValue,
+      singlesPaid,
+      collLowValue,
+      collTrendValue,
       perSet: Array.from(perSet.entries())
         .map(([code, v]) => ({ code, ...v }))
         .sort((a, b) => a.code.localeCompare(b.code)),
@@ -86,10 +138,16 @@
     };
   }
 
-  function render(s) {
+  function render(s, includeProxy) {
     const pctTotal = s.totalCards ? Math.round(s.uniqueOwned / s.totalCards * 100) : 0;
     rootEl.innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div class="flex justify-end mb-3">
+        <label class="flex items-center gap-2 text-sm bg-slate-800 rounded px-3 py-1.5 cursor-pointer">
+          <input id="stats-incl-proxy" type="checkbox" ${includeProxy ? 'checked' : ''} />
+          Inkl. Proxy
+        </label>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <div class="bg-slate-800 rounded p-4">
           <div class="text-xs text-slate-400 uppercase">Karten gesamt</div>
           <div class="text-3xl font-bold">${s.totalCards}</div>
@@ -102,16 +160,31 @@
         <div class="bg-slate-800 rounded p-4">
           <div class="text-xs text-slate-400 uppercase">Kopien total</div>
           <div class="text-3xl font-bold">${s.totalCopies}</div>
-          ${s.totalProxies > 0 ? `<div class="text-xs text-purple-400">+ ${s.totalProxies} Proxy</div>` : ''}
+          ${s.totalProxies > 0 ? `<div class="text-xs text-purple-400">${includeProxy ? `inkl. ${s.totalProxies} Proxy` : `+ ${s.totalProxies} Proxy`}</div>` : ''}
         </div>
         <div class="bg-slate-800 rounded p-4">
-          <div class="text-xs text-slate-400 uppercase">Sammlungswert</div>
-          <div class="text-3xl font-bold text-emerald-400">${Fmt.eur(s.value.total)}</div>
-          <div class="text-xs text-slate-500">${s.value.known}/${s.value.copies} mit Preis</div>
+          <div class="text-xs text-slate-400 uppercase">Singles gekauft</div>
+          <div class="text-3xl font-bold text-emerald-400">${Fmt.eur(s.singlesPaid.total)}</div>
+          <div class="text-xs text-slate-500">${s.singlesPaid.known}/${s.singlesPaid.copies} mit Preis</div>
         </div>
         <div class="bg-slate-800 rounded p-4">
-          <div class="text-xs text-slate-400 uppercase">Sets</div>
-          <div class="text-3xl font-bold">${s.perSet.length}</div>
+          <div class="text-xs text-slate-400 uppercase">Sammlungs Wert</div>
+          <div class="flex items-baseline gap-3">
+            <div>
+              <div class="text-2xl font-bold text-emerald-400">${Fmt.eur(s.collLowValue)}</div>
+              <div class="text-[11px] text-slate-500 uppercase">low</div>
+            </div>
+            <div>
+              <div class="text-2xl font-bold text-sky-400">${Fmt.eur(s.collTrendValue)}</div>
+              <div class="text-[11px] text-slate-500 uppercase">trend</div>
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 mt-1">ohne Proxy</div>
+        </div>
+        <div class="bg-slate-800 rounded p-4">
+          <div class="text-xs text-slate-400 uppercase">Proxy Wert</div>
+          <div class="text-3xl font-bold text-purple-400">${Fmt.eur(s.proxyValue)}</div>
+          <div class="text-xs text-slate-500">${s.totalProxies} Proxy · CM low</div>
         </div>
       </div>
 
@@ -154,6 +227,12 @@
         </div>
       </div>
     `;
+
+    const cb = rootEl.querySelector('#stats-incl-proxy');
+    if (cb) cb.addEventListener('change', e => {
+      Prefs.set('statsInclProxy', e.target.checked);
+      rerender();
+    });
   }
 
   function renderBarRow(label, owned, total, copies, colorClass, value) {

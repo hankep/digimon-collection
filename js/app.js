@@ -5,6 +5,7 @@
     collection: { panel: 'tab-collection', initFn: () => UICollection.init(document.getElementById('tab-collection')) },
     decks:      { panel: 'tab-decks',      initFn: () => UIDeckbuilder.init(document.getElementById('tab-decks')) },
     wants:      { panel: 'tab-wants',      initFn: () => UIWants.init(document.getElementById('tab-wants')) },
+    trade:      { panel: 'tab-trade',      initFn: () => UITrade.init(document.getElementById('tab-trade')) },
     stats:      { panel: 'tab-stats',      initFn: () => UIStats.init(document.getElementById('tab-stats')) },
     io:         { panel: 'tab-io',         initFn: () => UIImportExport.init(document.getElementById('tab-io')) },
     user:       { panel: 'tab-user',       initFn: () => UIUser.init(document.getElementById('tab-user')) }
