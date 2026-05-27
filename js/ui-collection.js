@@ -14,6 +14,7 @@
     missingOnly: false,
     ownedOnly: true,
     proxyOnly: false,
+    availableOnly: false,     // besessen, aber mind. eine freie (keinem Deck zugewiesene) Kopie
     showAlts: false,
     setGroups: { BT: true, EX: true, ST: true, Andere: true }
   };
@@ -112,6 +113,10 @@
                 <input id="proxy-only" type="checkbox" ${state.proxyOnly ? 'checked' : ''} />
                 Nur Proxy
               </label>
+              <label class="flex items-center gap-2 text-sm" title="Nur Karten mit mindestens einer freien Kopie (besessen, aber keinem Deck zugewiesen)">
+                <input id="available-only" type="checkbox" ${state.availableOnly ? 'checked' : ''} />
+                Nur verfügbar
+              </label>
               <label class="flex items-center gap-2 text-sm" title="Alt-Arts als eigene Karten im Grid anzeigen">
                 <input id="show-alts" type="checkbox" ${state.showAlts ? 'checked' : ''} />
                 Alt-Arts einzeln
@@ -167,17 +172,20 @@
     });
     // Die drei Besitz-Filter schließen sich gegenseitig aus (nur einer aktiv).
     const setExclusive = active => {
-      state.missingOnly = active === 'missing';
-      state.ownedOnly   = active === 'owned';
-      state.proxyOnly   = active === 'proxy';
-      rootEl.querySelector('#missing-only').checked = state.missingOnly;
-      rootEl.querySelector('#owned-only').checked   = state.ownedOnly;
-      rootEl.querySelector('#proxy-only').checked   = state.proxyOnly;
+      state.missingOnly   = active === 'missing';
+      state.ownedOnly     = active === 'owned';
+      state.proxyOnly     = active === 'proxy';
+      state.availableOnly = active === 'available';
+      rootEl.querySelector('#missing-only').checked   = state.missingOnly;
+      rootEl.querySelector('#owned-only').checked     = state.ownedOnly;
+      rootEl.querySelector('#proxy-only').checked     = state.proxyOnly;
+      rootEl.querySelector('#available-only').checked = state.availableOnly;
       renderGrid(); renderStats();
     };
     rootEl.querySelector('#missing-only').addEventListener('change', e => setExclusive(e.target.checked ? 'missing' : null));
     rootEl.querySelector('#owned-only').addEventListener('change', e => setExclusive(e.target.checked ? 'owned' : null));
     rootEl.querySelector('#proxy-only').addEventListener('change', e => setExclusive(e.target.checked ? 'proxy' : null));
+    rootEl.querySelector('#available-only').addEventListener('change', e => setExclusive(e.target.checked ? 'available' : null));
     rootEl.querySelector('#show-alts').addEventListener('change', e => {
       state.showAlts = e.target.checked;
       Prefs.set('showAlts', state.showAlts);
@@ -193,6 +201,7 @@
       state.missingOnly = false;
       state.ownedOnly = false;
       state.proxyOnly = false;
+      state.availableOnly = false;
       render();
     });
   }
@@ -430,6 +439,7 @@
     const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
     const variantOwned = k => { const s = idx[k]; return s ? (s.real + s.proxy) : 0; };
     const variantProxy = k => { const s = idx[k]; return s ? s.proxy : 0; };
+    const variantFree  = k => { const s = idx[k]; return s ? (s.freeReal + s.freeProxy) : 0; };
 
     // Filter verketten (alle auf list aufbauen, nicht auf out).
     let list = out;
@@ -443,6 +453,11 @@
       list = state.showAlts
         ? list.filter(e => variantOwned(e.variantKey) > 0)
         : list.filter(e => CardDB.variantsOf(e.card).some(v => variantOwned(v.key) > 0));
+    } else if (state.availableOnly) {
+      // Verfügbar = mindestens eine freie Kopie (real oder Proxy), die keinem Deck zugewiesen ist.
+      list = state.showAlts
+        ? list.filter(e => variantFree(e.variantKey) > 0)
+        : list.filter(e => CardDB.variantsOf(e.card).some(v => variantFree(v.key) > 0));
     }
     if (state.proxyOnly) {
       list = state.showAlts

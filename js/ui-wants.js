@@ -11,6 +11,7 @@
   const SORT_KEY = 'wantsSort';
   const VIEW_KEY = 'wantsView';
   const BUCKET_KEY = 'wantsBuckets';
+  const GROUP_KEY = 'wantsGroupBy';   // 'source' (Quell-Liste) | 'rarity'
   const MAIN_PROXY = '__main_wants_proxy__';     // Proxies zählen NICHT als Besitz (Ersatz gewünscht)
   const MAIN_NOPROXY = '__main_wants_noproxy__'; // Proxies decken den Bedarf
   function isMainId(id) { return id === MAIN_PROXY || id === MAIN_NOPROXY; }
@@ -265,7 +266,15 @@
               <option value="rarity"     ${Prefs.get(SORT_KEY, 'price-desc') === 'rarity'     ? 'selected' : ''}>Rarity</option>
             </select>
           </label>
+          <label class="text-xs text-slate-400 flex items-center gap-1">
+            Gruppieren:
+            <select id="wants-group" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
+              <option value="source" ${Prefs.get(GROUP_KEY, 'source') === 'source' ? 'selected' : ''}>Nach Liste</option>
+              <option value="rarity" ${Prefs.get(GROUP_KEY, 'source') === 'rarity' ? 'selected' : ''}>Nach Rarity</option>
+            </select>
+          </label>
           <div class="text-sm text-slate-400">${blocks.length} Sets · ${grandTotal} Karten</div>
+          <button id="wants-export-all" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold" title="Alle sichtbaren Karten über alle Sets (mit aktiven Quellen-/Preisfiltern) als Cardmarket-kompatible Liste kopieren">Alles → Cardmarket</button>
         </div>
         <div class="text-xs text-slate-400 mt-2 mb-1">Einbezogene Quellen:</div>
         <div class="flex flex-wrap gap-2" id="wants-lists">${listChips}</div>
@@ -291,7 +300,10 @@
       .join(' ');
 
     const view = Prefs.get(VIEW_KEY, 'text');
-    const groupsHtml = block.groups.map(g => renderGroup(g, view)).join('');
+    const groupBy = Prefs.get(GROUP_KEY, 'source');
+    const groupsHtml = groupBy === 'rarity'
+      ? renderRarityGroups(block, view)
+      : block.groups.map(g => renderGroup(g, view)).join('');
 
     return `
       <div class="bg-slate-800 rounded p-3 mb-3 break-inside-avoid" data-set-block="${escapeAttr(block.code)}">
@@ -311,6 +323,26 @@
       </div>`;
   }
 
+  // Rendert die Item-Liste (Tabelle oder Bilder-Grid). group liefert listId/editable
+  // für die +/- Buttons (read-only via editable:false, z.B. bei Rarity-Gruppierung).
+  function renderItemsBody(items, view, group) {
+    if (view === 'images') {
+      return `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${items.map(it => renderImageTile(it, group)).join('')}</div>`;
+    }
+    // Bei Preis-Sortierung: Trennlinie am Übergang in ein neues Preis-Bracket einfärben.
+    const markBrackets = Prefs.get(SORT_KEY, 'price-desc') === 'price-desc';
+    let prevBucket = null;
+    return `<table class="wants-table"><tbody>${items.map((it, i) => {
+      let color = null;
+      if (markBrackets) {
+        const bk = bucketOf(it.price);
+        if (i > 0 && bk !== prevBucket) color = BUCKET_COLOR[bk];
+        prevBucket = bk;
+      }
+      return renderTextRow(it, group, color);
+    }).join('')}</tbody></table>`;
+  }
+
   // Eine Quell-Gruppe (Wants-Liste) innerhalb eines Set-Blocks.
   function renderGroup(group, view) {
     const isMain = isMainId(group.listId);
@@ -320,23 +352,29 @@
         <span class="text-xs text-slate-500">${groupTotal} Karten</span>
         ${isMain ? '<span class="text-[10px] text-slate-500 italic">(berechnet)</span>' : ''}
       </div>`;
+    return head + renderItemsBody(group.items, view, group);
+  }
 
-    // Bei Preis-Sortierung: Trennlinie am Übergang in ein neues Preis-Bracket einfärben.
-    const markBrackets = Prefs.get(SORT_KEY, 'price-desc') === 'price-desc';
-    let prevBucket = null;
-    const body = view === 'images'
-      ? `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${group.items.map(it => renderImageTile(it, group)).join('')}</div>`
-      : `<table class="wants-table"><tbody>${group.items.map((it, i) => {
-          let color = null;
-          if (markBrackets) {
-            const bk = bucketOf(it.price);
-            if (i > 0 && bk !== prevBucket) color = BUCKET_COLOR[bk];
-            prevBucket = bk;
-          }
-          return renderTextRow(it, group, color);
-        }).join('')}</tbody></table>`;
-
-    return head + body;
+  // Alternative Gruppierung: die set-aggregierten Items nach Rarity (seltenste
+  // zuerst). Quellenübergreifend aggregiert → read-only (keine +/- Buttons).
+  function renderRarityGroups(block, view) {
+    const roGroup = { listId: '', listName: '', editable: false };
+    const byRarity = new Map();
+    for (const it of block.items) {
+      const r = it.rarity || '—';
+      if (!byRarity.has(r)) byRarity.set(r, []);
+      byRarity.get(r).push(it);
+    }
+    return Array.from(byRarity.entries())
+      .sort((a, b) => (rarityRank(b[0]) - rarityRank(a[0])) || a[0].localeCompare(b[0]))
+      .map(([r, items]) => {
+        const total = items.reduce((s, it) => s + it.count, 0);
+        const head = `<div class="flex items-center gap-2 mt-3 mb-1">
+            <span class="text-sm font-semibold text-slate-200">${escapeHtml(r)}</span>
+            <span class="text-xs text-slate-500">${total} Karten</span>
+          </div>`;
+        return head + renderItemsBody(items, view, roGroup);
+      }).join('');
   }
 
   // Bilder-Ansicht im Collection-Stil: Bild, Preis, ID/Rarity, Name, Count-Badge
@@ -404,6 +442,15 @@
       Prefs.set(SORT_KEY, e.target.value);
       render();
     });
+
+    const groupSel = rootEl.querySelector('#wants-group');
+    if (groupSel) groupSel.addEventListener('change', e => {
+      Prefs.set(GROUP_KEY, e.target.value);
+      render();
+    });
+
+    const exportAllBtn = rootEl.querySelector('#wants-export-all');
+    if (exportAllBtn) exportAllBtn.addEventListener('click', exportAllForCardmarket);
 
     rootEl.querySelectorAll('#wants-lists input[data-list-id]').forEach(cb => {
       cb.addEventListener('change', () => {
@@ -489,6 +536,31 @@
     }
   }
 
+  // Full-Export über ALLE Sets, mit aktiven Filtern (ausgewählte Quellen +
+  // aktive Preisspannen — beides steckt bereits in collectBySet). Cardmarket-
+  // kompatibles Format: "Nx Name (CARDID) (V.M)".
+  function exportAllForCardmarket() {
+    const lists = candidateLists();
+    const selected = selectedIds(lists);
+    const blocks = collectBySet(lists, selected);
+    const lines = [];
+    let total = 0;
+    for (const block of blocks) {
+      for (const it of block.items) {
+        lines.push(`${it.count}x ${it.name} (${it.cardId})${versionSuffix(it.cardId, it.variant)}`);
+        total += it.count;
+      }
+    }
+    if (!lines.length) { alert('Nichts zu exportieren — prüfe die aktiven Filter (Quellen/Preisspannen).'); return; }
+    const text = lines.join('\n') + '\n';
+    const done = () => alert(`${total} Karten über ${blocks.length} Set(s) als Cardmarket-Liste kopiert.`);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
   function fallbackCopy(text) {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -507,6 +579,17 @@
     const full = card && card.raw && card.raw.tcgplayer_name;
     if (full) return String(full).replace(/\s*\/\/\s*/g, ' / ');
     return card ? card.name : fallback;
+  }
+
+  // " (V.N)" für Alt-Varianten (Cardmarket-Versionszählung: _P1 → V.2, _P2 → V.3 …),
+  // sonst "". Spiegelbildlich zum Cardmarket-Import (js/cardmarket.js).
+  function versionSuffix(cardId, variant) {
+    const card = CardDB.byId.get(cardId);
+    if (!card) return '';
+    if (variant === CardDB.mainVariantKey(card)) return '';
+    const alts = CardDB.variantsOf(card).filter(v => v.isAlt);
+    const idx = alts.findIndex(v => v.key === variant);
+    return idx < 0 ? '' : ` (V.${idx + 2})`;
   }
 
   function escapeHtml(s) {

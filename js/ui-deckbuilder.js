@@ -11,6 +11,7 @@
     pickerShowAlts: false,
     deckSortBy: 'id',  // id | name | price-asc | price-desc
     deckGroupBy: 'none', // level | cost | type | none
+    deckMissingOnly: false, // nur Einträge mit fehlenden echten Kopien anzeigen
     mainWantsProxy: true, // Proxy-Wants in Main-Wants einbeziehen
     mainWantsSort: 'id'   // id | price-desc
   };
@@ -296,6 +297,10 @@
           <option value="price-desc" ${state.deckSortBy === 'price-desc' ? 'selected' : ''}>Preis ↓</option>
           <option value="status"     ${state.deckSortBy === 'status'     ? 'selected' : ''}>Status (slottbar → fehlend → fertig)</option>
         </select>
+        ${!isListKind(deck.kind) ? `<label class="flex items-center gap-1 text-slate-300" title="Nur Karten mit fehlenden echten Kopien (Proxies zählen als fehlend)">
+          <input id="deck-missing-only" type="checkbox" ${state.deckMissingOnly ? 'checked' : ''} />
+          Nur fehlende
+        </label>` : ''}
         <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-1 rounded font-semibold"
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
         <button id="export-missing" class="bg-amber-500 text-slate-900 px-3 py-1 rounded font-semibold"
@@ -326,6 +331,11 @@
     rootEl.querySelector('#sort-by').addEventListener('change', e => {
       state.deckSortBy = e.target.value;
       renderDeckDetail();
+    });
+    const deckMissingCb = rootEl.querySelector('#deck-missing-only');
+    if (deckMissingCb) deckMissingCb.addEventListener('change', e => {
+      state.deckMissingOnly = e.target.checked;
+      renderDeckEntries(deck);
     });
     rootEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
     rootEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
@@ -378,13 +388,26 @@
       entriesEl.innerHTML = `<div class="text-slate-500 text-sm">Noch keine Karten. Füge welche über den Picker rechts hinzu.</div>`;
       return;
     }
-    const groups = groupEntries(deck.entries, state.deckGroupBy);
     // Indizes einmal pro Render bauen und an alle Tiles durchreichen (statt
     // O(Copies)-Scans pro Eintrag). da = Slots dieses Decks, vIdx = Frei-Pool.
     const ctx = {
       vIdx: Store.buildVariantIndex(collectionCache),
       da: Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {}
     };
+    // Filter „Nur fehlende": Einträge mit fehlenden ECHTEN Kopien (Proxies zählen
+    // als fehlend). Nur für echte Decks — Wants/Trade sind reine Listen.
+    let visibleEntries = deck.entries;
+    if (state.deckMissingOnly && !isListKind(deck.kind)) {
+      visibleEntries = visibleEntries.filter(e => {
+        const sa = ctx.da[e.variant];
+        return e.count - (sa ? sa.real : 0) > 0;
+      });
+      if (!visibleEntries.length) {
+        entriesEl.innerHTML = `<div class="text-slate-500 text-sm">Keine fehlenden Karten — alle Slots sind mit echten Kopien gefüllt.</div>`;
+        return;
+      }
+    }
+    const groups = groupEntries(visibleEntries, state.deckGroupBy);
     entriesEl.innerHTML = groups.map(g => `
       <div>
         ${g.label ? `<div class="text-xs uppercase text-slate-500 font-bold mb-2">${escapeHtml(g.label)} <span class="opacity-60">(${g.entries.reduce((s,e)=>s+e.count,0)})</span></div>` : ''}
