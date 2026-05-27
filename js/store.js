@@ -97,6 +97,31 @@
     return idx[variant] || { real: 0, proxy: 0, freeReal: 0, freeProxy: 0, assignedReal: 0, assignedProxy: 0 };
   }
 
+  // Wie buildVariantIndex, aber PRO Deck: idx[deckId][variant] = { real, proxy }.
+  // buildVariantIndex aggregiert assignedReal/Proxy über alle Decks und kann daher
+  // nicht "wie viele von Variante V hängen an Deck D" beantworten — dafür dieser
+  // zweite Ein-Pass-Index. Freie Kopien (deckId == null) werden übersprungen
+  // (Frei-Pool kommt aus buildVariantIndex().freeReal/freeProxy).
+  function buildDeckAssignedIndex(coll) {
+    const idx = Object.create(null);
+    const src = coll.copies || {};
+    for (const id in src) {
+      const c = src[id];
+      if (c.deckId == null) continue;
+      let deck = idx[c.deckId];
+      if (!deck) { deck = Object.create(null); idx[c.deckId] = deck; }
+      let slot = deck[c.variant];
+      if (!slot) { slot = { real: 0, proxy: 0 }; deck[c.variant] = slot; }
+      if (c.isProxy) slot.proxy++; else slot.real++;
+    }
+    return idx;
+  }
+
+  function deckAssignedStats(idx, deckId, variant) {
+    const d = idx[deckId];
+    return (d && d[variant]) || { real: 0, proxy: 0 };
+  }
+
   function priceSortCmp(a, b) {
     const pa = a.price, pb = b.price;
     if (pa == null && pb == null) return 0;
@@ -455,6 +480,8 @@
     copiesOfVariant,
     buildVariantIndex,
     variantStats,
+    buildDeckAssignedIndex,
+    deckAssignedStats,
     createCopy,
     deleteCopy,
     assignToDeck,

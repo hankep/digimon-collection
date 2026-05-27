@@ -341,7 +341,9 @@
 
   function renderStats() {
     const el = rootEl.querySelector('#stats-bar');
-    const cards = filteredCards();
+    // renderGrid füllt filteredCardsCache vor jedem renderStats; Fallback für
+    // den seltenen Fall, dass renderStats allein läuft.
+    const cards = state.filteredCardsCache || filteredCards();
     const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
     let ownedUnique = 0, totalCopies = 0, totalProxies = 0;
     for (const c of cards) {
@@ -452,7 +454,9 @@
 
   function renderGrid() {
     state.variantIdx = Store.buildVariantIndex(state.collection);
-    lastFilteredCards = expandToEntries(filteredCards());
+    // Suchergebnis cachen, damit renderStats es nicht ein zweites Mal berechnet.
+    state.filteredCardsCache = filteredCards();
+    lastFilteredCards = expandToEntries(state.filteredCardsCache);
     renderedCount = 0;
     const grid = rootEl.querySelector('#card-grid');
     grid.innerHTML = '';
@@ -502,6 +506,9 @@
         }
         Store.saveCollection(state.collection);
         state.variantIdx = Store.buildVariantIndex(state.collection);
+        // Counts haben sich geändert → Cache verwerfen, damit renderStats unter
+        // aktivem „Nur fehlende/Besitz/Proxy"-Filter korrekt neu zählt.
+        state.filteredCardsCache = null;
         updateTileCount(btn.closest('.card-tile'), variant);
         renderStats(); renderSetList();
       });
@@ -677,15 +684,18 @@
   function renderDeckUsage(card) {
     const decksState = Store.loadDecks();
     if (!decksState || !decksState.decks || !decksState.decks.length) return '';
+    const dIdx = Store.buildDeckAssignedIndex(state.collection);
     // Pro Deck eine Zeile mit allen Einträgen dieser Card (alle Varianten zusammen).
     const rows = [];
     for (const d of decksState.decks) {
       const matching = (d.entries || []).filter(e => e.cardId === card.id);
       if (!matching.length) continue;
+      const da = dIdx[d.id] || {};
       const lines = matching.map(e => {
-        const assigned = (d.kind === 'wants') ? null : Store.assignedTo(state.collection, d.id, e.variant);
-        const assignedReal = (d.kind === 'wants') ? null : Store.assignedRealTo(state.collection, d.id, e.variant);
-        const assignedProxy = (d.kind === 'wants') ? null : Store.assignedProxyTo(state.collection, d.id, e.variant);
+        const sa = da[e.variant];
+        const assigned = (d.kind === 'wants') ? null : (sa ? sa.real + sa.proxy : 0);
+        const assignedReal = (d.kind === 'wants') ? null : (sa ? sa.real : 0);
+        const assignedProxy = (d.kind === 'wants') ? null : (sa ? sa.proxy : 0);
         if (d.kind === 'wants') {
           return `<span class="text-amber-400">${e.count}×</span> <span class="font-mono text-slate-400">${escapeHtml(e.variant)}</span>`;
         }
@@ -876,6 +886,7 @@
 
   function refreshVariant(block, variantKey) {
     state.variantIdx = Store.buildVariantIndex(state.collection);
+    state.filteredCardsCache = null;  // Counts geändert → renderStats neu zählen lassen
     const body = block.querySelector(`[data-variant-body="${cssEscape(variantKey)}"]`);
     body.innerHTML = renderVariantBody(variantKey);
     wireBlock(block, variantKey);

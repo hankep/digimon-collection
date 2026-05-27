@@ -53,10 +53,12 @@
         slot.count += e.count;
       }
     }
+    const vIdx = Store.buildVariantIndex(coll);
     const entries = [];
     for (const slot of demand.values()) {
-      const ownedReal = Store.ownedTotalReal(coll, slot.variant);
-      const supply = includeProxy ? ownedReal : ownedReal + Store.ownedTotalProxy(coll, slot.variant);
+      const vs = vIdx[slot.variant];
+      const ownedReal = vs ? vs.real : 0;
+      const supply = includeProxy ? ownedReal : ownedReal + (vs ? vs.proxy : 0);
       const missing = Math.max(0, slot.count - supply);
       if (missing > 0) entries.push({ cardId: slot.cardId, variant: slot.variant, count: missing });
     }

@@ -136,29 +136,34 @@
       return;
     }
     const idx = Store.buildVariantIndex(collectionCache);
+    const dIdx = Store.buildDeckAssignedIndex(collectionCache);
 
     const renderItem = d => {
       const active = d.id === state.activeDeckId;
       const total = d.entries.reduce((s, e) => s + e.count, 0);
+      const da = dIdx[d.id] || {};   // variant -> { real, proxy } für dieses Deck
       // Wants-/Trade-Listen sind reine Kartenlisten — kein Komplett-Marker.
       const listMode = isListKind(d.kind);
-      const complete = !listMode && total > 0 && d.entries.every(e =>
-        Store.assignedTo(collectionCache, d.id, e.variant) >= e.count
-      );
+      const complete = !listMode && total > 0 && d.entries.every(e => {
+        const s = da[e.variant];
+        return (s ? s.real + s.proxy : 0) >= e.count;
+      });
       // Slottable: noch offene Slots UND mindestens 1 freie Kopie passend dazu
       let slottable = false;
       if (!complete && !listMode && total > 0) {
         for (const e of d.entries) {
-          const assigned = Store.assignedTo(collectionCache, d.id, e.variant);
+          const sa = da[e.variant];
+          const assigned = sa ? sa.real + sa.proxy : 0;
           if (assigned >= e.count) continue;
           const s = idx[e.variant];
           if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
         }
       }
       // Vollständig, aber mit zugewiesenen Proxies → Name lila markieren.
-      const hasSlottedProxy = complete && d.entries.some(e =>
-        Store.assignedProxyTo(collectionCache, d.id, e.variant) > 0
-      );
+      const hasSlottedProxy = complete && d.entries.some(e => {
+        const s = da[e.variant];
+        return s && s.proxy > 0;
+      });
       const cls = active
         ? 'bg-amber-500 text-slate-900'
         : (complete
@@ -236,10 +241,12 @@
     let missingNoCm = 0;
     const isWants = isListKind(deck.kind);
     if (window.CM && CM.hasData()) {
+      const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
       for (const entry of deck.entries) {
+        const sa = da[entry.variant];
         const need = isWants
           ? entry.count
-          : Math.max(0, entry.count - Store.assignedRealTo(collectionCache, deck.id, entry.variant));
+          : Math.max(0, entry.count - (sa ? sa.real : 0));
         if (!need) continue;
         const p = CM.get(entry.cardId);
         if (p && p.low != null) {
@@ -372,11 +379,17 @@
       return;
     }
     const groups = groupEntries(deck.entries, state.deckGroupBy);
+    // Indizes einmal pro Render bauen und an alle Tiles durchreichen (statt
+    // O(Copies)-Scans pro Eintrag). da = Slots dieses Decks, vIdx = Frei-Pool.
+    const ctx = {
+      vIdx: Store.buildVariantIndex(collectionCache),
+      da: Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {}
+    };
     entriesEl.innerHTML = groups.map(g => `
       <div>
         ${g.label ? `<div class="text-xs uppercase text-slate-500 font-bold mb-2">${escapeHtml(g.label)} <span class="opacity-60">(${g.entries.reduce((s,e)=>s+e.count,0)})</span></div>` : ''}
         <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3">
-          ${g.entries.map(entry => renderEntryTile(entry)).join('')}
+          ${g.entries.map(entry => renderEntryTile(entry, ctx)).join('')}
         </div>
       </div>
     `).join('');
@@ -422,7 +435,7 @@
     });
   }
 
-  function renderEntryTile(entry) {
+  function renderEntryTile(entry, ctx) {
     const deck = currentDeck();
     const isWants = deck && isListKind(deck.kind);
     const card = CardDB.byId.get(entry.cardId);
@@ -452,16 +465,18 @@
       </div>`;
     }
 
-    // Slot-Sicht: was diesem konkreten Deck zugewiesen ist
-    const assignedReal = Store.assignedRealTo(collectionCache, deck.id, entry.variant);
-    const assignedProxy = Store.assignedProxyTo(collectionCache, deck.id, entry.variant);
+    // Slot-Sicht: was diesem konkreten Deck zugewiesen ist (aus vorgebautem Index)
+    const sa = ctx.da[entry.variant];
+    const assignedReal = sa ? sa.real : 0;
+    const assignedProxy = sa ? sa.proxy : 0;
     const assignedTotal = assignedReal + assignedProxy;
     const slotMissing = Math.max(0, entry.count - assignedTotal);
     const realSlotMissing = Math.max(0, entry.count - assignedReal);
     const complete = slotMissing === 0;
-    // Globaler Frei-Pool zur Info
-    const freeReal = Store.freeCount(collectionCache, entry.variant);
-    const freeProxy = Store.freeProxyCount(collectionCache, entry.variant);
+    // Globaler Frei-Pool zur Info (aus vorgebautem Variant-Index)
+    const vs = ctx.vIdx[entry.variant];
+    const freeReal = vs ? vs.freeReal : 0;
+    const freeProxy = vs ? vs.freeProxy : 0;
 
     const totalFree = freeReal + freeProxy;
     const ownedClass = complete ? 'text-emerald-400' : (totalFree > 0 ? 'text-sky-400' : 'text-slate-500');
@@ -573,20 +588,21 @@
     if (mode === 'status') {
       const deck = currentDeck();
       const idx = Store.buildVariantIndex(collectionCache);
+      const da = deck ? (Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {}) : {};
       // 0 = slottbar (fehlt + frei verfügbar), 1 = fehlt aber nicht verfügbar, 2 = fertig
-      const rank = e => {
+      const rankOf = e => {
         if (!deck) return 2;
-        const assigned = Store.assignedTo(collectionCache, deck.id, e.variant);
+        const sa = da[e.variant];
+        const assigned = sa ? sa.real + sa.proxy : 0;
         if (assigned >= e.count) return 2;
         const s = idx[e.variant];
         const free = s ? (s.freeReal + s.freeProxy) : 0;
         return free > 0 ? 0 : 1;
       };
-      return entries.slice().sort((a, b) => {
-        const ra = rank(a), rb = rank(b);
-        if (ra !== rb) return ra - rb;
-        return byId(a, b);
-      });
+      // Rang einmal pro Eintrag berechnen (nicht im Comparator → O(Copies + n log n)).
+      const ranked = entries.map(e => ({ e, r: rankOf(e) }));
+      ranked.sort((a, b) => (a.r !== b.r ? a.r - b.r : byId(a.e, b.e)));
+      return ranked.map(x => x.e);
     }
     if (mode === 'name') return entries.slice().sort(byName);
     return entries.slice().sort(byId);
@@ -645,11 +661,12 @@
       type: state.pickerType,
       sortBy: 'name'
     });
+    // Einmal pro Render bauen — für den Owned-Filter UND die Tile-Counts unten.
+    const vIdx = Store.buildVariantIndex(collectionCache);
     if (state.pickerOwnedOnly) {
-      const idx = Store.buildVariantIndex(collectionCache);
       results = results.filter(c => {
         for (const v of CardDB.variantsOf(c)) {
-          const s = idx[v.key];
+          const s = vIdx[v.key];
           if (s && (s.real + s.proxy) > 0) return true;
         }
         return false;
@@ -679,8 +696,9 @@
     } else {
       el.innerHTML = limited.map(entry => {
         const { card, variant, isAlt, altIdx } = entry;
-        const realThisVariant = Store.getCount(collectionCache, variant);
-        const proxyThisVariant = Store.getProxyCount(collectionCache, variant);
+        const vsThis = vIdx[variant];
+        const realThisVariant = vsThis ? vsThis.real : 0;
+        const proxyThisVariant = vsThis ? vsThis.proxy : 0;
         let realShown, proxyShown, ownedShown;
         if (state.pickerShowAlts) {
           realShown = realThisVariant;
@@ -688,8 +706,8 @@
         } else {
           let r = 0, p = 0;
           for (const v of CardDB.variantsOf(card)) {
-            r += Store.getCount(collectionCache, v.key);
-            p += Store.getProxyCount(collectionCache, v.key);
+            const vs = vIdx[v.key];
+            if (vs) { r += vs.real; p += vs.proxy; }
           }
           realShown = r; proxyShown = p;
         }
@@ -735,14 +753,16 @@
 
   function exportMissing(deck) {
     const isWants = isListKind(deck.kind);
+    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
     const missingEntries = deck.entries
-      .map(e => ({
-        cardId: e.cardId,
-        variant: e.variant,
-        count: isWants
-          ? e.count
-          : Math.max(0, e.count - Store.assignedRealTo(collectionCache, deck.id, e.variant))
-      }))
+      .map(e => {
+        const sa = da[e.variant];
+        return {
+          cardId: e.cardId,
+          variant: e.variant,
+          count: isWants ? e.count : Math.max(0, e.count - (sa ? sa.real : 0))
+        };
+      })
       .filter(e => e.count > 0);
 
     if (!missingEntries.length) {
@@ -919,12 +939,14 @@
         slot.sources.push({ name: d.name, kind: d.kind, n: e.count });
       }
     }
+    const vIdx = Store.buildVariantIndex(collectionCache);
     const items = [];
     for (const slot of demand.values()) {
-      const ownedReal = Store.ownedTotalReal(collectionCache, slot.variant);
+      const vs = vIdx[slot.variant];
+      const ownedReal = vs ? vs.real : 0;
       // includeProxy=true (default): Proxies sind nicht „supply", weil ersetzt werden sollen
       // includeProxy=false: Proxies decken den Bedarf
-      const supply = includeProxy ? ownedReal : ownedReal + Store.ownedTotalProxy(collectionCache, slot.variant);
+      const supply = includeProxy ? ownedReal : ownedReal + (vs ? vs.proxy : 0);
       const missing = Math.max(0, slot.count - supply);
       if (missing > 0) {
         items.push({ ...slot, count: missing });
@@ -1093,11 +1115,13 @@
     // Pro Eintrag: echter Slot-Fehlbestand (Proxies zählen als „fehlt", weil ersetzt).
     // Wants-/Trade-Listen sind explizit Listen fehlender Karten — der ganze Count zählt.
     const isWants = isListKind(deck.kind);
+    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
     const out = [];
     for (const e of deck.entries) {
+      const sa = da[e.variant];
       const need = isWants
         ? e.count
-        : Math.max(0, e.count - Store.assignedRealTo(collectionCache, deck.id, e.variant));
+        : Math.max(0, e.count - (sa ? sa.real : 0));
       if (need > 0) out.push({ cardId: e.cardId, variant: e.variant, count: need });
     }
     return out;
