@@ -552,7 +552,7 @@
       el.addEventListener('click', e => {
         if (e.target.closest('[data-want-inc], [data-want-dec]')) return; // +/- nicht als Detailklick
         if (window.UICollection && typeof UICollection.openCardModal === 'function') {
-          UICollection.openCardModal(el.dataset.cardId);
+          UICollection.openCardModal(el.dataset.cardId, el.dataset.variantKey);
         }
       });
     });

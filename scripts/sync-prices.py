@@ -239,6 +239,11 @@ def main():
                 continue
             vs = {'low': None, 'avg': None, 'trend': None}
             update_slot(vs, p.get('low'), p.get('avg'), p.get('trend'), count_print=False)
+            # SetCode zum CM-Produkt mitspeichern, damit der Detail-Modal pro
+            # Variant zeigen kann, aus welchem Set sie laut Heuristik kommt.
+            set_code = exp_to_set.get(prod.get('idExpansion'))
+            if set_code:
+                vs['set'] = set_code
             slot['byVariant'][variant_key] = vs
         if len(prods) == len(variants):
             variant_exact += 1

@@ -535,7 +535,7 @@
       el.addEventListener('click', e => {
         if (e.target.closest('[data-action]')) return;
         if (e.target.closest('[data-note-trigger]')) return;
-        openCardModal(el.dataset.cardId);
+        openCardModal(el.dataset.cardId, el.dataset.variantKey);
       });
     });
     grid.querySelectorAll('[data-note-trigger]:not([data-note-wired])').forEach(btn => {
@@ -703,6 +703,9 @@
     if (!decksState || !decksState.decks || !decksState.decks.length) return '';
     const dIdx = Store.buildDeckAssignedIndex(state.collection);
     // Gruppiert nach kind: wants / deck / trade (Reihenfolge fest, sonstige ans Ende).
+    // Pro Deck eine Zeile, die alle Variant-Eintraege dieser Card-ID aggregiert —
+    // im Deckbau ist nur die Card-ID relevant, nicht die konkrete Variante / das
+    // Reprint-Set. Slot-Counts werden ueber alle Varianten dieses Decks summiert.
     const groups = { wants: [], deck: [], trade: [] };
     const other = {};
 
@@ -710,22 +713,25 @@
       const matching = (d.entries || []).filter(e => e.cardId === card.id);
       if (!matching.length) continue;
       const da = dIdx[d.id] || {};
-      const lines = matching.map(e => {
-        if (d.kind === 'wants') {
-          return `<span class="text-amber-400">${e.count}×</span> <span class="font-mono text-slate-400">${escapeHtml(e.variant)}</span>`;
+      const sumCount = matching.reduce((s, e) => s + e.count, 0);
+      let line;
+      if (d.kind === 'wants') {
+        line = `<span class="text-amber-400">${sumCount}×</span> <span class="font-mono text-slate-400">${escapeHtml(card.id)}</span>`;
+      } else {
+        let sumReal = 0, sumProxy = 0;
+        for (const e of matching) {
+          const sa = da[e.variant];
+          if (sa) { sumReal += sa.real; sumProxy += sa.proxy; }
         }
-        const sa = da[e.variant];
-        const assigned = sa ? sa.real + sa.proxy : 0;
-        const assignedReal = sa ? sa.real : 0;
-        const assignedProxy = sa ? sa.proxy : 0;
-        const cls = assigned >= e.count ? 'text-emerald-400' : 'text-amber-400';
-        const proxyTag = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
-        return `<span class="${cls}">${assignedReal}/${e.count}</span>${proxyTag} <span class="font-mono text-slate-400">${escapeHtml(e.variant)}</span>`;
-      });
+        const total = sumReal + sumProxy;
+        const cls = total >= sumCount ? 'text-emerald-400' : 'text-amber-400';
+        const proxyTag = sumProxy > 0 ? ` <span class="text-purple-400">+${sumProxy}P</span>` : '';
+        line = `<span class="${cls}">${sumReal}/${sumCount}</span>${proxyTag} <span class="font-mono text-slate-400">${escapeHtml(card.id)}</span>`;
+      }
       const row = `
         <div class="flex items-baseline gap-2 py-1 border-b border-slate-700 last:border-0">
           <span class="font-semibold flex-1 truncate" title="${escapeAttr(d.name)}">${escapeHtml(d.name)}</span>
-          <span class="text-sm">${lines.join(' · ')}</span>
+          <span class="text-sm">${line}</span>
         </div>
       `;
       if (groups[d.kind]) groups[d.kind].push(row);
@@ -760,17 +766,52 @@
     `;
   }
 
-  function openCardModal(cardId) {
+  // Liefert das HTML fuer einen Variant-Header (Variant-Key + CM-Preis/Link +
+  // Main/Alt-Rarity-Zeile + Set-Badge). hero=true wendet groessere Schrift an.
+  function variantHeaderHtml(card, v, hero) {
+    const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
+    const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
+    const vSet = vPrice && vPrice.set ? vPrice.set : null;
+    const rarityTxt = card.rarity ? rarityLabel(card.rarity) : '';
+    const cmUrl = CardDB.cardmarketUrl(card, v.key);
+    const priceHtml = vPriceLow
+      ? (cmUrl
+          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Auf Cardmarket öffnen">CM ${vPriceLow} ↗</a>`
+          : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>`)
+      : (cmUrl
+          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">Cardmarket ↗</a>`
+          : '');
+    const setBadge = vSet
+      ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${vSet === card.set ? 'Aus Origin-Set' : 'Reprint aus ' + escapeAttr(vSet)}">${escapeHtml(vSet)}</span>`
+      : '';
+    const sizeCls = hero ? 'text-sm' : 'text-xs';
+    return `
+      <div class="${sizeCls} font-mono text-slate-400 flex items-baseline justify-between gap-2">
+        <span class="truncate">${escapeHtml(v.key)}</span>
+        ${priceHtml}
+      </div>
+      <div class="text-[11px] text-slate-300 mb-2 flex items-baseline justify-between gap-2">
+        <span>${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
+        ${setBadge}
+      </div>`;
+  }
+
+  function openCardModal(cardId, variantKey) {
     const card = CardDB.byId.get(cardId);
     if (!card) return;
     // Falls von anderen Tabs aufgerufen: aktuellen Sammlungs-Stand laden.
     if (!state.collection) state.collection = Store.loadCollection();
     const variants = CardDB.variantsOf(card);
+    // Hero = explizit angeklickte Variante, sonst Main.
+    let heroIdx = variantKey ? variants.findIndex(v => v.key === variantKey) : 0;
+    if (heroIdx < 0) heroIdx = 0;
+    const heroVariant = variants[heroIdx];
+    const otherVariants = variants.filter((_, i) => i !== heroIdx);
+
     const colorPills = (card.color || []).map(c => `<span class="color-${c} px-2 py-0.5 rounded text-xs font-bold">${c}</span>`).join(' ');
     const effect = card.effect || (card.raw && card.raw.main_effect) || '';
 
     // Reprints / Cross-Set: alle Produkte, in denen die Karte erhältlich ist.
-    // Zusätzlich Reprint-Pills mit Rarity + (sofern verfügbar) Low-Preis pro Set.
     const products = (CardDB.productsOf ? CardDB.productsOf(card) : []);
     const reprintPills = CardDB.reprintPillsHtml(card);
     const productsHtml = (products.length || reprintPills)
@@ -780,7 +821,32 @@
         </div>`
       : '';
 
-    const cols = Math.min(variants.length, 3);
+    const heroBlockHtml = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-variant-block="${escapeAttr(heroVariant.key)}">
+        <div>
+          <img src="${CardDB.imagePath(heroVariant.key)}" loading="lazy" class="w-full max-w-[360px] mx-auto aspect-[5/7] object-cover rounded" alt="" />
+        </div>
+        <div class="space-y-3 min-w-0">
+          ${variantHeaderHtml(card, heroVariant, true)}
+          ${effect ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap leading-relaxed">${escapeHtml(effect)}</div>` : ''}
+          <div class="bg-slate-900 rounded p-3" data-variant-body="${escapeAttr(heroVariant.key)}">${renderVariantBody(heroVariant.key)}</div>
+        </div>
+      </div>
+    `;
+
+    const otherCols = otherVariants.length ? Math.min(otherVariants.length, 4) : 1;
+    const otherBlocksHtml = otherVariants.length ? `
+      <h3 class="text-xs uppercase text-slate-400 font-bold mb-2 mt-4">Andere Varianten</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-${otherCols} gap-3 mb-2">
+        ${otherVariants.map(v => `
+          <div class="bg-slate-900 rounded p-2 cursor-pointer hover:bg-slate-800 transition-colors" data-promote-variant="${escapeAttr(v.key)}" title="Diese Variante in groß anzeigen">
+            <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-full aspect-[5/7] object-cover rounded mb-2" alt="" />
+            ${variantHeaderHtml(card, v, false)}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
     const html = `
       <div class="modal-backdrop" id="card-modal">
         <div class="modal-content w-[920px] max-w-[95vw]">
@@ -799,35 +865,11 @@
             <button id="modal-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-${cols} gap-3 mb-4" id="variants-grid">
-            ${variants.map(v => {
-              const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
-              const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
-              const rarityTxt = card.rarity ? rarityLabel(card.rarity) : '';
-              const cmUrl = CardDB.cardmarketUrl(card, v.key);
-              const priceHtml = vPriceLow
-                ? (cmUrl
-                    ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Auf Cardmarket öffnen">CM ${vPriceLow} ↗</a>`
-                    : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>`)
-                : (cmUrl
-                    ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">Cardmarket ↗</a>`
-                    : '');
-              return `
-              <div class="bg-slate-900 rounded p-2" data-variant-block="${escapeAttr(v.key)}">
-                <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-1/2 mx-auto aspect-[5/7] object-cover rounded mb-2" alt="" />
-                <div class="text-xs font-mono text-slate-400 flex items-baseline justify-between gap-2">
-                  <span class="truncate">${escapeHtml(v.key)}</span>
-                  ${priceHtml}
-                </div>
-                <div class="text-[11px] text-slate-300 mb-2">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</div>
-                <div data-variant-body="${escapeAttr(v.key)}">${renderVariantBody(v.key)}</div>
-              </div>
-            `;
-            }).join('')}
-          </div>
+          ${heroBlockHtml}
 
           ${renderDeckUsage(card)}
-          ${effect ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap leading-relaxed">${escapeHtml(effect)}</div>` : ''}
+
+          ${otherBlocksHtml}
         </div>
       </div>
     `;
@@ -844,6 +886,14 @@
     modalRoot.querySelector('#modal-close').addEventListener('click', close);
     modalRoot.querySelector('#card-modal').addEventListener('click', e => {
       if (e.target.id === 'card-modal') close();
+    });
+
+    // Klick auf eine kleinere Variant-Kachel → Modal mit dieser Variante als Hero.
+    modalRoot.querySelectorAll('[data-promote-variant]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('a')) return; // CM-Links nicht abfangen
+        openCardModal(cardId, el.dataset.promoteVariant);
+      });
     });
 
     wireVariantBlocks(modalRoot);

@@ -436,7 +436,7 @@
       row.addEventListener('click', e => {
         if (e.target.closest('[data-demand-inc], [data-demand-dec], [data-slot-inc], [data-slot-dec], [data-note-trigger]')) return;
         if (window.UICollection && typeof window.UICollection.openCardModal === 'function') {
-          window.UICollection.openCardModal(row.dataset.entryCardId);
+          window.UICollection.openCardModal(row.dataset.entryCardId, row.dataset.variantKey);
         }
       });
     });
@@ -1202,7 +1202,7 @@
       row.addEventListener('click', e => {
         if (e.target.closest('[data-note-trigger], [data-mw-dec]')) return;
         if (window.UICollection && typeof window.UICollection.openCardModal === 'function') {
-          window.UICollection.openCardModal(row.dataset.entryCardId);
+          window.UICollection.openCardModal(row.dataset.entryCardId, row.dataset.variantKey);
         }
       });
     });
