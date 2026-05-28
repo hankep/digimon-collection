@@ -265,6 +265,12 @@
 }
 .wants-qty-btn:hover { background: #475569; }
 
+/* Reprint-Reihen im Wants-Tab: Textzellen gedimmt, Hover-Vorschau bleibt voll opaque.
+   (opacity auf <tr> würde die absolut positionierte .wants-preview mit dimmen.) */
+.reprint-fade {
+  opacity: 0.6;
+}
+
 /* Reprint-Pills: zeigen, dass eine Karte in weiteren Sets als Reprint erhältlich ist */
 .reprint-pills {
   display: inline-flex;

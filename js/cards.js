@@ -296,16 +296,32 @@
     if (!card) return '';
     const codes = reprintSetsOf(card);
     if (!codes.length) return '';
+    return codes.map(code => setPillHtml(card, code, 'Reprint in')).join('');
+  }
+
+  // Alle Sets, in denen die Karte erhältlich ist (Origin zuerst, dann Reprints),
+  // jeweils mit Rarity + Per-Set-Low. Genutzt im Detail-Modal-Variant-Block,
+  // damit der User pro Variante alle möglichen Bezugs-Sets samt Preis sieht.
+  function allSetsPillsHtml(card) {
+    if (!card) return '';
+    const codes = [];
+    if (card.set) codes.push(card.set);
+    for (const rc of reprintSetsOf(card)) {
+      if (rc !== card.set) codes.push(rc);
+    }
+    if (!codes.length) return '';
+    return codes.map((code, i) => setPillHtml(card, code, i === 0 ? 'Origin' : 'Reprint in')).join('');
+  }
+
+  function setPillHtml(card, code, titlePrefix) {
     const rarity = card.rarity || '';
-    const pills = codes.map(code => {
-      const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
-      const priceTxt = (p && p.low != null) ? CM.fmt(p.low) : null;
-      const parts = [code];
-      if (rarity) parts.push(rarity);
-      if (priceTxt) parts.push(priceTxt);
-      return `<span class="reprint-pill" title="Reprint in ${code}${rarity ? ' · ' + rarity : ''}${priceTxt ? ' · CM low ' + priceTxt : ''}">${parts.map(escapeHtml).join(' · ')}</span>`;
-    });
-    return pills.join('');
+    const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
+    const priceTxt = (p && p.low != null) ? CM.fmt(p.low) : null;
+    const parts = [code];
+    if (rarity) parts.push(rarity);
+    if (priceTxt) parts.push(priceTxt);
+    const title = `${titlePrefix} ${code}${rarity ? ' · ' + rarity : ''}${priceTxt ? ' · CM low ' + priceTxt : ''}`;
+    return `<span class="reprint-pill" title="${title}">${parts.map(escapeHtml).join(' · ')}</span>`;
   }
 
   function escapeHtml(s) {
@@ -331,6 +347,7 @@
     reprintSetsOf,
     productLabel,
     appearsInSet,
-    reprintPillsHtml
+    reprintPillsHtml,
+    allSetsPillsHtml
   };
 })();

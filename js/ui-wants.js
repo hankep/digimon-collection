@@ -309,7 +309,7 @@
     const reprintsHtml = (block.reprints && block.reprints.length)
       ? `<div class="mt-3 pt-2 border-t border-slate-700/60">
            <div class="text-xs text-slate-500 italic mb-1">Auch hier erhältlich · Reprint, nicht gezählt</div>
-           ${renderReprintBody(block.reprints, view)}
+           ${renderReprintBody(block.reprints, view, block.code)}
          </div>`
       : '';
 
@@ -333,26 +333,46 @@
   }
 
   // Reprint-Referenzen (gedämpft, ohne +/-): zeigen, dass eine anderswo gewünschte
-  // Karte auch in diesem Set erhältlich ist. Klick öffnet wie gewohnt das Modal.
-  function renderReprintBody(items, view) {
+  // Karte auch in diesem Set erhältlich ist. blockCode = setCode dieses Blocks,
+  // damit wir den Reprint-spezifischen Low-Preis aus CM.getForSet ziehen können.
+  function renderReprintBody(items, view, blockCode) {
+    const priceForBlock = it => {
+      if (!window.CM || !CM.hasData()) return null;
+      const p = CM.getForSet(it.cardId, blockCode);
+      return (p && p.low != null) ? p.low : null;
+    };
     if (view === 'images') {
-      return `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${items.map(it => `
+      return `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${items.map(it => {
+        const price = priceForBlock(it);
+        const priceRow = price != null
+          ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low (${escapeHtml(blockCode || '')})">CM: ${CM.fmt(price)}</div>`
+          : '';
+        return `
         <div class="card-tile cursor-pointer opacity-60" data-card-id="${escapeAttr(it.cardId)}" data-variant-key="${escapeAttr(it.variant)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
           <img loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="${escapeAttr(it.name)}" />
+          ${priceRow}
           <div class="p-2 pt-1">
-            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(it.variant)} <span class="text-slate-500">(aus ${escapeHtml(it.originSet)})</span></div>
+            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(it.variant)}</div>
             <div class="text-sm font-semibold truncate" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</div>
           </div>
-        </div>`).join('')}</div>`;
+        </div>`;
+      }).join('')}</div>`;
     }
-    return `<table class="wants-table"><tbody>${items.map(it => `
-      <tr class="wants-row group cursor-pointer hover:bg-slate-700/60 opacity-60" data-card-id="${escapeAttr(it.cardId)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
-        <td class="py-1 pr-4 whitespace-nowrap"><span class="font-bold text-slate-400 tabular-nums">${it.count}×</span></td>
-        <td class="py-1 pr-4 relative"><span class="block truncate max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="" /></td>
-        <td class="py-1 pr-4 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(it.variant)}</td>
-        <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap">aus ${escapeHtml(it.originSet)}</td>
-        <td class="py-1 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—'}</td>
-      </tr>`).join('')}</tbody></table>`;
+    // opacity-60 nicht aufs <tr> setzen — sonst erbt die absolut positionierte
+    // .wants-preview die Transparenz mit. Stattdessen jede Textzelle in ein
+    // span.reprint-fade einwickeln, das die Bild-Preview NICHT umschließt.
+    return `<table class="wants-table"><tbody>${items.map(it => {
+      const price = priceForBlock(it);
+      const priceTxt = price != null ? CM.fmt(price) : (it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—');
+      return `
+      <tr class="wants-row wants-reprint-row group cursor-pointer hover:bg-slate-700/60" data-card-id="${escapeAttr(it.cardId)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
+        <td class="py-1 pr-4 whitespace-nowrap"><span class="reprint-fade font-bold text-slate-400 tabular-nums">${it.count}×</span></td>
+        <td class="py-1 pr-4 relative"><span class="reprint-fade block truncate max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="" /></td>
+        <td class="py-1 pr-4 font-mono text-slate-400 text-xs whitespace-nowrap"><span class="reprint-fade">${escapeHtml(it.variant)}</span></td>
+        <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap"><span class="reprint-fade">aus ${escapeHtml(it.originSet)}</span></td>
+        <td class="py-1 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap"><span class="reprint-fade">${priceTxt}</span></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
   }
 
   // Rendert die Item-Liste (Tabelle oder Bilder-Grid). group liefert listId/editable

@@ -702,44 +702,60 @@
     const decksState = Store.loadDecks();
     if (!decksState || !decksState.decks || !decksState.decks.length) return '';
     const dIdx = Store.buildDeckAssignedIndex(state.collection);
-    // Pro Deck eine Zeile mit allen Einträgen dieser Card (alle Varianten zusammen).
-    const rows = [];
+    // Gruppiert nach kind: wants / deck / trade (Reihenfolge fest, sonstige ans Ende).
+    const groups = { wants: [], deck: [], trade: [] };
+    const other = {};
+
     for (const d of decksState.decks) {
       const matching = (d.entries || []).filter(e => e.cardId === card.id);
       if (!matching.length) continue;
       const da = dIdx[d.id] || {};
       const lines = matching.map(e => {
-        const sa = da[e.variant];
-        const assigned = (d.kind === 'wants') ? null : (sa ? sa.real + sa.proxy : 0);
-        const assignedReal = (d.kind === 'wants') ? null : (sa ? sa.real : 0);
-        const assignedProxy = (d.kind === 'wants') ? null : (sa ? sa.proxy : 0);
         if (d.kind === 'wants') {
           return `<span class="text-amber-400">${e.count}×</span> <span class="font-mono text-slate-400">${escapeHtml(e.variant)}</span>`;
         }
+        const sa = da[e.variant];
+        const assigned = sa ? sa.real + sa.proxy : 0;
+        const assignedReal = sa ? sa.real : 0;
+        const assignedProxy = sa ? sa.proxy : 0;
         const cls = assigned >= e.count ? 'text-emerald-400' : 'text-amber-400';
         const proxyTag = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
         return `<span class="${cls}">${assignedReal}/${e.count}</span>${proxyTag} <span class="font-mono text-slate-400">${escapeHtml(e.variant)}</span>`;
       });
-      const kindBadge = d.kind === 'wants'
-        ? `<span class="bg-purple-700 text-purple-100 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">wants</span>`
-        : d.kind === 'trade'
-          ? `<span class="bg-slate-600 text-slate-100 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">trade</span>`
-          : '';
-      rows.push(`
+      const row = `
         <div class="flex items-baseline gap-2 py-1 border-b border-slate-700 last:border-0">
           <span class="font-semibold flex-1 truncate" title="${escapeAttr(d.name)}">${escapeHtml(d.name)}</span>
-          ${kindBadge}
           <span class="text-sm">${lines.join(' · ')}</span>
         </div>
-      `);
+      `;
+      if (groups[d.kind]) groups[d.kind].push(row);
+      else (other[d.kind] = other[d.kind] || []).push(row);
     }
-    if (!rows.length) {
+
+    const total = groups.wants.length + groups.deck.length + groups.trade.length
+      + Object.values(other).reduce((s, arr) => s + arr.length, 0);
+    if (!total) {
       return `<div class="bg-slate-900 rounded p-3 mb-3 text-sm text-slate-500">In keinem Deck.</div>`;
     }
+
+    const section = (label, rows) => rows.length
+      ? `<div class="mt-2 first:mt-0">
+           <div class="text-[11px] uppercase tracking-wide text-slate-500 font-bold mb-1">${escapeHtml(label)} · ${rows.length}</div>
+           ${rows.join('')}
+         </div>`
+      : '';
+
+    const otherSections = Object.entries(other)
+      .map(([kind, rows]) => section(kind, rows))
+      .join('');
+
     return `
       <div class="bg-slate-900 rounded p-3 mb-3">
-        <div class="text-xs uppercase text-slate-400 font-bold mb-2">In Decks (${rows.length})</div>
-        ${rows.join('')}
+        <div class="text-xs uppercase text-slate-400 font-bold mb-2">In Listen (${total})</div>
+        ${section('Wants', groups.wants)}
+        ${section('Decks', groups.deck)}
+        ${section('Trade', groups.trade)}
+        ${otherSections}
       </div>
     `;
   }
@@ -784,13 +800,17 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-${cols} gap-3 mb-4" id="variants-grid">
-            ${variants.map(v => `
+            ${variants.map(v => {
+              const setPills = CardDB.allSetsPillsHtml(card);
+              return `
               <div class="bg-slate-900 rounded p-2" data-variant-block="${escapeAttr(v.key)}">
                 <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-1/2 mx-auto aspect-[5/7] object-cover rounded mb-2" alt="" />
-                <div class="text-xs font-mono text-slate-400 mb-2">${escapeHtml(v.key)} ${v.isAlt ? '· Alt' : '· Main'}</div>
+                <div class="text-xs font-mono text-slate-400 mb-1">${escapeHtml(v.key)} ${v.isAlt ? '· Alt' : '· Main'}</div>
+                ${setPills ? `<div class="reprint-pills mb-2" title="Sets, in denen diese Karte erhältlich ist (Origin zuerst)">${setPills}</div>` : ''}
                 <div data-variant-body="${escapeAttr(v.key)}">${renderVariantBody(v.key)}</div>
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
 
           ${renderDeckUsage(card)}
