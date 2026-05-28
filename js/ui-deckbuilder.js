@@ -849,11 +849,16 @@
     }
   }
 
-  // Sammelt die fehlenden Karten eines Decks (echter Slot-Bedarf, Proxies zaehlen
-  // als fehlend) und pumpt sie in eine bestehende oder neue Wants-Liste. Alt-Arts
-  // bleiben dabei erhalten, weil wir die Entries direkt mit ihren variantKeys
-  // uebernehmen — der Clipboard-Umweg waere durch die (V.N)-Parsing-Luecke
-  // ungenau.
+  // Sammelt die fehlenden Karten eines Decks (echter Slot-Bedarf in DIESEM Deck,
+  // Proxies zaehlen als fehlend) und pumpt sie in eine bestehende oder neue
+  // Wants-Liste. Alt-Arts bleiben dabei erhalten, weil wir die Entries direkt
+  // mit ihren variantKeys uebernehmen — der Clipboard-Umweg waere durch die
+  // (V.N)-Parsing-Luecke ungenau.
+  //
+  // Wichtig: missing = e.count - assignedReal(diesem Deck). Kopien im Frei-Pool
+  // oder anderem Deck zaehlen als fehlend, weil sie diesem Deck nicht zugewiesen
+  // sind. So bleibt der Export konsistent mit dem, was DIESES Deck zum Spielen
+  // braucht — der User slottet vorher manuell, was er noch verteilen kann.
   function openMissingToWantsDialog(deck) {
     if (isListKind(deck.kind)) return;
     const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};

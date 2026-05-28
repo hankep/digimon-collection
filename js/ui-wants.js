@@ -313,6 +313,14 @@
          </div>`
       : '';
 
+    // Anzahl Reprint-Kandidaten, die sich aus diesem Set decken liessen.
+    // Wird nicht in block.total mitgezaehlt, aber als Zusatzzahl angezeigt:
+    // "23 Karten +5 als Reprint moeglich".
+    const reprintTotal = (block.reprints || []).reduce((s, it) => s + it.count, 0);
+    const reprintSpan = reprintTotal > 0
+      ? `<span class="text-xs text-slate-500" title="Wants aus anderen Sets, die als Reprint aus ${escapeAttr(block.code)} gekauft werden koennten">+${reprintTotal} Reprint${reprintTotal === 1 ? '' : 's'} moeglich</span>`
+      : '';
+
     return `
       <div class="bg-slate-800 rounded p-3 mb-3 break-inside-avoid" data-set-block="${escapeAttr(block.code)}">
         <div class="flex items-center gap-2 flex-wrap mb-2">
@@ -322,8 +330,9 @@
           </h3>
           ${hasReal
             ? `<span class="text-sm text-slate-400">${block.total} Karten</span>
+               ${reprintSpan}
                <div class="ml-auto flex gap-2"><button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button></div>`
-            : `<span class="text-xs text-slate-500 italic">nur Reprints</span>`}
+            : `<span class="text-xs text-slate-500 italic">nur Reprints (${reprintTotal})</span>`}
         </div>
         ${hasReal ? `<div class="flex flex-wrap gap-1.5 mb-1"><span class="text-xs text-slate-500 mr-1">Rarity:</span>${rarityPills}</div>
         <div class="flex flex-wrap gap-1.5 mb-3"><span class="text-xs text-slate-500 mr-1">Preis:</span>${bucketPills}</div>` : ''}
