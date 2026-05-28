@@ -27,6 +27,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PRODUCTS_JSON = PROJECT_ROOT / 'products_singles_17.json'
+PRODUCTS_NONSINGLES_JSON = PROJECT_ROOT / 'products_nonsingles_17.json'
 PRICES_JSON = PROJECT_ROOT / 'price_guide_17.json'
 DATA_DIR = PROJECT_ROOT / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -119,6 +120,65 @@ def infer_expansion_to_set(products_list, cards_by_id, known_set_codes):
     return mapping
 
 
+def derive_label_from_nonsingles_name(name):
+    """Aus einem Booster/Box/Promo-Pack-Produktnamen ein kurzes Set-Label ableiten.
+       Wird verwendet, wenn unsere set_name-Heuristik keinen bekannten setCode findet
+       (z.B. fuer Regionals/Event-Packs/Limited Card Packs)."""
+    if not name:
+        return None
+    # 1) Code in Klammern: "(PB-01)", "(P-180)", "(LM-04)"
+    m = re.search(r'\(([A-Z]+\d*-?\d+[A-Z]?)\)', name)
+    if m:
+        return m.group(1).replace('-', '')
+    # 2) Regionals YYYY
+    m = re.search(r'(\d{4})\s+Regionals', name)
+    if m:
+        return f'Reg {m.group(1)}'
+    # 3) Event Pack N
+    m = re.search(r'Event Pack\s*(\d+)', name, re.I)
+    if m:
+        return f'EP{m.group(1)}'
+    # 4) Pre-Release Pack
+    if re.search(r'Pre-?Release', name, re.I):
+        return 'Pre-Rls'
+    # 5) Championship YYYY
+    if 'Championship' in name:
+        m = re.search(r'(\d{4})', name)
+        return f'Champ {m.group(1)}' if m else 'Champ'
+    # 6) Limited Card Pack <Name>
+    m = re.search(r'Limited Card Pack ([\w]+)', name, re.I)
+    if m:
+        return f'LM:{m.group(1)[:8]}'
+    # 7) Tamer's / Premium / generischer Booster
+    cleaned = re.sub(r'\([^)]*\)', '', name).strip()
+    cleaned = re.sub(r'\s*(Booster Box|Booster|Card Set|Set)\s*$', '', cleaned, flags=re.I).strip()
+    cleaned = re.sub(r'^[A-Z]+-?\d+:\s*', '', cleaned)  # "BT-25: Foo" -> "Foo"
+    words = cleaned.split()
+    if not words:
+        return None
+    label = ' '.join(words[:2])
+    return label[:14] if label else None
+
+
+def build_exp_to_label(exp_to_set, ns_products):
+    """Baut die volle idExpansion -> Label-Mappung. Wenn ein echter setCode aus
+       set_name vorhanden ist, nutzt diesen; sonst leitet ein Label aus dem
+       ersten Nonsingles-Produkt der idExpansion ab. So bekommt JEDE Variante
+       ein erkennbares Set-Badge — auch Promo-/Regionals-/Pre-Release-Sets."""
+    ns_by_exp = defaultdict(list)
+    for p in ns_products:
+        ns_by_exp[p['idExpansion']].append(p)
+    labels = dict(exp_to_set)  # echte setCodes haben Vorrang
+    for exp_id, prods in ns_by_exp.items():
+        if exp_id in labels:
+            continue
+        sample = sorted(prods, key=lambda p: p['idProduct'])[0]
+        lbl = derive_label_from_nonsingles_name(sample.get('name', ''))
+        if lbl:
+            labels[exp_id] = lbl
+    return labels
+
+
 def variant_keys_of(card):
     """Liefert die Variant-Keys einer Karte (Main zuerst, dann _P1, _P2, ...),
        analog zu CardDB.variantsOf in der Web-App."""
@@ -135,12 +195,15 @@ def main():
     products = load_json(PRODUCTS_JSON)
     prices = load_json(PRICES_JSON)
     cards = load_cards_data_js()
+    nonsingles_data = json.loads(PRODUCTS_NONSINGLES_JSON.read_text(encoding='utf-8')) if PRODUCTS_NONSINGLES_JSON.exists() else {'products': []}
+    nonsingles_list = nonsingles_data.get('products', [])
 
     products_list = products.get('products', [])
     prices_list = prices.get('priceGuides', [])
     updated_at = prices.get('createdAt') or products.get('createdAt') or ''
 
     log(f'Produkte: {len(products_list)}')
+    log(f'Nonsingles-Produkte: {len(nonsingles_list)}')
     log(f'Preis-Eintraege: {len(prices_list)}')
     log(f'Karten in cards.data.js: {len(cards)}')
 
@@ -153,6 +216,8 @@ def main():
 
     exp_to_set = infer_expansion_to_set(products_list, cards_by_id, known_set_codes)
     log(f'idExpansion -> setCode Mapping: {len(exp_to_set)} Sets erkannt')
+    exp_to_label = build_exp_to_label(exp_to_set, nonsingles_list)
+    log(f'idExpansion -> Label (inkl. Fallback aus Nonsingles): {len(exp_to_label)} Sets erkannt')
 
     # idProduct -> price-dict
     price_by_id = {p['idProduct']: p for p in prices_list}
@@ -239,11 +304,13 @@ def main():
                 continue
             vs = {'low': None, 'avg': None, 'trend': None}
             update_slot(vs, p.get('low'), p.get('avg'), p.get('trend'), count_print=False)
-            # SetCode zum CM-Produkt mitspeichern, damit der Detail-Modal pro
-            # Variant zeigen kann, aus welchem Set sie laut Heuristik kommt.
-            set_code = exp_to_set.get(prod.get('idExpansion'))
-            if set_code:
-                vs['set'] = set_code
+            # SetCode/Label zum CM-Produkt mitspeichern, damit der Detail-Modal
+            # pro Variant zeigen kann, aus welchem Set sie laut Heuristik kommt.
+            # exp_to_set hat Vorrang fuer Origin-Vergleich; sonst Fallback-Label
+            # aus den Nonsingles (Regionals/Event-Pack/Pre-Release usw.).
+            label = exp_to_set.get(prod.get('idExpansion')) or exp_to_label.get(prod.get('idExpansion'))
+            if label:
+                vs['set'] = label
             slot['byVariant'][variant_key] = vs
         if len(prods) == len(variants):
             variant_exact += 1

@@ -280,6 +280,16 @@
     return head || s;
   }
 
+  // SetCode -> Vollname (z.B. "BT16" -> "BT-16: Booster Beginning Observer").
+  // Fuer unbekannte Codes (Promo-Labels wie "Reg 2024") wird der Code selbst
+  // zurueckgegeben, damit Tooltips trotzdem etwas Sinnvolles zeigen.
+  function setNameByCode(code) {
+    if (!code) return '';
+    const s = bySet.has(code) && bySet.get(code)[0];
+    const sn = s && s.raw && Array.isArray(s.raw.set_name) ? s.raw.set_name[0] : null;
+    return sn || code;
+  }
+
   // True wenn die Karte unter setCode erhältlich ist — entweder als Origin (card.set)
   // oder als Reprint (über raw.set_name). Wird von Set-Filtern (Collection-Tab,
   // Main-Wants-Filter, …) verwendet, damit Reprints im Filter mitschwimmen.
@@ -325,35 +335,77 @@
 
   // Konstruiert die Cardmarket-Produktseite einer konkreten Variante.
   // Pattern: cardmarket.com/de/Digimon/Products/Singles/<Set-Slug>/<Name-Slug>-<cardId>[-V<n>]
-  //   - Set-Slug = Teil nach "<setCode>:" aus card.raw.set_name[0], slugified.
-  //   - Name-Slug = card.name slugified (Klammern werden zu Bindestrichen).
-  //   - V-Suffix: Karten mit Alt-Arts bekommen -V1 (Main), -V2 (_P1), … ;
-  //     Karten ohne Alt-Arts haben keinen V-Suffix (so wie es CM faehrt).
-  // Liefert null, wenn die noetigen Felder fehlen.
+  //
+  // Deep-Link nur dann, wenn das Variant-Set ein echter bekannter setCode aus
+  // unseren Karten-Daten ist (BT16, AD1, EX5 …) UND ein passender raw.set_name-
+  // Eintrag existiert. So koennen wir die richtige Set-Seite und den V-Index
+  // innerhalb der Gruppe verlaesslich bilden.
+  //
+  // Fuer Promo-Labels wie "Reg 2024", "PB01", "Pre-Rls", "EP7" (idExpansions
+  // ohne 1:1-Entsprechung zu unseren Sets — eine CM-idExpansion kann mehrere
+  // URL-Sets enthalten, z.B. 5632 = Premium-Bandai-Products + Championship-
+  // 2024-Promos) faellt der Link auf die CM-Such-URL fuer die Card-ID zurueck.
+  // Die Suche fuehrt immer auf das richtige Ergebnis, auch wenn der User
+  // dort 1x klicken muss.
   function cardmarketUrl(card, variantKey) {
     if (!card || !card.id) return null;
     const setNames = (card.raw && Array.isArray(card.raw.set_name)) ? card.raw.set_name : [];
-    if (!setNames.length) return null;
-    const setSlug = slugify(setNames[0].split(':').slice(1).join(':').trim());
+
+    const variantSetOf = vk => {
+      if (!window.CM || !CM.getForVariant) return null;
+      const p = CM.getForVariant(vk);
+      return p && p.set ? p.set : null;
+    };
+    const variantSet = variantSetOf(variantKey);
+
+    // Match: Variant-Set muss ein echter setCode (Eintrag in bySet) sein UND in
+    // raw.set_name vorkommen. Sonst Search-Fallback.
+    let chosenSetName = null;
+    if (variantSet && bySet.has(variantSet) && setNames.length) {
+      for (const sn of setNames) {
+        if (setNameToCode(sn) === variantSet) { chosenSetName = sn; break; }
+      }
+    }
+    if (!chosenSetName) {
+      return `https://www.cardmarket.com/de/Digimon/Products/Search?searchString=${encodeURIComponent(card.id)}`;
+    }
+
+    // "BT-16: Booster Beginning Observer" -> "Beginning Observer"
+    const setSlugSource = chosenSetName.split(':').slice(1).join(':').trim().replace(/^Booster\s+/i, '');
+    const setSlug = slugify(setSlugSource);
     if (!setSlug) return null;
-    const nameSlug = slugify(card.name);
+
+    // Doppelnamen (z.B. "BeelStarmon // Fly Bullet") nimmt der CM-Slug komplett
+    // mit auf ("BeelStarmon-Fly-Bullet"). card.name enthaelt nur den ersten Teil,
+    // raw.tcgplayer_name den vollen — wir bevorzugen den, sofern vorhanden.
+    const fullName = (card.raw && card.raw.tcgplayer_name)
+      ? String(card.raw.tcgplayer_name).replace(/\s*\/\/\s*/g, ' ')
+      : card.name;
+    const nameSlug = slugify(fullName);
     if (!nameSlug) return null;
+
+    // V-Index: Position innerhalb der Variants, die demselben Set zugeordnet sind.
+    // Einzelvariante in einem Set -> kein V-Suffix.
     const variants = variantsOf(card);
-    const idx = variantKey ? variants.findIndex(v => v.key === variantKey) : 0;
-    const hasAlts = variants.length > 1;
-    const vSuffix = hasAlts ? `-V${(idx < 0 ? 0 : idx) + 1}` : '';
+    const sameSet = variants.filter(v => variantSetOf(v.key) === variantSet);
+    let vSuffix = '';
+    if (sameSet.length > 1) {
+      const idx = sameSet.findIndex(v => v.key === variantKey);
+      vSuffix = idx >= 0 ? `-V${idx + 1}` : '';
+    }
+
     return `https://www.cardmarket.com/de/Digimon/Products/Singles/${setSlug}/${nameSlug}-${card.id}${vSuffix}`;
   }
 
-  function setPillHtml(card, code, titlePrefix) {
+  function setPillHtml(card, code, _titlePrefix) {
     const rarity = card.rarity || '';
     const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
     const priceTxt = (p && p.low != null) ? CM.fmt(p.low) : null;
     const parts = [code];
     if (rarity) parts.push(rarity);
     if (priceTxt) parts.push(priceTxt);
-    const title = `${titlePrefix} ${code}${rarity ? ' · ' + rarity : ''}${priceTxt ? ' · CM low ' + priceTxt : ''}`;
-    return `<span class="reprint-pill" title="${title}">${parts.map(escapeHtml).join(' · ')}</span>`;
+    const title = setNameByCode(code);
+    return `<span class="reprint-pill" title="${escapeHtml(title)}">${parts.map(escapeHtml).join(' · ')}</span>`;
   }
 
   function escapeHtml(s) {
@@ -381,6 +433,7 @@
     appearsInSet,
     reprintPillsHtml,
     allSetsPillsHtml,
-    cardmarketUrl
+    cardmarketUrl,
+    setNameByCode
   };
 })();

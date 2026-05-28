@@ -782,7 +782,7 @@
           ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">Cardmarket ↗</a>`
           : '');
     const setBadge = vSet
-      ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${vSet === card.set ? 'Aus Origin-Set' : 'Reprint aus ' + escapeAttr(vSet)}">${escapeHtml(vSet)}</span>`
+      ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
       : '';
     const sizeCls = hero ? 'text-sm' : 'text-xs';
     return `
@@ -806,25 +806,27 @@
     let heroIdx = variantKey ? variants.findIndex(v => v.key === variantKey) : 0;
     if (heroIdx < 0) heroIdx = 0;
     const heroVariant = variants[heroIdx];
-    const otherVariants = variants.filter((_, i) => i !== heroIdx);
+    // Stabile Reihenfolge fuer "Andere Varianten": Origin-Set zuerst, dann andere
+    // Sets alphabetisch, innerhalb der Sets nach Variant-Key. Damit aendert sich
+    // die Reihenfolge nicht, wenn der User eine andere Variante als Hero promotet.
+    const sortedVariants = variants.slice().sort((a, b) => {
+      const sa = ((window.CM && CM.getForVariant) ? (CM.getForVariant(a.key) || {}) : {}).set || '';
+      const sb = ((window.CM && CM.getForVariant) ? (CM.getForVariant(b.key) || {}) : {}).set || '';
+      const aOrigin = (sa === card.set) ? 0 : 1;
+      const bOrigin = (sb === card.set) ? 0 : 1;
+      if (aOrigin !== bOrigin) return aOrigin - bOrigin;
+      if (sa !== sb) return sa.localeCompare(sb);
+      return a.key.localeCompare(b.key);
+    });
+    const otherVariants = sortedVariants.filter(v => v.key !== heroVariant.key);
 
     const colorPills = (card.color || []).map(c => `<span class="color-${c} px-2 py-0.5 rounded text-xs font-bold">${c}</span>`).join(' ');
     const effect = card.effect || (card.raw && card.raw.main_effect) || '';
 
-    // Reprints / Cross-Set: alle Produkte, in denen die Karte erhältlich ist.
-    const products = (CardDB.productsOf ? CardDB.productsOf(card) : []);
-    const reprintPills = CardDB.reprintPillsHtml(card);
-    const productsHtml = (products.length || reprintPills)
-      ? `<div class="text-xs text-slate-400 mt-2">Erhältlich in:
-          ${products.map(p => `<span class="inline-block bg-slate-700 rounded px-1.5 py-0.5 mr-1 mb-1 font-mono" title="${escapeAttr(p)}">${escapeHtml(CardDB.productLabel(p))}</span>`).join('')}
-          ${reprintPills ? `<div class="mt-1 flex flex-wrap gap-1">${reprintPills}</div>` : ''}
-        </div>`
-      : '';
-
     const heroBlockHtml = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-variant-block="${escapeAttr(heroVariant.key)}">
-        <div>
-          <img src="${CardDB.imagePath(heroVariant.key)}" loading="lazy" class="w-full max-w-[360px] mx-auto aspect-[5/7] object-cover rounded" alt="" />
+      <div class="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-4 mb-4" data-variant-block="${escapeAttr(heroVariant.key)}">
+        <div class="min-w-0">
+          <img src="${CardDB.imagePath(heroVariant.key)}" loading="lazy" class="w-full aspect-[5/7] object-cover rounded" alt="" />
         </div>
         <div class="space-y-3 min-w-0">
           ${variantHeaderHtml(card, heroVariant, true)}
@@ -834,13 +836,12 @@
       </div>
     `;
 
-    const otherCols = otherVariants.length ? Math.min(otherVariants.length, 4) : 1;
     const otherBlocksHtml = otherVariants.length ? `
       <h3 class="text-xs uppercase text-slate-400 font-bold mb-2 mt-4">Andere Varianten</h3>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-${otherCols} gap-3 mb-2">
+      <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 mb-2">
         ${otherVariants.map(v => `
-          <div class="bg-slate-900 rounded p-2 cursor-pointer hover:bg-slate-800 transition-colors" data-promote-variant="${escapeAttr(v.key)}" title="Diese Variante in groß anzeigen">
-            <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-full aspect-[5/7] object-cover rounded mb-2" alt="" />
+          <div class="bg-slate-900 rounded p-1.5 cursor-pointer hover:bg-slate-800 transition-colors" data-promote-variant="${escapeAttr(v.key)}" title="Diese Variante in groß anzeigen">
+            <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-full aspect-[5/7] object-cover rounded mb-1.5" alt="" />
             ${variantHeaderHtml(card, v, false)}
           </div>
         `).join('')}
@@ -852,7 +853,6 @@
         <div class="modal-content w-[920px] max-w-[95vw]">
           <div class="flex justify-between items-start mb-3">
             <div>
-              <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)} · ${escapeHtml(card.set)} · ${escapeHtml(rarityLabel(card.rarity || ''))}</div>
               <h2 class="text-2xl font-bold">${escapeHtml(card.name)}</h2>
               <div class="flex gap-2 mt-1 text-xs flex-wrap">
                 ${colorPills}
@@ -860,7 +860,6 @@
                 ${card.level != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Lv ${card.level}</span>` : ''}
                 ${card.cost != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Cost ${card.cost}</span>` : ''}
               </div>
-              ${productsHtml}
             </div>
             <button id="modal-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
           </div>
