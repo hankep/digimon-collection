@@ -288,18 +288,37 @@
   //   - Release-Kontext in Klammern: "Physical Training (Blast Ace Box Topper)"
   //   - Rarity-Tags: "MetalGreymon (Secret Rare)"
   //
-  // Aber er enthaelt fuer Dual-Mode-Karten den vollen Namen mit '//', der in
-  // card.name fehlt: card.name='BeelStarmon', tcgplayer_name='BeelStarmon // Fly Bullet'.
+  // Aber er enthaelt manchmal ECHTE Zusatz-Info, die in card.name fehlt:
+  //   - Dual-Mode-Karten: tcg='BeelStarmon // Fly Bullet', name='BeelStarmon'
+  //   - ACE-Mechanik:     tcg='Gaiamon ACE',                name='Gaiamon'
   //
-  // Regel: tcgplayer_name nur uebernehmen, wenn er den '//' enthaelt (Dual-Mode).
-  // Sonst card.name verwenden — das ist die kuratierte Quelle ohne Kontext-Suffixe.
+  // Strategie: tcg um Klammer-Kontext + Card-ID-Suffix bereinigen. Wenn das
+  // Ergebnis ECHT mehr Info als card.name traegt (= laenger und mit card.name
+  // beginnt), das nehmen. Sonst card.name (kuratierte Quelle).
   function cleanDisplayName(card) {
     if (!card) return '';
+    const baseName = card.name || '';
     const raw = card.raw && card.raw.tcgplayer_name;
     if (raw && raw.indexOf('//') !== -1) {
       return String(raw).replace(/\s*\/\/\s*/g, ' / ');
     }
-    return card.name || '';
+    if (raw && baseName) {
+      let s = String(raw);
+      // Trailing "(...)"-Gruppen entfernen (iterativ, falls mehrere wie
+      // "Shoutmon (King Version) (2023 Regionals Champion)").
+      while (/\s*\([^()]*\)\s*$/.test(s)) {
+        s = s.replace(/\s*\([^()]*\)\s*$/, '');
+      }
+      // Trailing " - <cardId>" entfernen ("Machinedramon - BT19-065").
+      if (card.id) {
+        s = s.replace(new RegExp('\\s*[-–]\\s*' + card.id + '\\s*$'), '');
+      }
+      s = s.trim();
+      if (s && s !== baseName && s.startsWith(baseName)) {
+        return s;
+      }
+    }
+    return baseName;
   }
 
   // SetCode -> Vollname (z.B. "BT16" -> "BT-16: Booster Beginning Observer").
