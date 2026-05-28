@@ -277,9 +277,10 @@
     const selected = selectedIds(lists);
     const blocks = collectBySet(lists, selected);
     const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
+    const grandUnique = blocks.reduce((s, b) => s + (b.items ? b.items.length : 0), 0);
     const realSets = blocks.reduce((n, b) => n + (b.total > 0 ? 1 : 0), 0);
     const cnt = rootEl.querySelector('#wants-count');
-    if (cnt) cnt.textContent = `${realSets} Sets · ${grandTotal} Karten`;
+    if (cnt) cnt.textContent = `${realSets} Sets · ${grandTotal} Karten · ${grandUnique} unique`;
     const host = rootEl.querySelector('#wants-sets');
     if (host) host.innerHTML = blocks.length
       ? blocks.map(renderSetBlock).join('')
@@ -329,7 +330,7 @@
             <span class="text-slate-300 font-normal text-sm">${escapeHtml(block.name)}</span>
           </h3>
           ${hasReal
-            ? `<span class="text-sm text-slate-400">${block.total} Karten</span>
+            ? `<span class="text-sm text-slate-400">${block.total} Karten <span class="text-slate-500">(${block.items.length} unique)</span></span>
                ${reprintSpan}
                <div class="ml-auto flex gap-2"><button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button></div>`
             : `<span class="text-xs text-slate-500 italic">nur Reprints (${reprintTotal})</span>`}

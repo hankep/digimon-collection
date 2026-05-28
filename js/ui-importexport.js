@@ -173,11 +173,103 @@
     const msg = `${sum.totalQty} Karten (${Fmt.eur(sum.totalValue)}) zur Sammlung hinzufügen?`
       + (unknown.length ? `\n${unknown.length} unbekannte IDs werden übersprungen.` : '');
     if (!confirm(msg)) return;
-    const res = Cardmarket.apply(items);
+
+    // Cross-Variant-Analyse: wenn ein Import die gleiche Card-ID in anderer
+    // Variante als ein Wants-Eintrag hat, fragen wir per Modal nach. Exakte
+    // Treffer werden ohnehin in apply() abgezogen.
+    const impact = Cardmarket.analyzeWantsImpact(items);
+    if (impact.crossVariant.length === 0) {
+      finishCmApply(items, null);
+    } else {
+      openCrossVariantDialog(items, impact.crossVariant);
+    }
+  }
+
+  function finishCmApply(items, decisions) {
+    const res = Cardmarket.apply(items, decisions);
     const wantsNote = res.removedFromWants ? ` ${res.removedFromWants} von Wants-Listen abgezogen.` : '';
-    showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}.${wantsNote} Seite wird neu geladen…`, 'ok');
+    const crossNote = res.crossVariantRemoved ? ` ${res.crossVariantRemoved} über andere Variante abgezogen.` : '';
+    showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}.${wantsNote}${crossNote} Seite wird neu geladen…`, 'ok');
     if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(800);
     else setTimeout(() => location.reload(), 800);
+  }
+
+  function openCrossVariantDialog(items, candidates) {
+    let host = document.getElementById('cv-import-root');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'cv-import-root';
+      document.body.appendChild(host);
+    }
+
+    const rows = candidates.map((c, idx) => {
+      const wantsCard = CardDB.byId.get(c.cardId);
+      const wantsName = wantsCard ? wantsCard.name : c.cardId;
+      return `
+        <label class="flex items-baseline gap-2 py-1.5 border-b border-slate-700 last:border-0 cursor-pointer">
+          <input type="checkbox" data-cv-idx="${idx}" class="accent-amber-500" checked />
+          <div class="flex-1 min-w-0 text-sm">
+            <div><b>${escapeHtml(c.deckName)}</b> · <span class="text-amber-400">${c.wantsCount}× ${escapeHtml(c.wantsVariant)}</span> <span class="text-slate-500">(${escapeHtml(wantsName)})</span></div>
+            <div class="text-xs text-slate-400 mt-0.5">
+              Du importierst <span class="font-mono">${escapeHtml(c.importedVariant)}</span>. Bis zu <b>${c.maxTake}</b> davon hier abziehen?
+            </div>
+          </div>
+        </label>
+      `;
+    }).join('');
+
+    host.innerHTML = `
+      <div class="modal-backdrop" id="cv-import-modal">
+        <div class="modal-content w-[640px] max-w-[95vw]">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <h2 class="text-lg font-bold">Andere Varianten in Wants gefunden</h2>
+              <div class="text-xs text-slate-400 mt-1">Exakte Treffer werden ohnehin abgezogen. Hier geht's um Wants-Einträge mit derselben Card-ID, aber anderer Variante.</div>
+            </div>
+            <button id="cv-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+          </div>
+
+          <div class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-2 mb-3">
+            ${rows || '<div class="text-sm text-slate-500 px-2 py-1">Nichts zu fragen.</div>'}
+          </div>
+
+          <div class="flex gap-2 mb-3 text-xs">
+            <button id="cv-all" class="text-amber-400 hover:underline">Alle aktivieren</button>
+            <button id="cv-none" class="text-slate-400 hover:underline">Alle abwählen</button>
+          </div>
+
+          <div class="flex justify-end gap-2">
+            <button id="cv-skip" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Überspringen</button>
+            <button id="cv-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">Übernehmen</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
+    function esc(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', esc);
+    host.querySelector('#cv-close').addEventListener('click', () => { close(); finishCmApply(items, null); });
+    host.querySelector('#cv-skip').addEventListener('click', () => { close(); finishCmApply(items, null); });
+    host.querySelector('#cv-import-modal').addEventListener('click', e => {
+      if (e.target.id === 'cv-import-modal') { close(); finishCmApply(items, null); }
+    });
+    host.querySelector('#cv-all').addEventListener('click', () => {
+      host.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = true; });
+    });
+    host.querySelector('#cv-none').addEventListener('click', () => {
+      host.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = false; });
+    });
+    host.querySelector('#cv-go').addEventListener('click', () => {
+      const accepted = Array.from(host.querySelectorAll('input[data-cv-idx]:checked'))
+        .map(cb => {
+          const c = candidates[parseInt(cb.dataset.cvIdx, 10)];
+          return c ? { deckId: c.deckId, cardId: c.cardId, wantsVariant: c.wantsVariant, take: c.maxTake } : null;
+        })
+        .filter(Boolean);
+      close();
+      finishCmApply(items, { acceptCrossVariant: accepted });
+    });
   }
 
   function showCmMsg(msg, kind) {

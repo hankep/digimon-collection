@@ -102,30 +102,130 @@
     };
   }
 
-  function apply(items) {
+  // items -> Map variant -> qty (summiert ueber alle items mit gleicher variant).
+  function buildAddedByVariant(items) {
+    const m = new Map();
+    for (const it of items) {
+      m.set(it.variant, (m.get(it.variant) || 0) + it.qty);
+    }
+    return m;
+  }
+
+  // Analyse-Phase (read-only): bestimmt aus dem Import einen Plan, was an
+  // Wants-Listen abgezogen werden wuerde. Liefert exakt-passende Treffer
+  // (kommen IMMER) und Cross-Variant-Kandidaten (selbe Card-ID, andere Variante;
+  // werden im UI mit Rueckfrage versehen). Schreibt keine Daten.
+  function analyzeWantsImpact(items) {
+    const addedByVariant = buildAddedByVariant(items);
+    const state = Store.loadDecks();
+    // Working-Counts, damit dieselbe Wants-Zeile durch mehrere Imports nicht
+    // gleichzeitig komplett "drainen" als Plan dargestellt wird.
+    const working = new Map();
+    const wKey = (deckId, cardId, variant) => `${deckId}|${cardId}|${variant}`;
+    const getRem = (d, e) => {
+      const k = wKey(d.id, e.cardId, e.variant);
+      if (!working.has(k)) working.set(k, e.count);
+      return working.get(k);
+    };
+    const drain = (d, e, n) => {
+      const k = wKey(d.id, e.cardId, e.variant);
+      working.set(k, getRem(d, e) - n);
+    };
+
+    const exact = [];
+    const crossVariant = [];
+
+    for (const [variant, qty] of addedByVariant) {
+      if (qty <= 0) continue;
+      const cardId = variant.replace(/_P\d+$/, '');
+
+      // 1) Exakte Treffer (kleinste Liste zuerst).
+      const exactMatches = [];
+      for (const d of state.decks) {
+        if (d.kind !== 'wants') continue;
+        for (const entry of d.entries) {
+          if (entry.variant === variant && getRem(d, entry) > 0) {
+            exactMatches.push({ deck: d, entry });
+          }
+        }
+      }
+      exactMatches.sort((a, b) => getRem(a.deck, a.entry) - getRem(b.deck, b.entry));
+
+      let remaining = qty;
+      for (const m of exactMatches) {
+        if (remaining <= 0) break;
+        const avail = getRem(m.deck, m.entry);
+        const take = Math.min(remaining, avail);
+        if (take <= 0) continue;
+        exact.push({
+          deckId: m.deck.id,
+          deckName: m.deck.name,
+          cardId: m.entry.cardId,
+          variant: m.entry.variant,
+          take,
+          importedQty: qty
+        });
+        drain(m.deck, m.entry, take);
+        remaining -= take;
+      }
+
+      // 2) Cross-Variant-Kandidaten: selbe Card-ID, andere Variante. Wird nur
+      // ergaenzt, wenn nach Exakt-Treffern noch Import-Menge uebrig ist.
+      if (remaining > 0) {
+        for (const d of state.decks) {
+          if (d.kind !== 'wants') continue;
+          for (const entry of d.entries) {
+            if (entry.cardId !== cardId) continue;
+            if (entry.variant === variant) continue;
+            const remInEntry = getRem(d, entry);
+            if (remInEntry <= 0) continue;
+            crossVariant.push({
+              deckId: d.id,
+              deckName: d.name,
+              cardId: entry.cardId,
+              wantsVariant: entry.variant,
+              importedVariant: variant,
+              wantsCount: remInEntry,
+              importedRemainder: remaining,
+              maxTake: Math.min(remaining, remInEntry)
+            });
+          }
+        }
+      }
+    }
+
+    return { exact, crossVariant };
+  }
+
+  // Voller Import-Apply. decisions ist optional. Wenn gegeben:
+  //   decisions.acceptCrossVariant = [{deckId, cardId, wantsVariant, take}, ...]
+  // werden zusaetzlich zu den exakten Treffern abgezogen.
+  function apply(items, decisions) {
     const coll = Store.loadCollection();
     let addedCopies = 0;
     let addedValue = 0;
     // Bewusst ohne deckId: neue Kopien landen im Frei-Pool. Imports slotten nie.
     // originSet aus dem Parsing wandert mit, sofern verfügbar.
-    const addedByVariant = new Map();
     for (const it of items) {
       for (let i = 0; i < it.qty; i++) {
         Store.addPrice(coll, it.variant, it.unitPrice, it.originSet);
         addedCopies++;
         if (it.unitPrice != null) addedValue += it.unitPrice;
       }
-      addedByVariant.set(it.variant, (addedByVariant.get(it.variant) || 0) + it.qty);
     }
     Store.saveCollection(coll);
-    const removedFromWants = consumeFromWants(addedByVariant);
-    return { addedCopies, addedValue, removedFromWants };
+
+    const addedByVariant = buildAddedByVariant(items);
+    const removedFromWants = applyExactWantsConsumption(addedByVariant);
+    let crossVariantRemoved = 0;
+    if (decisions && Array.isArray(decisions.acceptCrossVariant) && decisions.acceptCrossVariant.length) {
+      crossVariantRemoved = applyCrossVariantConsumption(decisions.acceptCrossVariant);
+    }
+    return { addedCopies, addedValue, removedFromWants, crossVariantRemoved };
   }
 
-  // Zieht hinzugefügte Kopien direkt von den Wants-Listen ab. kind='deck' und
-  // kind='trade' bleiben unberührt. Pro Variante: kleinste Wants-Liste zuerst
-  // leeren, dann weiter — so verschwinden Mini-Wants schneller.
-  function consumeFromWants(addedByVariant) {
+  // Exakt-Treffer-Abzug (Variante deckt Variante). Wird IMMER vom Import gefahren.
+  function applyExactWantsConsumption(addedByVariant) {
     if (!addedByVariant.size) return 0;
     const state = Store.loadDecks();
     let removed = 0;
@@ -153,6 +253,27 @@
     return removed;
   }
 
+  // Cross-Variant-Abzug: nur die im UI bestaetigten Entscheidungen anwenden.
+  function applyCrossVariantConsumption(decisions) {
+    if (!decisions.length) return 0;
+    const state = Store.loadDecks();
+    let removed = 0;
+    let touched = false;
+    for (const dec of decisions) {
+      const deck = state.decks.find(d => d.id === dec.deckId && d.kind === 'wants');
+      if (!deck) continue;
+      const entry = deck.entries.find(e => e.cardId === dec.cardId && e.variant === dec.wantsVariant);
+      if (!entry || entry.count <= 0) continue;
+      const take = Math.min(dec.take, entry.count);
+      if (take <= 0) continue;
+      Store.addToDeck(deck, dec.cardId, dec.wantsVariant, -take);
+      removed += take;
+      touched = true;
+    }
+    if (touched) Store.saveDecks(state);
+    return removed;
+  }
+
   function summarize(items) {
     let totalQty = 0;
     let totalValue = 0;
@@ -165,5 +286,5 @@
     return { totalQty, totalValue, unpriced };
   }
 
-  window.Cardmarket = { parse, apply, summarize };
+  window.Cardmarket = { parse, apply, summarize, analyzeWantsImpact };
 })();

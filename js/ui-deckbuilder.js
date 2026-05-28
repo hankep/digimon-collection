@@ -505,10 +505,42 @@
     const freeProxy = vs ? vs.freeProxy : 0;
 
     const totalFree = freeReal + freeProxy;
-    const ownedClass = complete ? 'text-emerald-400' : (totalFree > 0 ? 'text-sky-400' : 'text-slate-500');
-    const needText = complete
-      ? '✓'
-      : (totalFree > 0 ? `${totalFree} verfügbar` : '');
+    // Cross-Variant-Hinweis: andere Varianten derselben Card-ID, die frei
+    // verfuegbar sind. Reine Info — Slotten bleibt variant-genau, User entscheidet.
+    let freeOtherTotal = 0;
+    const otherBreakdown = [];
+    if (card) {
+      for (const v of CardDB.variantsOf(card)) {
+        if (v.key === entry.variant) continue;
+        const ov = ctx.vIdx[v.key];
+        if (!ov) continue;
+        const f = ov.freeReal + ov.freeProxy;
+        if (f > 0) {
+          otherBreakdown.push(`${f}× ${v.key}`);
+          freeOtherTotal += f;
+        }
+      }
+    }
+
+    let ownedClass = 'text-slate-500';
+    let needText = '';
+    let needTitle = '';
+    if (complete) {
+      ownedClass = 'text-emerald-400';
+      needText = '✓';
+    } else if (totalFree > 0) {
+      ownedClass = 'text-sky-400';
+      needText = freeOtherTotal > 0
+        ? `${totalFree} verfügbar <span class="text-amber-300">+${freeOtherTotal} andere Variante</span>`
+        : `${totalFree} verfügbar`;
+      needTitle = freeOtherTotal > 0
+        ? `${totalFree} exakt frei · ${freeOtherTotal} in anderer Variante: ${otherBreakdown.join(', ')}`
+        : `${totalFree} exakt frei`;
+    } else if (freeOtherTotal > 0) {
+      ownedClass = 'text-amber-300';
+      needText = `${freeOtherTotal} andere Variante`;
+      needTitle = `${freeOtherTotal} in anderer Variante verfügbar: ${otherBreakdown.join(', ')}`;
+    }
 
     const badgeCls = (assignedReal === 0 && assignedProxy === 0)
       ? 'zero'
@@ -520,7 +552,7 @@
       <span class="tile-note">${Notes.iconHtml(!!note)}</span>
       <div class="px-2 pt-1 text-[11px] font-mono leading-tight flex justify-between gap-2">
         <span class="text-amber-400 truncate" title="Cardmarket low">${cmLow ? 'CM: ' + cmLow : ''}</span>
-        <span class="${ownedClass}">${needText}</span>
+        <span class="${ownedClass}"${needTitle ? ` title="${escapeAttr(needTitle)}"` : ''}>${needText}</span>
       </div>
       <div class="p-2 pt-1 flex items-center gap-2">
         <div class="min-w-0 flex-1">
