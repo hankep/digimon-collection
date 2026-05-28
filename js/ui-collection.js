@@ -807,10 +807,11 @@
               return `
               <div class="bg-slate-900 rounded p-2" data-variant-block="${escapeAttr(v.key)}">
                 <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-1/2 mx-auto aspect-[5/7] object-cover rounded mb-2" alt="" />
-                <div class="text-xs font-mono text-slate-400 mb-2 flex items-baseline justify-between gap-2">
-                  <span class="truncate">${escapeHtml(v.key)} ${v.isAlt ? '· Alt' : '· Main'}${rarityTxt ? ` · <span class="text-slate-300">${escapeHtml(rarityTxt)}</span>` : ''}</span>
+                <div class="text-xs font-mono text-slate-400 flex items-baseline justify-between gap-2">
+                  <span class="truncate">${escapeHtml(v.key)}</span>
                   ${vPriceLow ? `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>` : ''}
                 </div>
+                <div class="text-[11px] text-slate-300 mb-2">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</div>
                 <div data-variant-body="${escapeAttr(v.key)}">${renderVariantBody(v.key)}</div>
               </div>
             `;

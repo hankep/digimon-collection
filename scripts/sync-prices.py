@@ -208,21 +208,29 @@ def main():
             update_slot(by_set_slot, low, avg, trend, count_print=False)
 
     # Per-Variant-Zuordnung (Main / _P1 / _P2 …). Heuristik: sortiere Cardmarket-
-    # Produkte nach idProduct asc (chronologisch angelegt) und matche positional
-    # gegen die App-Variants (Main zuerst, dann Alt-Arts in altImages-Reihenfolge).
-    # Wenn die Anzahl Produkte exakt der Anzahl App-Variants entspricht, ist die
-    # Zuordnung verlaesslich (z.B. AD1-016 ShineGreymon: 3 idProducts == Main+2Alts).
-    # Bei Mismatch: keine byVariant — Fallback auf bySet/Top-Level.
-    variant_matches = 0
-    variant_mismatches = 0
+    # Produkte einer Card-ID asc nach idProduct (chronologisch von Cardmarket
+    # angelegt) und matche positional gegen die App-Variants (Main zuerst, dann
+    # Alt-Arts in altImages-Reihenfolge).
+    #   - len(prods) == len(variants) → ideale Zuordnung (z.B. AD1-016: 3=3).
+    #   - len(prods) < len(variants)  → erste N Variants kriegen einen CM-Preis,
+    #                                    Rest faellt auf Top-Level-Low zurueck.
+    #   - len(prods) > len(variants)  → ueberzaehlige idProducts werden nur fuer
+    #                                    Top-Level-Aggregat genutzt, kein
+    #                                    byVariant-Eintrag fuer sie.
+    # Annahme ist nicht perfekt (Cardmarket-Reihenfolge muss nicht der digimoncard.io-
+    # Reihenfolge entsprechen), aber besser als "alle Variants zeigen denselben
+    # Aggregat-Low".
+    variant_exact = 0
+    variant_partial = 0
+    variant_none = 0
     for card_id, card in cards_by_id.items():
         slot = agg.get(card_id)
         if not slot:
             continue
         prods = products_by_cardid.get(card_id, [])
         variants = variant_keys_of(card)
-        if not variants or len(prods) != len(variants):
-            variant_mismatches += 1
+        if not variants or not prods:
+            variant_none += 1
             continue
         prods_sorted = sorted(prods, key=lambda p: p['idProduct'])
         for variant_key, prod in zip(variants, prods_sorted):
@@ -232,7 +240,10 @@ def main():
             vs = {'low': None, 'avg': None, 'trend': None}
             update_slot(vs, p.get('low'), p.get('avg'), p.get('trend'), count_print=False)
             slot['byVariant'][variant_key] = vs
-        variant_matches += 1
+        if len(prods) == len(variants):
+            variant_exact += 1
+        else:
+            variant_partial += 1
 
     # Leere bySet/byVariant-Objekte herausnehmen, damit JSON kompakt bleibt.
     for slot in agg.values():
@@ -246,7 +257,7 @@ def main():
     cards_with_byvariant = sum(1 for v in agg.values() if 'byVariant' in v)
     log(f'Card-IDs mit Per-Set-Preis (bySet): {cards_with_byset}')
     log(f'Card-IDs mit Per-Variant-Preis (byVariant): {cards_with_byvariant}')
-    log(f'  davon Variant-Match: {variant_matches} OK, {variant_mismatches} mismatch (fallback auf bySet)')
+    log(f'  exakter Match (CM=App): {variant_exact}; partial Match (CM!=App, positional): {variant_partial}; kein CM/Variant: {variant_none}')
     log(f'Produkte ohne erkennbare Card-ID uebersprungen: {skipped_no_id}')
     log(f'Produkte ohne Preis-Eintrag uebersprungen: {skipped_no_price}')
 

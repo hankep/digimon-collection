@@ -313,6 +313,38 @@
     return codes.map((code, i) => setPillHtml(card, code, i === 0 ? 'Origin' : 'Reprint in')).join('');
   }
 
+  // Slug-Helper fuer Cardmarket-URLs: Sonderzeichen raus, Leerzeichen zu Bindestrich.
+  function slugify(s) {
+    return String(s || '')
+      .replace(/&/g, 'and')
+      .replace(/[()'":;,.!?]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  // Konstruiert die Cardmarket-Produktseite einer konkreten Variante.
+  // Pattern: cardmarket.com/de/Digimon/Products/Singles/<Set-Slug>/<Name-Slug>-<cardId>[-V<n>]
+  //   - Set-Slug = Teil nach "<setCode>:" aus card.raw.set_name[0], slugified.
+  //   - Name-Slug = card.name slugified (Klammern werden zu Bindestrichen).
+  //   - V-Suffix: Karten mit Alt-Arts bekommen -V1 (Main), -V2 (_P1), … ;
+  //     Karten ohne Alt-Arts haben keinen V-Suffix (so wie es CM faehrt).
+  // Liefert null, wenn die noetigen Felder fehlen.
+  function cardmarketUrl(card, variantKey) {
+    if (!card || !card.id) return null;
+    const setNames = (card.raw && Array.isArray(card.raw.set_name)) ? card.raw.set_name : [];
+    if (!setNames.length) return null;
+    const setSlug = slugify(setNames[0].split(':').slice(1).join(':').trim());
+    if (!setSlug) return null;
+    const nameSlug = slugify(card.name);
+    if (!nameSlug) return null;
+    const variants = variantsOf(card);
+    const idx = variantKey ? variants.findIndex(v => v.key === variantKey) : 0;
+    const hasAlts = variants.length > 1;
+    const vSuffix = hasAlts ? `-V${(idx < 0 ? 0 : idx) + 1}` : '';
+    return `https://www.cardmarket.com/de/Digimon/Products/Singles/${setSlug}/${nameSlug}-${card.id}${vSuffix}`;
+  }
+
   function setPillHtml(card, code, titlePrefix) {
     const rarity = card.rarity || '';
     const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
