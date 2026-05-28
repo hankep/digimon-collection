@@ -91,6 +91,7 @@
               <option value="id"    ${state.sortBy === 'id' ? 'selected' : ''}>Sort: ID</option>
               <option value="name"  ${state.sortBy === 'name' ? 'selected' : ''}>Sort: Name</option>
               <option value="level" ${state.sortBy === 'level' ? 'selected' : ''}>Sort: Level</option>
+              <option value="cost"  ${state.sortBy === 'cost' ? 'selected' : ''}>Sort: Play-Cost</option>
               <option value="price" ${state.sortBy === 'price' ? 'selected' : ''}>Sort: Preis (CM low)</option>
             </select>
             <button id="sort-dir" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px] w-10" title="Richtung">

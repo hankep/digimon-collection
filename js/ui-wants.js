@@ -263,6 +263,8 @@
         <div class="flex flex-wrap gap-2" id="wants-lists">${listChips}</div>
         <div class="text-xs text-slate-400 mt-2 mb-1">Preisspannen:</div>
         <div class="flex flex-wrap gap-2" id="wants-buckets">${bucketChips}</div>
+        <div class="text-xs text-slate-400 mt-2 mb-1">Nach Rarity:</div>
+        <div class="flex flex-wrap gap-1.5" id="wants-rarity-totals"></div>
       </div>
       <div id="wants-sets" class="columns-1 lg:columns-2 [column-gap:0.75rem]"></div>`;
 
@@ -281,6 +283,23 @@
     const realSets = blocks.reduce((n, b) => n + (b.total > 0 ? 1 : 0), 0);
     const cnt = rootEl.querySelector('#wants-count');
     if (cnt) cnt.textContent = `${realSets} Sets · ${grandTotal} Karten · ${grandUnique} unique`;
+
+    // Aggregat Rarity-Counts ueber alle Set-Bloecke.
+    const grandPerRarity = new Map();
+    for (const b of blocks) {
+      for (const [r, n] of b.perRarity) {
+        grandPerRarity.set(r, (grandPerRarity.get(r) || 0) + n);
+      }
+    }
+    const rarityHost = rootEl.querySelector('#wants-rarity-totals');
+    if (rarityHost) {
+      const entries = Array.from(grandPerRarity.entries())
+        .sort((a, b) => (rarityRank(b[0]) - rarityRank(a[0])) || a[0].localeCompare(b[0]));
+      rarityHost.innerHTML = entries.length
+        ? entries.map(([r, n]) => `<span class="inline-block bg-slate-900 border border-slate-600 rounded px-2 py-0.5 text-xs">${escapeHtml(r)}: <span class="font-semibold text-amber-400">${n}</span></span>`).join('')
+        : '<span class="text-xs text-slate-500">—</span>';
+    }
+
     const host = rootEl.querySelector('#wants-sets');
     if (host) host.innerHTML = blocks.length
       ? blocks.map(renderSetBlock).join('')
