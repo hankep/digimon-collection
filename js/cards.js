@@ -370,8 +370,20 @@
       return `https://www.cardmarket.com/de/Digimon/Products/Search?searchString=${encodeURIComponent(card.id)}`;
     }
 
-    // "BT-16: Booster Beginning Observer" -> "Beginning Observer"
-    const setSlugSource = chosenSetName.split(':').slice(1).join(':').trim().replace(/^Booster\s+/i, '');
+    // Cardmarket-URLs nutzen den reinen Set-Namen ohne Kategorie-Praefixe wie
+    // "Booster", "Advanced Booster", "Theme Booster", "Starter Deck",
+    // "Limited Card Pack". Beispiele:
+    //   "BT-16: Booster Beginning Observer"          -> "Beginning Observer"
+    //   "AD-01: Advanced Booster Digimon Generation" -> "Digimon Generation"
+    //   "EX-05: Theme Booster Animal Colosseum"      -> "Animal Colosseum"
+    //   "ST-21: Starter Deck Pulse of Yellow Memory" -> "Pulse of Yellow Memory"
+    //   "LM-06: Limited Card Pack Billion Bullet"    -> "Billion Bullet"
+    const setSlugSource = chosenSetName
+      .split(':').slice(1).join(':').trim()
+      .replace(/^(Advanced|Theme)\s+Booster\s+/i, '')
+      .replace(/^Booster\s+/i, '')
+      .replace(/^Starter\s+Deck:?\s*/i, '')
+      .replace(/^Limited\s+Card\s+Pack\s+/i, '');
     const setSlug = slugify(setSlugSource);
     if (!setSlug) return null;
 
