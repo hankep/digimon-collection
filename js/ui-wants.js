@@ -620,10 +620,24 @@
   function exportSetAsList(setCode) {
     const block = blockFor(setCode);
     if (!block) return;
-    const text = block.items.map(it => `${it.count}x ${it.name} ${it.cardId}${altVersion(it.cardId, it.variant)}`).join('\n') + '\n';
+    // Reprints aus anderen Origin-Sets, die hier ebenfalls verfuegbar sind,
+    // mit exportieren. Aggregat per variant (cardId/variant) — falls dieselbe
+    // Variante sowohl in block.items als auch in block.reprints steht, summieren.
+    const merged = new Map();
+    const push = it => {
+      const key = it.variant;
+      const prev = merged.get(key);
+      if (prev) prev.count += it.count;
+      else merged.set(key, { cardId: it.cardId, variant: it.variant, count: it.count, name: it.name });
+    };
+    for (const it of (block.items || [])) push(it);
+    for (const it of (block.reprints || [])) push(it);
+    if (!merged.size) return;
+    const list = Array.from(merged.values());
+    const text = list.map(it => `${it.count}x ${it.name} ${it.cardId}${altVersion(it.cardId, it.variant)}`).join('\n') + '\n';
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text)
-        .then(() => alert(`Liste „${setCode}" (${block.items.length} Karten) in die Zwischenablage kopiert.`))
+        .then(() => alert(`Liste „${setCode}" (${list.length} Karten, inkl. Reprints) in die Zwischenablage kopiert.`))
         .catch(() => fallbackCopy(text));
     } else {
       fallbackCopy(text);
