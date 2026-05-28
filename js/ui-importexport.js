@@ -73,7 +73,7 @@
         </div>
         <textarea id="cm-text" rows="10"
           class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs mb-2"
-          placeholder="1x  Bind Red Trigger (P-180)&#10;Bind Red Trigger (P-180)&#10;#180&#10;P&#10;NM&#10;0,30 €&#10;&#10;..."></textarea>
+          placeholder="1x  Taiki, Kiriha, &amp; Nene (BT11-095) (V.1)&#10;#BT11-095&#10;AD-01&#10;NM&#10;0,20 €&#10;&#10;..."></textarea>
         <div class="flex flex-wrap gap-2 mb-3">
           <button id="cm-preview" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded font-semibold">Vorschau</button>
           <button id="cm-apply"   class="bg-emerald-500 text-slate-900 px-4 py-2 rounded font-semibold">In Sammlung übernehmen</button>
@@ -133,6 +133,7 @@
         <td class="px-2 py-1">${it.qty}x</td>
         <td class="px-2 py-1">${escapeHtml(it.cardName)}</td>
         <td class="px-2 py-1 font-mono text-xs text-slate-400">${escapeHtml(it.variant)}${it.isAlt ? ' (Alt)' : ''}</td>
+        <td class="px-2 py-1 font-mono text-xs ${it.originSet ? 'text-amber-400' : 'text-slate-600'}">${it.originSet ? escapeHtml(it.originSet) : '–'}</td>
         <td class="px-2 py-1 text-right">${it.unitPrice == null ? '–' : Fmt.eur(it.unitPrice)}</td>
         <td class="px-2 py-1 text-right">${it.unitPrice == null ? '–' : Fmt.eur(it.unitPrice * it.qty)}</td>
       </tr>
@@ -149,9 +150,10 @@
         <table class="w-full text-sm">
           <thead><tr class="text-xs uppercase text-slate-400 text-left">
             <th class="px-2 py-1">Menge</th><th class="px-2 py-1">Name</th><th class="px-2 py-1">Variant</th>
+            <th class="px-2 py-1">Set</th>
             <th class="px-2 py-1 text-right">Stk.-Preis</th><th class="px-2 py-1 text-right">Subtotal</th>
           </tr></thead>
-          <tbody>${rows || '<tr><td class="text-slate-500 px-2 py-2" colspan="5">Keine erkannten Einträge.</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td class="text-slate-500 px-2 py-2" colspan="6">Keine erkannten Einträge.</td></tr>'}</tbody>
         </table>
       </div>
       ${unknown.length ? `

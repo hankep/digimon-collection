@@ -142,7 +142,10 @@
       price: (opts.price == null || Number.isNaN(Number(opts.price))) ? null : Number(opts.price),
       isProxy: !!opts.isProxy,
       deckId: opts.deckId || null,
-      addedAt: opts.addedAt || new Date().toISOString()
+      addedAt: opts.addedAt || new Date().toISOString(),
+      // Optionales Herkunfts-Set ("AD1", "BT16", …). null = unbekannt (Bestand vor
+      // dem Reprint-Umbau oder manuell hinzugefügte Kopie ohne Set-Info).
+      originSet: opts.originSet || null
     };
     return id;
   }
@@ -318,8 +321,8 @@
     return realCopiesSortedByPrice(coll, variant).map(c => c.price);
   }
 
-  function addPrice(coll, variant, price) {
-    createCopy(coll, variant, { price, isProxy: false });
+  function addPrice(coll, variant, price, originSet) {
+    createCopy(coll, variant, { price, isProxy: false, originSet: originSet || null });
   }
 
   function removePriceAt(coll, variant, idx) {

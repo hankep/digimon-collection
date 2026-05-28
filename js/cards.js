@@ -100,6 +100,25 @@
     ST22: '2025-12-05'
   };
 
+  // Pro Set die Anzahl Karten zählen, die in diesem Set erhältlich sind —
+  // Origin + Reprints. So spiegelt der Sidebar-Counter, was der Filter zeigt.
+  const reprintCounts = new Map(); // setCode -> count Reprints (Karten mit anderem Origin, die hier reprinted sind)
+  for (const card of CARDS) {
+    if (!Array.isArray(card.raw && card.raw.set_name)) continue;
+    const seen = new Set();
+    for (const productStr of card.raw.set_name) {
+      const head = String(productStr || '').split(':')[0].trim();
+      const m = head.match(/^([A-Za-z]+)-?0*(\d+)$/);
+      if (!m) continue;
+      const code = m[1] + m[2];
+      if (!bySet.has(code)) continue;     // unbekanntes Set ignorieren
+      if (code === card.set) continue;     // Origin nicht doppelt zählen
+      if (seen.has(code)) continue;
+      seen.add(code);
+      reprintCounts.set(code, (reprintCounts.get(code) || 0) + 1);
+    }
+  }
+
   for (const [code, cards] of bySet.entries()) {
     const setName = (cards[0] && cards[0].raw && Array.isArray(cards[0].raw.set_name) && cards[0].raw.set_name[0]) || code;
     let earliestAdded = null;
@@ -108,7 +127,8 @@
       if (d && (!earliestAdded || d < earliestAdded)) earliestAdded = d;
     }
     const releasedAt = SET_RELEASES[code] || (earliestAdded ? earliestAdded.slice(0, 10) : null);
-    sets.push({ code, name: setName, count: cards.length, releasedAt });
+    const count = cards.length + (reprintCounts.get(code) || 0);
+    sets.push({ code, name: setName, count, releasedAt });
   }
 
   sets.sort((a, b) => {
@@ -154,8 +174,11 @@
     const levelsFilter = Array.isArray(opts.levels) && opts.levels.length ? opts.levels : null;
 
     let pool;
-    if (setCode && bySet.has(setCode)) {
-      pool = bySet.get(setCode);
+    if (setCode) {
+      // Reprint-aware: alle Karten, deren Origin ODER eines ihrer Reprint-Sets
+      // dem Filter entspricht. So taucht z.B. BT16-002 unter Filter "AD1" auf,
+      // weil sie in AD-01 als Reprint erhältlich ist.
+      pool = CARDS.filter(c => appearsInSet(c, setCode));
     } else {
       pool = CARDS;
     }
@@ -257,6 +280,38 @@
     return head || s;
   }
 
+  // True wenn die Karte unter setCode erhältlich ist — entweder als Origin (card.set)
+  // oder als Reprint (über raw.set_name). Wird von Set-Filtern (Collection-Tab,
+  // Main-Wants-Filter, …) verwendet, damit Reprints im Filter mitschwimmen.
+  function appearsInSet(card, setCode) {
+    if (!card || !setCode) return false;
+    if (card.set === setCode) return true;
+    return reprintSetsOf(card).includes(setCode);
+  }
+
+  // Erzeugt kleine Pills für jeden Reprint-Set-Code: "AD1 · Rare · 0,15 €".
+  // Rarity ist die Origin-Rarity (Cardmarket liefert keine Per-Reprint-Rarity).
+  // Low-Preis aus CM.getForSet, weggelassen wenn keiner verfügbar.
+  function reprintPillsHtml(card) {
+    if (!card) return '';
+    const codes = reprintSetsOf(card);
+    if (!codes.length) return '';
+    const rarity = card.rarity || '';
+    const pills = codes.map(code => {
+      const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
+      const priceTxt = (p && p.low != null) ? CM.fmt(p.low) : null;
+      const parts = [code];
+      if (rarity) parts.push(rarity);
+      if (priceTxt) parts.push(priceTxt);
+      return `<span class="reprint-pill" title="Reprint in ${code}${rarity ? ' · ' + rarity : ''}${priceTxt ? ' · CM low ' + priceTxt : ''}">${parts.map(escapeHtml).join(' · ')}</span>`;
+    });
+    return pills.join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   window.CardDB = {
     all: CARDS,
     byId,
@@ -274,6 +329,8 @@
     setNameToCode,
     productsOf,
     reprintSetsOf,
-    productLabel
+    productLabel,
+    appearsInSet,
+    reprintPillsHtml
   };
 })();

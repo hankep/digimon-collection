@@ -66,10 +66,10 @@
     let text, filename, mime;
     const ts = new Date().toISOString().slice(0, 10);
     if (kind === 'csv') {
-      const rows = ['copyId,variant,price,isProxy,deckId,addedAt'];
+      const rows = ['copyId,variant,price,isProxy,deckId,addedAt,originSet'];
       for (const [id, c] of Object.entries(copies)) {
         const price = c.price == null ? '' : c.price.toFixed(2);
-        rows.push(`${id},${c.variant},${price},${c.isProxy ? 1 : 0},${c.deckId || ''},${c.addedAt || ''}`);
+        rows.push(`${id},${c.variant},${price},${c.isProxy ? 1 : 0},${c.deckId || ''},${c.addedAt || ''},${c.originSet || ''}`);
       }
       text = rows.join('\n') + '\n';
       filename = `digimon-collection-${ts}.csv`;
@@ -128,7 +128,8 @@
           price:    (c.price == null || Number.isNaN(Number(c.price))) ? null : Number(c.price),
           isProxy:  !!c.isProxy,
           deckId:   c.deckId || null,
-          addedAt:  c.addedAt || new Date().toISOString()
+          addedAt:  c.addedAt || new Date().toISOString(),
+          originSet: c.originSet || null
         };
       }
       if (data.notes && typeof data.notes === 'object') {
@@ -158,7 +159,8 @@
         price,
         isProxy: parts[3] === '1' || parts[3] === 'true',
         deckId: parts[4] && parts[4] !== '' ? parts[4] : null,
-        addedAt: parts[5] || new Date().toISOString()
+        addedAt: parts[5] || new Date().toISOString(),
+        originSet: parts[6] && parts[6] !== '' ? parts[6] : null
       };
     }
     return { copies, notes };

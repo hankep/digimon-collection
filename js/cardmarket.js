@@ -23,6 +23,7 @@
       let rawId = null;
       let version = 1;
       let priceCents = null;
+      let originSet = null;
 
       for (const line of lines) {
         if (qty == null) {
@@ -42,6 +43,14 @@
             const cents = parseInt(p[1], 10) * 100 + parseInt(p[2].padEnd(2, '0').slice(0, 2), 10);
             priceCents = cents;
           }
+        }
+        // Set-Zeile: alleinstehender Code wie "AD-01" / "BT-16" / "ST21".
+        // Card-IDs haben Klammern oder ein # davor → die schließen wir aus.
+        // setNameToCode liefert null für unbekannte Sets, was Card-IDs wie "P-180"
+        // (P180 ist kein Set) ohnehin abfängt.
+        if (!originSet && !line.startsWith('#') && !line.includes('(')) {
+          const code = CardDB.setNameToCode ? CardDB.setNameToCode(line) : null;
+          if (code) originSet = code;
         }
       }
       if (qty == null) qty = 1;
@@ -63,7 +72,8 @@
         isAlt: mapping.isAlt,
         version,
         qty,
-        unitPrice: priceCents != null ? priceCents / 100 : null
+        unitPrice: priceCents != null ? priceCents / 100 : null,
+        originSet
       });
     }
 
@@ -97,10 +107,11 @@
     let addedCopies = 0;
     let addedValue = 0;
     // Bewusst ohne deckId: neue Kopien landen im Frei-Pool. Imports slotten nie.
+    // originSet aus dem Parsing wandert mit, sofern verfügbar.
     const addedByVariant = new Map();
     for (const it of items) {
       for (let i = 0; i < it.qty; i++) {
-        Store.addPrice(coll, it.variant, it.unitPrice);
+        Store.addPrice(coll, it.variant, it.unitPrice, it.originSet);
         addedCopies++;
         if (it.unitPrice != null) addedValue += it.unitPrice;
       }

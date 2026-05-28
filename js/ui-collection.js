@@ -336,7 +336,9 @@
   }
 
   function ownedInSet(setCode) {
-    const cards = setCode ? (CardDB.bySet.get(setCode) || []) : CardDB.all;
+    // Reprint-aware: Karten zählen, wenn sie unter dem Set erhältlich sind
+    // (Origin oder Reprint). Konsistent mit dem Set-Filter im Grid.
+    const cards = setCode ? CardDB.all.filter(c => CardDB.appearsInSet(c, setCode)) : CardDB.all;
     const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
     let owned = 0;
     for (const c of cards) {
@@ -752,10 +754,14 @@
     const effect = card.effect || (card.raw && card.raw.main_effect) || '';
 
     // Reprints / Cross-Set: alle Produkte, in denen die Karte erhältlich ist.
+    // Zusätzlich Reprint-Pills mit Rarity + (sofern verfügbar) Low-Preis pro Set.
     const products = (CardDB.productsOf ? CardDB.productsOf(card) : []);
-    const productsHtml = products.length
+    const reprintPills = CardDB.reprintPillsHtml(card);
+    const productsHtml = (products.length || reprintPills)
       ? `<div class="text-xs text-slate-400 mt-2">Erhältlich in:
-          ${products.map(p => `<span class="inline-block bg-slate-700 rounded px-1.5 py-0.5 mr-1 mb-1 font-mono" title="${escapeAttr(p)}">${escapeHtml(CardDB.productLabel(p))}</span>`).join('')}</div>`
+          ${products.map(p => `<span class="inline-block bg-slate-700 rounded px-1.5 py-0.5 mr-1 mb-1 font-mono" title="${escapeAttr(p)}">${escapeHtml(CardDB.productLabel(p))}</span>`).join('')}
+          ${reprintPills ? `<div class="mt-1 flex flex-wrap gap-1">${reprintPills}</div>` : ''}
+        </div>`
       : '';
 
     const cols = Math.min(variants.length, 3);
@@ -811,18 +817,28 @@
   }
 
   function renderVariantBody(variantKey) {
-    const prices = Store.getPrices(state.collection, variantKey);
+    // Direkt aus dem Store, damit jede Copy ihr originSet behält.
+    const realCopies = Store.copiesOfVariant(state.collection, variantKey)
+      .filter(c => !c.isProxy)
+      .sort((a, b) => {
+        if (a.price == null && b.price == null) return 0;
+        if (a.price == null) return 1;
+        if (b.price == null) return -1;
+        return a.price - b.price;
+      });
+    const prices = realCopies.map(c => c.price);
     const count = prices.length;
     const proxy = Store.getProxyCount(state.collection, variantKey);
     const pricedSum = prices.reduce((s, p) => s + (p || 0), 0);
     const unknown = prices.filter(p => p == null).length;
 
-    const rows = prices.map((p, i) => `
+    const rows = realCopies.map((c, i) => `
       <div class="flex items-center gap-1">
-        <input type="text" data-price-edit="${i}" value="${p == null ? '' : p.toFixed(2).replace('.', ',')}"
+        <input type="text" data-price-edit="${i}" value="${c.price == null ? '' : c.price.toFixed(2).replace('.', ',')}"
           placeholder="–"
           class="bg-slate-800 border border-slate-700 rounded px-2 py-1 w-20 text-sm text-right font-mono" />
         <span class="text-xs text-slate-500">€</span>
+        ${c.originSet ? `<span class="text-[10px] font-mono bg-slate-700 text-amber-300 rounded px-1.5 py-0.5" title="Gekauft aus Set ${escapeHtml(c.originSet)}">${escapeHtml(c.originSet)}</span>` : ''}
         <button data-price-del="${i}" class="ml-auto text-slate-500 hover:text-red-400 px-1" title="Kopie entfernen">×</button>
       </div>
     `).join('');

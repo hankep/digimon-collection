@@ -2,15 +2,26 @@
 // Daten kommen aus prices.data.js (optional eingebunden).
 //
 // API:
-//   CM.get(cardId)       -> { low, avg, trend, prints } | null
-//   CM.fmt(n)            -> "0,12 €" oder "—"
-//   CM.hasData()         -> boolean
-//   CM.updatedAt()       -> ISO-String oder null
+//   CM.get(cardId)              -> { low, avg, trend, prints, bySet? } | null
+//   CM.getForSet(cardId, code)  -> { low, avg, trend } | null  (Per-Set, sonst Top-Level-Fallback)
+//   CM.fmt(n)                   -> "0,12 €" oder "—"
+//   CM.hasData()                -> boolean
+//   CM.updatedAt()              -> ISO-String oder null
 
 (function () {
   function get(cardId) {
     if (!window.CM_PRICES) return null;
     return window.CM_PRICES[cardId] || null;
+  }
+
+  // Liefert Per-Set-Preis, fällt auf den aggregierten Top-Level-Preis zurück,
+  // wenn kein bySet-Eintrag für diesen Set-Code existiert. setCode=null liefert
+  // den Top-Level direkt. Liefert null wenn die Karte gar nicht in CM steht.
+  function getForSet(cardId, setCode) {
+    const p = get(cardId);
+    if (!p) return null;
+    if (setCode && p.bySet && p.bySet[setCode]) return p.bySet[setCode];
+    return { low: p.low, avg: p.avg, trend: p.trend };
   }
 
   function fmt(n) {
@@ -26,5 +37,5 @@
     return window.CM_PRICES_UPDATED_AT || null;
   }
 
-  window.CM = { get, fmt, hasData, updatedAt };
+  window.CM = { get, getForSet, fmt, hasData, updatedAt };
 })();

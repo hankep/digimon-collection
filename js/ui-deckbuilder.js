@@ -987,13 +987,16 @@
   }
 
   // Filtert MW-Items auf das aktive Set (state.mainWantsSetFilter). Bei null
-  // unverändert. Liefert auch die in der aktuellen Auswahl tatsächlich
-  // vorkommenden Set-Codes für das Dropdown.
+  // unverändert. Reprint-aware: eine Karte erscheint unter dem Filter, wenn sie
+  // dort als Origin ODER als Reprint erhältlich ist. setsPresent enthält daher
+  // auch die Reprint-Sets der Wants-Karten.
   function filterMainWants(mw) {
     const setsPresent = new Set();
     for (const it of mw.items) {
       const card = CardDB.byId.get(it.cardId);
-      if (card && card.set) setsPresent.add(card.set);
+      if (!card) continue;
+      if (card.set) setsPresent.add(card.set);
+      for (const rc of CardDB.reprintSetsOf(card)) setsPresent.add(rc);
     }
     const filter = state.mainWantsSetFilter;
     if (!filter || !setsPresent.has(filter)) {
@@ -1009,7 +1012,7 @@
     }
     const items = mw.items.filter(it => {
       const card = CardDB.byId.get(it.cardId);
-      return card && card.set === filter;
+      return card && CardDB.appearsInSet(card, filter);
     });
     return {
       items,
@@ -1125,6 +1128,7 @@
     const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
     const note = Store.getCardNote(collectionCache, item.cardId);
     const tooltip = item.sources.map(s => `${s.name}: ${s.n}`).join('\n');
+    const reprintPills = card ? CardDB.reprintPillsHtml(card) : '';
     return `<div class="card-tile entry-tile cursor-pointer"
         data-entry-card-id="${escapeAttr(item.cardId)}" data-card-id="${escapeAttr(item.cardId)}" data-variant-key="${escapeAttr(item.variant)}">
       <img loading="lazy" src="${CardDB.imagePath(item.variant)}" alt="${escapeAttr(name)}" />
@@ -1136,6 +1140,7 @@
       <div class="p-2 pt-1">
         <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(item.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
         <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
+        ${reprintPills ? `<div class="reprint-pills mt-1">${reprintPills}</div>` : ''}
       </div>
       <div class="qty-controls" title="Aus Wants-Listen entfernen (kleinste Liste zuerst)">
         <div class="qty-group">
