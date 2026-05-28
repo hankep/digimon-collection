@@ -13,6 +13,7 @@
     sortDir: 'asc',
     missingOnly: false,
     ownedOnly: true,
+    ownedRealOnly: false,    // besessen UND mind. eine echte Kopie (keine Proxy-only-Karten)
     proxyOnly: false,
     availableOnly: false,     // besessen, aber mind. eine freie (keinem Deck zugewiesene) Kopie
     showAlts: false,
@@ -109,6 +110,10 @@
                 <input id="owned-only" type="checkbox" ${state.ownedOnly ? 'checked' : ''} />
                 Nur im Besitz
               </label>
+              <label class="flex items-center gap-2 text-sm" title="Nur Karten mit mindestens einer echten Kopie (Proxy-only ausgeschlossen)">
+                <input id="owned-real-only" type="checkbox" ${state.ownedRealOnly ? 'checked' : ''} />
+                Im Besitz (ohne Proxies)
+              </label>
               <label class="flex items-center gap-2 text-sm" title="Nur Karten anzeigen, für die Proxies eingetragen sind">
                 <input id="proxy-only" type="checkbox" ${state.proxyOnly ? 'checked' : ''} />
                 Nur Proxy
@@ -170,20 +175,23 @@
       state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       render();
     });
-    // Die drei Besitz-Filter schließen sich gegenseitig aus (nur einer aktiv).
+    // Die Besitz-Filter schließen sich gegenseitig aus (nur einer aktiv).
     const setExclusive = active => {
-      state.missingOnly   = active === 'missing';
-      state.ownedOnly     = active === 'owned';
-      state.proxyOnly     = active === 'proxy';
-      state.availableOnly = active === 'available';
-      rootEl.querySelector('#missing-only').checked   = state.missingOnly;
-      rootEl.querySelector('#owned-only').checked     = state.ownedOnly;
-      rootEl.querySelector('#proxy-only').checked     = state.proxyOnly;
-      rootEl.querySelector('#available-only').checked = state.availableOnly;
+      state.missingOnly    = active === 'missing';
+      state.ownedOnly      = active === 'owned';
+      state.ownedRealOnly  = active === 'owned-real';
+      state.proxyOnly      = active === 'proxy';
+      state.availableOnly  = active === 'available';
+      rootEl.querySelector('#missing-only').checked     = state.missingOnly;
+      rootEl.querySelector('#owned-only').checked       = state.ownedOnly;
+      rootEl.querySelector('#owned-real-only').checked  = state.ownedRealOnly;
+      rootEl.querySelector('#proxy-only').checked       = state.proxyOnly;
+      rootEl.querySelector('#available-only').checked   = state.availableOnly;
       renderGrid(); renderStats();
     };
     rootEl.querySelector('#missing-only').addEventListener('change', e => setExclusive(e.target.checked ? 'missing' : null));
     rootEl.querySelector('#owned-only').addEventListener('change', e => setExclusive(e.target.checked ? 'owned' : null));
+    rootEl.querySelector('#owned-real-only').addEventListener('change', e => setExclusive(e.target.checked ? 'owned-real' : null));
     rootEl.querySelector('#proxy-only').addEventListener('change', e => setExclusive(e.target.checked ? 'proxy' : null));
     rootEl.querySelector('#available-only').addEventListener('change', e => setExclusive(e.target.checked ? 'available' : null));
     rootEl.querySelector('#show-alts').addEventListener('change', e => {
@@ -200,6 +208,7 @@
       state.levels = [];
       state.missingOnly = false;
       state.ownedOnly = false;
+      state.ownedRealOnly = false;
       state.proxyOnly = false;
       state.availableOnly = false;
       render();
@@ -440,6 +449,7 @@
     }
     const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
     const variantOwned = k => { const s = idx[k]; return s ? (s.real + s.proxy) : 0; };
+    const variantReal  = k => { const s = idx[k]; return s ? s.real : 0; };
     const variantProxy = k => { const s = idx[k]; return s ? s.proxy : 0; };
     const variantFree  = k => { const s = idx[k]; return s ? (s.freeReal + s.freeProxy) : 0; };
 
@@ -455,6 +465,11 @@
       list = state.showAlts
         ? list.filter(e => variantOwned(e.variantKey) > 0)
         : list.filter(e => CardDB.variantsOf(e.card).some(v => variantOwned(v.key) > 0));
+    } else if (state.ownedRealOnly) {
+      // Im Besitz, aber mit echter Kopie (Proxy-only-Karten ausgeschlossen).
+      list = state.showAlts
+        ? list.filter(e => variantReal(e.variantKey) > 0)
+        : list.filter(e => CardDB.variantsOf(e.card).some(v => variantReal(v.key) > 0));
     } else if (state.availableOnly) {
       // Verfügbar = mindestens eine freie Kopie (real oder Proxy), die keinem Deck zugewiesen ist.
       list = state.showAlts
