@@ -13,9 +13,6 @@
   const VIEW_KEY = 'wantsView';
   const BUCKET_KEY = 'wantsBuckets';
   const GROUP_KEY = 'wantsGroupBy';   // 'source' (Quell-Liste) | 'rarity'
-  const MAIN_PROXY = '__main_wants_proxy__';     // Proxies zählen NICHT als Besitz (Ersatz gewünscht)
-  const MAIN_NOPROXY = '__main_wants_noproxy__'; // Proxies decken den Bedarf
-  function isMainId(id) { return id === MAIN_PROXY || id === MAIN_NOPROXY; }
 
   // Preis-Buckets auf Basis Cardmarket low.
   const BUCKETS = [
@@ -39,55 +36,18 @@
     return decks.filter(d => d.kind === 'wants');
   }
 
-  // Berechnet „Main Wants" als Pseudo-Liste mit entries (gleiche Logik wie
-  // computeMainWants im Deckbuilder): Demand aller kind='deck'-Listen minus
-  // global vorhandene Kopien. includeProxy=true → Proxies zählen NICHT als
-  // Besitz (sollen ersetzt werden); false → Proxies decken den Bedarf.
-  function mainWantsList(id, name, includeProxy) {
-    const coll = Store.loadCollection();
-    const decks = Store.loadDecks().decks || [];
-    const demand = new Map(); // variant -> { cardId, variant, count }
-    for (const d of decks) {
-      if (d.kind !== 'deck') continue;
-      for (const e of (d.entries || [])) {
-        let slot = demand.get(e.variant);
-        if (!slot) { slot = { cardId: e.cardId, variant: e.variant, count: 0 }; demand.set(e.variant, slot); }
-        slot.count += e.count;
-      }
-    }
-    const vIdx = Store.buildVariantIndex(coll);
-    const entries = [];
-    for (const slot of demand.values()) {
-      const vs = vIdx[slot.variant];
-      const ownedReal = vs ? vs.real : 0;
-      const supply = includeProxy ? ownedReal : ownedReal + (vs ? vs.proxy : 0);
-      const missing = Math.max(0, slot.count - supply);
-      if (missing > 0) entries.push({ cardId: slot.cardId, variant: slot.variant, count: missing });
-    }
-    return { id, name, kind: 'wants', entries };
-  }
-
-  // Alle ankreuzbaren Quellen: beide Main-Wants-Varianten zuerst, dann Wants-Listen.
+  // Alle ankreuzbaren Quellen sind die expliziten Wants-Listen.
+  // Main Wants ist nur noch ein Merge dieser Listen und wird im Decks-Tab gezeigt.
   function candidateLists() {
-    return [
-      mainWantsList(MAIN_PROXY, '★ Main Wants (mit Proxies)', true),
-      mainWantsList(MAIN_NOPROXY, '★ Main Wants (ohne Proxies)', false),
-      ...wantsLists()
-    ];
+    return wantsLists();
   }
 
-  // Ausgewählte Quellen-IDs. Default: Main Wants (mit Proxies) + alle Wants-Listen
-  // (NICHT die ohne-Proxies-Variante, da sich beide Main-Varianten ausschließen).
+  // Default-Selection: alle Wants-Listen.
   function selectedIds(lists) {
     const stored = Prefs.get(PREF_KEY, null);
     const existing = new Set(lists.map(l => l.id));
-    if (!Array.isArray(stored)) {
-      return new Set(lists.map(l => l.id).filter(id => id !== MAIN_NOPROXY));
-    }
-    const sel = new Set(stored.filter(id => existing.has(id)));
-    // Sicherstellen, dass nie beide Main-Varianten gleichzeitig aktiv sind.
-    if (sel.has(MAIN_PROXY) && sel.has(MAIN_NOPROXY)) sel.delete(MAIN_NOPROXY);
-    return sel;
+    if (!Array.isArray(stored)) return new Set(existing);
+    return new Set(stored.filter(id => existing.has(id)));
   }
 
   function cmLow(cardId) {
@@ -159,7 +119,7 @@
     };
     lists.forEach((list, listIdx) => {
       if (!selected.has(list.id)) return;
-      const editable = !isMainId(list.id);
+      const editable = true;
       for (const e of (list.entries || [])) {
         const card = CardDB.byId.get(e.cardId);
         const setCode = card ? card.set : '—';
@@ -242,10 +202,9 @@
 
     const listChips = lists.map(l => {
       const n = (l.entries || []).reduce((s, e) => s + e.count, 0);
-      const isMain = isMainId(l.id);
-      return `<label class="flex items-center gap-2 bg-slate-900 border ${isMain ? 'border-amber-500/60' : 'border-slate-600'} rounded px-2 py-1 text-sm cursor-pointer">
+      return `<label class="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm cursor-pointer">
         <input type="checkbox" data-list-id="${escapeAttr(l.id)}" ${selected.has(l.id) ? 'checked' : ''} />
-        <span class="${isMain ? 'text-amber-400 font-semibold' : ''}">${escapeHtml(l.name)}</span>
+        <span>${escapeHtml(l.name)}</span>
         <span class="text-slate-500 text-xs">${n}</span>
       </label>`;
     }).join('');
@@ -418,12 +377,10 @@
 
   // Eine Quell-Gruppe (Wants-Liste) innerhalb eines Set-Blocks.
   function renderGroup(group, view) {
-    const isMain = isMainId(group.listId);
     const groupTotal = group.items.reduce((s, it) => s + it.count, 0);
     const head = `<div class="flex items-center gap-2 mt-3 mb-1">
-        <span class="text-sm font-semibold ${isMain ? 'text-amber-400' : 'text-slate-200'}">${escapeHtml(group.listName)}</span>
+        <span class="text-sm font-semibold text-slate-200">${escapeHtml(group.listName)}</span>
         <span class="text-xs text-slate-500">${groupTotal} Karten</span>
-        ${isMain ? '<span class="text-[10px] text-slate-500 italic">(berechnet)</span>' : ''}
       </div>`;
     return head + renderItemsBody(group.items, view, group);
   }
@@ -533,12 +490,6 @@
 
     rootEl.querySelectorAll('#wants-lists input[data-list-id]').forEach(cb => {
       cb.addEventListener('change', () => {
-        // Beide Main-Wants-Varianten schließen sich gegenseitig aus.
-        if (cb.checked && isMainId(cb.dataset.listId)) {
-          const other = cb.dataset.listId === MAIN_PROXY ? MAIN_NOPROXY : MAIN_PROXY;
-          const otherCb = rootEl.querySelector(`#wants-lists input[data-list-id="${other}"]`);
-          if (otherCb) otherCb.checked = false;
-        }
         const checked = Array.from(rootEl.querySelectorAll('#wants-lists input[data-list-id]'))
           .filter(c => c.checked).map(c => c.dataset.listId);
         Prefs.set(PREF_KEY, checked);

@@ -96,15 +96,50 @@
     const coll = Store.loadCollection();
     let addedCopies = 0;
     let addedValue = 0;
+    // Bewusst ohne deckId: neue Kopien landen im Frei-Pool. Imports slotten nie.
+    const addedByVariant = new Map();
     for (const it of items) {
       for (let i = 0; i < it.qty; i++) {
         Store.addPrice(coll, it.variant, it.unitPrice);
         addedCopies++;
         if (it.unitPrice != null) addedValue += it.unitPrice;
       }
+      addedByVariant.set(it.variant, (addedByVariant.get(it.variant) || 0) + it.qty);
     }
     Store.saveCollection(coll);
-    return { addedCopies, addedValue };
+    const removedFromWants = consumeFromWants(addedByVariant);
+    return { addedCopies, addedValue, removedFromWants };
+  }
+
+  // Zieht hinzugefügte Kopien direkt von den Wants-Listen ab. kind='deck' und
+  // kind='trade' bleiben unberührt. Pro Variante: kleinste Wants-Liste zuerst
+  // leeren, dann weiter — so verschwinden Mini-Wants schneller.
+  function consumeFromWants(addedByVariant) {
+    if (!addedByVariant.size) return 0;
+    const state = Store.loadDecks();
+    let removed = 0;
+    let touched = false;
+    for (const [variant, qty] of addedByVariant) {
+      let remaining = qty;
+      if (remaining <= 0) continue;
+      const matches = [];
+      for (const d of state.decks) {
+        if (d.kind !== 'wants') continue;
+        const entry = d.entries.find(e => e.variant === variant);
+        if (entry && entry.count > 0) matches.push({ deck: d, entry });
+      }
+      matches.sort((a, b) => a.entry.count - b.entry.count);
+      for (const m of matches) {
+        if (remaining <= 0) break;
+        const k = Math.min(remaining, m.entry.count);
+        Store.addToDeck(m.deck, m.entry.cardId, m.entry.variant, -k);
+        remaining -= k;
+        removed += k;
+        touched = true;
+      }
+    }
+    if (touched) Store.saveDecks(state);
+    return removed;
   }
 
   function summarize(items) {

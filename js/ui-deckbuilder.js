@@ -12,8 +12,8 @@
     deckSortBy: 'id',  // id | name | price-asc | price-desc
     deckGroupBy: 'none', // level | cost | type | none
     deckMissingOnly: false, // nur Einträge mit fehlenden echten Kopien anzeigen
-    mainWantsProxy: true, // Proxy-Wants in Main-Wants einbeziehen
-    mainWantsSort: 'id'   // id | price-desc
+    mainWantsSort: 'id',  // id | price-desc
+    mainWantsSetFilter: null  // null = alle Sets; sonst Set-Code (Sitzungsfilter, nicht persistiert)
   };
   const MAIN_WANTS_ID = '__main_wants__';
   function isMainWants(id) { return id === MAIN_WANTS_ID; }
@@ -25,7 +25,6 @@
     state.decksState = Store.loadDecks();
     collectionCache = Store.loadCollection();
     state.pickerShowAlts = !!Prefs.get('showAlts', false);
-    state.mainWantsProxy = Prefs.get('mainWantsProxy', true);
     state.mainWantsSort = Prefs.get('mainWantsSort', 'id');
     if (!state.activeDeckId) {
       state.activeDeckId = MAIN_WANTS_ID;
@@ -944,37 +943,23 @@
   }
 
   function computeMainWants() {
-    // Supply-vs-Demand-Modell: Demand = Summe aller Deck-Einträge (kind='deck') je Variante.
-    // Wants-/Trade-Listen zählen NICHT in den Bedarf hinein.
-    // Supply = global vorhandene reale Kopien (optional inkl. Proxies). So führt Kauf
-    // einer neuen Kopie sofort zur Reduktion der Wants — egal welchem Deck zugewiesen.
-    const includeProxy = !!state.mainWantsProxy;
-    const demand = new Map(); // variant -> { cardId, variant, count, sources: [...] }
+    // Reiner Merge aller kind='wants'-Listen pro Variant. Kein Supply-Abgleich —
+    // Wants sind bereits explizit gepflegte Fehlbestände. Tooltip zeigt
+    // Quell-Listen mit ihren jeweiligen Counts.
+    const merged = new Map(); // variant -> { cardId, variant, count, sources: [{listId, name, n}] }
     for (const d of state.decksState.decks) {
-      if (d.kind !== 'deck') continue;
+      if (d.kind !== 'wants') continue;
       for (const e of d.entries) {
-        let slot = demand.get(e.variant);
+        let slot = merged.get(e.variant);
         if (!slot) {
           slot = { cardId: e.cardId, variant: e.variant, count: 0, sources: [] };
-          demand.set(e.variant, slot);
+          merged.set(e.variant, slot);
         }
         slot.count += e.count;
-        slot.sources.push({ name: d.name, kind: d.kind, n: e.count });
+        slot.sources.push({ listId: d.id, name: d.name, n: e.count });
       }
     }
-    const vIdx = Store.buildVariantIndex(collectionCache);
-    const items = [];
-    for (const slot of demand.values()) {
-      const vs = vIdx[slot.variant];
-      const ownedReal = vs ? vs.real : 0;
-      // includeProxy=true (default): Proxies sind nicht „supply", weil ersetzt werden sollen
-      // includeProxy=false: Proxies decken den Bedarf
-      const supply = includeProxy ? ownedReal : ownedReal + (vs ? vs.proxy : 0);
-      const missing = Math.max(0, slot.count - supply);
-      if (missing > 0) {
-        items.push({ ...slot, count: missing });
-      }
-    }
+    const items = Array.from(merged.values());
     const mode = state.mainWantsSort || 'id';
     const cmLow = id => {
       if (!window.CM || !CM.hasData()) return null;
@@ -1001,14 +986,58 @@
     };
   }
 
+  // Filtert MW-Items auf das aktive Set (state.mainWantsSetFilter). Bei null
+  // unverändert. Liefert auch die in der aktuellen Auswahl tatsächlich
+  // vorkommenden Set-Codes für das Dropdown.
+  function filterMainWants(mw) {
+    const setsPresent = new Set();
+    for (const it of mw.items) {
+      const card = CardDB.byId.get(it.cardId);
+      if (card && card.set) setsPresent.add(card.set);
+    }
+    const filter = state.mainWantsSetFilter;
+    if (!filter || !setsPresent.has(filter)) {
+      // Falls der gespeicherte Filter durch Edits verschwindet, fallback auf alle.
+      if (filter && !setsPresent.has(filter)) state.mainWantsSetFilter = null;
+      const items = mw.items;
+      return {
+        items,
+        uniqueCount: items.length,
+        totalCount: items.reduce((s, i) => s + i.count, 0),
+        setsPresent
+      };
+    }
+    const items = mw.items.filter(it => {
+      const card = CardDB.byId.get(it.cardId);
+      return card && card.set === filter;
+    });
+    return {
+      items,
+      uniqueCount: items.length,
+      totalCount: items.reduce((s, i) => s + i.count, 0),
+      setsPresent
+    };
+  }
+
   function renderMainWantsDetail() {
     const el = rootEl.querySelector('#deck-detail');
     const prevScroll = (el.querySelector('#deck-entries') || {}).scrollTop || 0;
-    const mw = computeMainWants();
+    const mwAll = computeMainWants();
+    const mw = filterMainWants(mwAll);
+    const setOptions = Array.from(mw.setsPresent).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
     el.innerHTML = `
       <div class="bg-slate-800 rounded p-3 mb-3 shrink-0">
         <div class="flex items-center gap-2 flex-wrap">
           <h2 class="text-xl font-bold flex-1">★ Main Wants</h2>
+          <label class="text-xs text-slate-400 flex items-center gap-1">
+            Set:
+            <select id="mw-set-filter" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
+              <option value="">Alle Sets</option>
+              ${setOptions.map(code => `<option value="${escapeAttr(code)}" ${state.mainWantsSetFilter === code ? 'selected' : ''}>${escapeHtml(code)}</option>`).join('')}
+            </select>
+          </label>
           <label class="text-xs text-slate-400 flex items-center gap-1">
             Sortieren:
             <select id="mw-sort" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
@@ -1016,14 +1045,10 @@
               <option value="price-desc" ${state.mainWantsSort === 'price-desc' ? 'selected' : ''}>Preis ↓</option>
             </select>
           </label>
-          <label class="flex items-center gap-2 text-xs">
-            <input id="mw-proxy" type="checkbox" ${state.mainWantsProxy ? 'checked' : ''} />
-            Proxy-Wants einbeziehen
-          </label>
           <button id="mw-copy" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">In Clipboard kopieren</button>
         </div>
         <div class="text-xs text-slate-400 mt-1">
-          Automatisch aus allen Decks. ${mw.uniqueCount} Karten · ${mw.totalCount} Kopien fehlend${(() => {
+          Merge aller Wants-Listen${state.mainWantsSetFilter ? ` · Set <span class="font-mono text-amber-400">${escapeHtml(state.mainWantsSetFilter)}</span>` : ''}. ${mw.uniqueCount} Karten · ${mw.totalCount} Kopien${(() => {
             if (!window.CM || !CM.hasData()) return '';
             let sum = 0, noCm = 0;
             for (const it of mw.items) {
@@ -1037,11 +1062,9 @@
       </div>
       <div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
     `;
-    rootEl.querySelector('#mw-proxy').addEventListener('change', e => {
-      state.mainWantsProxy = e.target.checked;
-      Prefs.set('mainWantsProxy', state.mainWantsProxy);
+    rootEl.querySelector('#mw-set-filter').addEventListener('change', e => {
+      state.mainWantsSetFilter = e.target.value || null;
       renderMainWantsDetail();
-      renderDeckList();
     });
     rootEl.querySelector('#mw-sort').addEventListener('change', e => {
       state.mainWantsSort = e.target.value;
@@ -1052,7 +1075,7 @@
 
     const entriesEl = rootEl.querySelector('#deck-entries');
     if (!mw.items.length) {
-      entriesEl.innerHTML = `<div class="text-slate-500 text-sm">Nichts fehlt. Alle Decks und Wants-Listen sind versorgt.</div>`;
+      entriesEl.innerHTML = `<div class="text-slate-500 text-sm">${state.mainWantsSetFilter ? `Keine Wants im Set ${escapeHtml(state.mainWantsSetFilter)}.` : 'Keine Wants-Listen mit Einträgen.'}</div>`;
       return;
     }
     entriesEl.innerHTML = `<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -1060,9 +1083,16 @@
     </div>`;
     if (prevScroll) entriesEl.scrollTop = prevScroll;
 
+    entriesEl.querySelectorAll('[data-mw-dec]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const [cardId, variant] = btn.dataset.mwDec.split('|');
+        removeFromMainWants(cardId, variant, 1);
+      });
+    });
     entriesEl.querySelectorAll('.entry-tile').forEach(row => {
       row.addEventListener('click', e => {
-        if (e.target.closest('[data-note-trigger]')) return;
+        if (e.target.closest('[data-note-trigger], [data-mw-dec]')) return;
         if (window.UICollection && typeof window.UICollection.openCardModal === 'function') {
           window.UICollection.openCardModal(row.dataset.entryCardId);
         }
@@ -1107,7 +1137,35 @@
         <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(item.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
         <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
       </div>
+      <div class="qty-controls" title="Aus Wants-Listen entfernen (kleinste Liste zuerst)">
+        <div class="qty-group">
+          <button data-mw-dec="${escapeAttr(item.cardId + '|' + item.variant)}">− Wants</button>
+        </div>
+      </div>
     </div>`;
+  }
+
+  // Entfernt n Kopien einer Variant aus den Wants-Listen — kleinste Liste zuerst.
+  // Wird vom −-Button im Main-Wants-Tile aufgerufen. Spiegelt das Verhalten von
+  // Cardmarket.consumeFromWants, ist aber rein UI-getriggert (kein Collection-Update).
+  function removeFromMainWants(cardId, variant, n) {
+    let remaining = n;
+    const matches = [];
+    for (const d of state.decksState.decks) {
+      if (d.kind !== 'wants') continue;
+      const entry = d.entries.find(e => e.cardId === cardId && e.variant === variant);
+      if (entry && entry.count > 0) matches.push({ deck: d, entry });
+    }
+    matches.sort((a, b) => a.entry.count - b.entry.count);
+    for (const m of matches) {
+      if (remaining <= 0) break;
+      const k = Math.min(remaining, m.entry.count);
+      Store.addToDeck(m.deck, cardId, variant, -k);
+      remaining -= k;
+    }
+    Store.saveDecks(state.decksState);
+    renderMainWantsDetail();
+    renderDeckList();
   }
 
   function copyMainWantsToClipboard(mw) {

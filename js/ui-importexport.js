@@ -172,7 +172,8 @@
       + (unknown.length ? `\n${unknown.length} unbekannte IDs werden übersprungen.` : '');
     if (!confirm(msg)) return;
     const res = Cardmarket.apply(items);
-    showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}. Seite wird neu geladen…`, 'ok');
+    const wantsNote = res.removedFromWants ? ` ${res.removedFromWants} von Wants-Listen abgezogen.` : '';
+    showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}.${wantsNote} Seite wird neu geladen…`, 'ok');
     if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(800);
     else setTimeout(() => location.reload(), 800);
   }
