@@ -272,22 +272,32 @@ def main():
             by_set_slot = slot['bySet'].setdefault(set_code, {'low': None, 'avg': None, 'trend': None})
             update_slot(by_set_slot, low, avg, trend, count_print=False)
 
-    # Per-Variant-Zuordnung (Main / _P1 / _P2 …). Heuristik: sortiere Cardmarket-
-    # Produkte einer Card-ID asc nach idProduct (chronologisch von Cardmarket
-    # angelegt) und matche positional gegen die App-Variants (Main zuerst, dann
-    # Alt-Arts in altImages-Reihenfolge).
-    #   - len(prods) == len(variants) → ideale Zuordnung (z.B. AD1-016: 3=3).
-    #   - len(prods) < len(variants)  → erste N Variants kriegen einen CM-Preis,
-    #                                    Rest faellt auf Top-Level-Low zurueck.
-    #   - len(prods) > len(variants)  → ueberzaehlige idProducts werden nur fuer
-    #                                    Top-Level-Aggregat genutzt, kein
-    #                                    byVariant-Eintrag fuer sie.
-    # Annahme ist nicht perfekt (Cardmarket-Reihenfolge muss nicht der digimoncard.io-
-    # Reihenfolge entsprechen), aber besser als "alle Variants zeigen denselben
-    # Aggregat-Low".
-    variant_exact = 0
-    variant_partial = 0
-    variant_none = 0
+    # Per-Variant-Zuordnung. Eine App-"Variante" ist ein Art-Style (Main / _P1 …),
+    # ein Cardmarket-Produkt ist ein (Art-Style x Set)-Tupel: BT16-025 Main existiert
+    # physisch zweimal — einmal als BT16-Druck, einmal als AD1-Reprint. Beide haben
+    # in CM denselben Produktnamen, unterscheiden sich nur in idExpansion.
+    #
+    # Algorithmus (per Card):
+    #   1) CM-Produkte nach idExpansion gruppieren.
+    #   2) Pro idExpansion-Gruppe: nach idProduct sortieren, positional gegen die
+    #      App-Variants matchen (Main, _P1, _P2, ...). Damit ist die positional-
+    #      Heuristik auf eine sinnvolle Achse beschraenkt: innerhalb desselben
+    #      Sets ist die idProduct-Reihenfolge stabil und folgt typischerweise
+    #      dem Erscheinen Main -> Alt-Art_1 -> Alt-Art_2.
+    #   3) Treffer landen in byVariant[key].bySet[setCode] = {low, avg, trend}.
+    #   4) Default-Felder am byVariant-Slot (low/avg/trend/set) zeigen das
+    #      Origin-Set, sofern dort gedruckt; sonst das guenstigste verfuegbare
+    #      Set. So bleiben bestehende Frontend-Konsumenten (CM.getForVariant
+    #      ohne setCode) weiterhin lesbar.
+    #
+    # Edge-Cases:
+    #   - idExp-Gruppe hat mehr Produkte als die Card Variants -> ueberzaehlige
+    #     idProducts werden ignoriert (kein byVariant-Eintrag). Top-Level-Aggregat
+    #     enthaelt sie weiterhin (s.o.).
+    #   - idExpansion ohne erkennbares Set/Label -> wird uebersprungen.
+    variant_with_byset = 0
+    variant_no_prods = 0
+    overfill_groups = 0
     for card_id, card in cards_by_id.items():
         slot = agg.get(card_id)
         if not slot:
@@ -295,27 +305,64 @@ def main():
         prods = products_by_cardid.get(card_id, [])
         variants = variant_keys_of(card)
         if not variants or not prods:
-            variant_none += 1
+            variant_no_prods += 1
             continue
-        prods_sorted = sorted(prods, key=lambda p: p['idProduct'])
-        for variant_key, prod in zip(variants, prods_sorted):
-            p = price_by_id.get(prod['idProduct'])
-            if not p:
+
+        # Gruppieren nach idExpansion
+        prods_by_exp = defaultdict(list)
+        for prod in prods:
+            prods_by_exp[prod.get('idExpansion')].append(prod)
+
+        for id_exp, ps in prods_by_exp.items():
+            set_code = exp_to_set.get(id_exp) or exp_to_label.get(id_exp)
+            if not set_code:
                 continue
-            vs = {'low': None, 'avg': None, 'trend': None}
-            update_slot(vs, p.get('low'), p.get('avg'), p.get('trend'), count_print=False)
-            # SetCode/Label zum CM-Produkt mitspeichern, damit der Detail-Modal
-            # pro Variant zeigen kann, aus welchem Set sie laut Heuristik kommt.
-            # exp_to_set hat Vorrang fuer Origin-Vergleich; sonst Fallback-Label
-            # aus den Nonsingles (Regionals/Event-Pack/Pre-Release usw.).
-            label = exp_to_set.get(prod.get('idExpansion')) or exp_to_label.get(prod.get('idExpansion'))
-            if label:
-                vs['set'] = label
-            slot['byVariant'][variant_key] = vs
-        if len(prods) == len(variants):
-            variant_exact += 1
-        else:
-            variant_partial += 1
+            ps_sorted = sorted(ps, key=lambda p: p['idProduct'])
+            if len(ps_sorted) > len(variants):
+                overfill_groups += 1
+            # Positional INNERHALB der idExpansion-Gruppe matchen: CM-V.1 -> Main,
+            # CM-V.2 -> _P1, ... Cardmarket vergibt V.X in der Reihenfolge, in der
+            # die Drucke in der Datenbank angelegt wurden (= aufsteigendes
+            # idProduct). Das entspricht in der Regel der App-altImages-Reihenfolge
+            # (Main, _P1, _P2, ...).
+            #
+            # Edge-Case: CM hat weniger Drucke in dem Set als die App Variants
+            # kennt (z.B. CM listet nur Main + V.2, weil V.3/V.4 nicht angelegt
+            # wurden). Dann werden die "fehlenden" App-Variants in diesem Set
+            # einfach keinen Preis bekommen — kein falscher Wert wird zugewiesen.
+            for variant_key, prod in zip(variants, ps_sorted):
+                price = price_by_id.get(prod['idProduct'])
+                if not price:
+                    continue
+                v_slot = slot['byVariant'].setdefault(variant_key, {'bySet': {}})
+                if 'bySet' not in v_slot:
+                    v_slot['bySet'] = {}
+                bs = v_slot['bySet'].setdefault(set_code, {'low': None, 'avg': None, 'trend': None})
+                update_slot(bs, price.get('low'), price.get('avg'), price.get('trend'), count_print=False)
+
+        # Default-Eintrag pro Variant: bevorzugt Origin-Set, sonst guenstigster Set.
+        origin = card.get('set')
+        for variant_key, v_slot in list(slot['byVariant'].items()):
+            by_set = v_slot.get('bySet') or {}
+            if not by_set:
+                # Kein Set-Treffer ueberlebt -> Slot wegwerfen (vermeidet leere Entries).
+                del slot['byVariant'][variant_key]
+                continue
+            chosen_set = None
+            if origin and origin in by_set:
+                chosen_set = origin
+            else:
+                # Guenstigster low; None ist Tiefstpreis-untauglich, daher hinten.
+                chosen_set = min(
+                    by_set.keys(),
+                    key=lambda c: (by_set[c]['low'] is None, by_set[c]['low'] or 0)
+                )
+            chosen = by_set[chosen_set]
+            v_slot['low'] = chosen['low']
+            v_slot['avg'] = chosen['avg']
+            v_slot['trend'] = chosen['trend']
+            v_slot['set'] = chosen_set
+            variant_with_byset += 1
 
     # Leere bySet/byVariant-Objekte herausnehmen, damit JSON kompakt bleibt.
     for slot in agg.values():
@@ -329,7 +376,7 @@ def main():
     cards_with_byvariant = sum(1 for v in agg.values() if 'byVariant' in v)
     log(f'Card-IDs mit Per-Set-Preis (bySet): {cards_with_byset}')
     log(f'Card-IDs mit Per-Variant-Preis (byVariant): {cards_with_byvariant}')
-    log(f'  exakter Match (CM=App): {variant_exact}; partial Match (CM!=App, positional): {variant_partial}; kein CM/Variant: {variant_none}')
+    log(f'  Variants mit bySet-Eintrag: {variant_with_byset}; Karten ohne CM-Produkte: {variant_no_prods}; idExp-Gruppen mit mehr Produkten als Variants: {overfill_groups}')
     log(f'Produkte ohne erkennbare Card-ID uebersprungen: {skipped_no_id}')
     log(f'Produkte ohne Preis-Eintrag uebersprungen: {skipped_no_price}')
 
