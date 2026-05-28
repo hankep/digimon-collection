@@ -258,6 +258,7 @@
           </label>
           <div class="text-sm text-slate-400" id="wants-count"></div>
           <button id="wants-export-all" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold" title="Alle sichtbaren Karten über alle Sets (mit aktiven Quellen-/Preisfiltern) als Cardmarket-kompatible Liste kopieren">Alles → Cardmarket</button>
+          <button id="wants-fix-failed" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold" title="Fehlgeschlagene CM-Imports korrigieren: Leerzeilen raus, Card-IDs in Klammern">Failed import fixen</button>
         </div>
         <div class="text-xs text-slate-400 mt-2 mb-1">Einbezogene Quellen:</div>
         <div class="flex flex-wrap gap-2" id="wants-lists">${listChips}</div>
@@ -543,6 +544,9 @@
     const exportAllBtn = rootEl.querySelector('#wants-export-all');
     if (exportAllBtn) exportAllBtn.addEventListener('click', exportAllForCardmarket);
 
+    const fixBtn = rootEl.querySelector('#wants-fix-failed');
+    if (fixBtn) fixBtn.addEventListener('click', openFixFailedImportDialog);
+
     rootEl.querySelectorAll('#wants-lists input[data-list-id]').forEach(cb => {
       cb.addEventListener('change', () => {
         const checked = Array.from(rootEl.querySelectorAll('#wants-lists input[data-list-id]'))
@@ -653,6 +657,106 @@
     } else {
       fallbackCopy(text);
     }
+  }
+
+  // --- Failed-Import-Fixer ----------------------------------------------------
+  // Cardmarket meldet fehlgeschlagene Imports im Stil:
+  //   "Name1\n\nName2 BTxx-yyy\n\nName3 STxx-yyy\n..."
+  // mit Leerzeilen zwischen den Einträgen und Card-IDs ohne Klammern. Der Fixer
+  // entfernt die Leerzeilen und packt Card-IDs in Klammern, sodass CM die Liste
+  // beim erneuten Import wieder akzeptiert.
+  function fixFailedImportText(text) {
+    const idRe = /\b([A-Z]+\d*-\d+[A-Z]?(?:_P\d+)?)\b/g;
+    const lines = String(text || '').split(/\r?\n/);
+    const out = [];
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      // Wenn die Zeile bereits "(BTxx-yyy)" enthaelt, nicht doppelt klammern.
+      const fixed = line.replace(idRe, (m, id, offset, full) => {
+        const before = full[offset - 1];
+        const after = full[offset + m.length];
+        if (before === '(' && after === ')') return m;
+        return `(${id})`;
+      });
+      out.push(fixed);
+    }
+    return out.join('\n') + (out.length ? '\n' : '');
+  }
+
+  function openFixFailedImportDialog() {
+    let host = document.getElementById('fix-failed-root');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'fix-failed-root';
+      document.body.appendChild(host);
+    }
+    host.innerHTML = `
+      <div class="modal-backdrop" id="ffi-modal">
+        <div class="modal-content w-[640px] max-w-[95vw]">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <h2 class="text-lg font-bold">Failed Import fixen</h2>
+              <div class="text-xs text-slate-400 mt-1">Cardmarkets Fehler-Liste hier einfügen. Wir entfernen Leerzeilen und packen Card-IDs in Klammern. Ergebnis landet im Clipboard.</div>
+            </div>
+            <button id="ffi-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+          </div>
+
+          <textarea id="ffi-text" rows="12"
+            class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
+            placeholder="Belphemon&#10;&#10;Eyesmon: Scatter Mode BT7-069&#10;&#10;Sistermon Ciel BT6-084&#10;..."></textarea>
+
+          <div id="ffi-preview" class="mt-3 hidden">
+            <div class="text-xs text-slate-400 mb-1">Ergebnis (bereits im Clipboard):</div>
+            <pre class="bg-slate-900 border border-slate-700 rounded p-3 text-xs font-mono whitespace-pre-wrap"></pre>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-3">
+            <button id="ffi-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Schließen</button>
+            <button id="ffi-go" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-4 py-1.5 rounded text-sm font-semibold">Fixen → Clipboard</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
+    function esc(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', esc);
+    host.querySelector('#ffi-close').addEventListener('click', close);
+    host.querySelector('#ffi-cancel').addEventListener('click', close);
+    host.querySelector('#ffi-modal').addEventListener('click', e => {
+      if (e.target.id === 'ffi-modal') close();
+    });
+
+    host.querySelector('#ffi-go').addEventListener('click', () => {
+      const input = host.querySelector('#ffi-text').value;
+      const fixed = fixFailedImportText(input);
+      const previewWrap = host.querySelector('#ffi-preview');
+      const previewEl = previewWrap.querySelector('pre');
+      previewEl.textContent = fixed;
+      previewWrap.classList.remove('hidden');
+
+      const finish = ok => {
+        const btn = host.querySelector('#ffi-go');
+        if (!btn) return;
+        const orig = btn.textContent;
+        btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+        setTimeout(() => { if (btn) btn.textContent = orig; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(fixed).then(() => finish(true), () => finish(false));
+      } else {
+        // Fallback ueber das Preview-Feld
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(previewEl);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          finish(document.execCommand('copy'));
+        } catch (e) { finish(false); }
+      }
+    });
   }
 
   function fallbackCopy(text) {
