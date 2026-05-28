@@ -280,6 +280,23 @@
     return head || s;
   }
 
+  // Liefert den Anzeigenamen einer Karte. Bevorzugt raw.tcgplayer_name (enthaelt
+  // Doppelnamen wie "BeelStarmon // Fly Bullet" und ggf. das "//"-Trennzeichen),
+  // entfernt aber den Disambiguierungs-Suffix " - <cardId>", den manche tcgplayer-
+  // Namen tragen (z.B. "Machinedramon - BT19-065"). Der Card-ID wird in Exporten/
+  // URLs ohnehin separat angehaengt, sonst doppelt sich er.
+  function cleanDisplayName(card) {
+    if (!card) return '';
+    const raw = card.raw && card.raw.tcgplayer_name;
+    if (!raw) return card.name || '';
+    let s = String(raw).replace(/\s*\/\/\s*/g, ' / ');
+    // Card-IDs enthalten nur [A-Za-z0-9-] und sind in einer Regex literal-sicher.
+    if (card.id) {
+      s = s.replace(new RegExp('\\s*[-–]\\s*' + card.id + '\\s*$'), '');
+    }
+    return s;
+  }
+
   // SetCode -> Vollname (z.B. "BT16" -> "BT-16: Booster Beginning Observer").
   // Fuer unbekannte Codes (Promo-Labels wie "Reg 2024") wird der Code selbst
   // zurueckgegeben, damit Tooltips trotzdem etwas Sinnvolles zeigen.
@@ -390,10 +407,7 @@
     // Doppelnamen (z.B. "BeelStarmon // Fly Bullet") nimmt der CM-Slug komplett
     // mit auf ("BeelStarmon-Fly-Bullet"). card.name enthaelt nur den ersten Teil,
     // raw.tcgplayer_name den vollen — wir bevorzugen den, sofern vorhanden.
-    const fullName = (card.raw && card.raw.tcgplayer_name)
-      ? String(card.raw.tcgplayer_name).replace(/\s*\/\/\s*/g, ' ')
-      : card.name;
-    const nameSlug = slugify(fullName);
+    const nameSlug = slugify(cleanDisplayName(card));
     if (!nameSlug) return null;
 
     // V-Index: Position innerhalb der Variants, die demselben Set zugeordnet sind.
@@ -446,6 +460,7 @@
     reprintPillsHtml,
     allSetsPillsHtml,
     cardmarketUrl,
-    setNameByCode
+    setNameByCode,
+    cleanDisplayName
   };
 })();

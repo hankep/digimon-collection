@@ -668,11 +668,11 @@
   // --- Helpers -------------------------------------------------------------
 
   // Vollständiger Anzeigename: bevorzugt raw.tcgplayer_name (enthält Doppelnamen
-  // wie "BeelStarmon // Fly Bullet"), "//" → "/". Sonst card.name.
+  // wie "BeelStarmon // Fly Bullet"), "//" → "/", und entfernt den
+  // Disambiguierungs-Suffix " - <cardId>" (z.B. "Machinedramon - BT19-065").
   function displayName(card, fallback) {
-    const full = card && card.raw && card.raw.tcgplayer_name;
-    if (full) return String(full).replace(/\s*\/\/\s*/g, ' / ');
-    return card ? card.name : fallback;
+    if (card) return CardDB.cleanDisplayName(card);
+    return fallback;
   }
 
   // " V.N" nur für Alt-Arts (n+2), sonst "" — Hauptvariante bekommt keinen Marker.

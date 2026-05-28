@@ -465,9 +465,8 @@
   // --- Helpers -------------------------------------------------------------
 
   function displayName(card, fallback) {
-    const full = card && card.raw && card.raw.tcgplayer_name;
-    if (full) return String(full).replace(/\s*\/\/\s*/g, ' / ');
-    return card ? card.name : fallback;
+    if (card) return CardDB.cleanDisplayName(card);
+    return fallback;
   }
 
   function escapeHtml(s) {
