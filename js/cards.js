@@ -380,6 +380,7 @@
     productLabel,
     appearsInSet,
     reprintPillsHtml,
-    allSetsPillsHtml
+    allSetsPillsHtml,
+    cardmarketUrl
   };
 })();

@@ -804,12 +804,20 @@
               const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
               const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
               const rarityTxt = card.rarity ? rarityLabel(card.rarity) : '';
+              const cmUrl = CardDB.cardmarketUrl(card, v.key);
+              const priceHtml = vPriceLow
+                ? (cmUrl
+                    ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Auf Cardmarket öffnen">CM ${vPriceLow} ↗</a>`
+                    : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>`)
+                : (cmUrl
+                    ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">Cardmarket ↗</a>`
+                    : '');
               return `
               <div class="bg-slate-900 rounded p-2" data-variant-block="${escapeAttr(v.key)}">
                 <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-1/2 mx-auto aspect-[5/7] object-cover rounded mb-2" alt="" />
                 <div class="text-xs font-mono text-slate-400 flex items-baseline justify-between gap-2">
                   <span class="truncate">${escapeHtml(v.key)}</span>
-                  ${vPriceLow ? `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>` : ''}
+                  ${priceHtml}
                 </div>
                 <div class="text-[11px] text-slate-300 mb-2">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</div>
                 <div data-variant-body="${escapeAttr(v.key)}">${renderVariantBody(v.key)}</div>
