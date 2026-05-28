@@ -802,10 +802,15 @@
           <div class="grid grid-cols-1 md:grid-cols-${cols} gap-3 mb-4" id="variants-grid">
             ${variants.map(v => {
               const setPills = CardDB.allSetsPillsHtml(card);
+              const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
+              const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
               return `
               <div class="bg-slate-900 rounded p-2" data-variant-block="${escapeAttr(v.key)}">
                 <img src="${CardDB.imagePath(v.key)}" loading="lazy" class="w-1/2 mx-auto aspect-[5/7] object-cover rounded mb-2" alt="" />
-                <div class="text-xs font-mono text-slate-400 mb-1">${escapeHtml(v.key)} ${v.isAlt ? '· Alt' : '· Main'}</div>
+                <div class="text-xs font-mono text-slate-400 mb-1 flex items-baseline justify-between gap-2">
+                  <span class="truncate">${escapeHtml(v.key)} ${v.isAlt ? '· Alt' : '· Main'}</span>
+                  ${vPriceLow ? `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>` : ''}
+                </div>
                 ${setPills ? `<div class="reprint-pills mb-2" title="Sets, in denen diese Karte erhältlich ist (Origin zuerst)">${setPills}</div>` : ''}
                 <div data-variant-body="${escapeAttr(v.key)}">${renderVariantBody(v.key)}</div>
               </div>

@@ -302,6 +302,8 @@
         </label>` : ''}
         <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-1 rounded font-semibold"
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
+        ${!isListKind(deck.kind) ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white px-3 py-1 rounded font-semibold"
+          title="Fehlende Karten direkt in eine Wants-Liste übernehmen (Alt-Arts bleiben erhalten)">Fehlende → Wants</button>` : ''}
         <button id="export-missing" class="bg-amber-500 text-slate-900 px-3 py-1 rounded font-semibold"
           title="Exportiert nur Karten/Mengen, die in dieser Liste fehlen (Cardmarket-kompatibel)">Fehlende exportieren</button>
         <button id="export-full" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1 rounded font-semibold"
@@ -339,6 +341,8 @@
     rootEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
     rootEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
     rootEl.querySelector('#import-into').addEventListener('click', () => openImportIntoDeck(deck));
+    const mtwBtn = rootEl.querySelector('#missing-to-wants');
+    if (mtwBtn) mtwBtn.addEventListener('click', () => openMissingToWantsDialog(deck));
     rootEl.querySelector('#deck-note-host [data-note-trigger]').addEventListener('click', () => {
       Notes.openDialog({
         title: deck.name,
@@ -843,6 +847,107 @@
     } else {
       fallbackCopy(text, finish);
     }
+  }
+
+  // Sammelt die fehlenden Karten eines Decks (echter Slot-Bedarf, Proxies zaehlen
+  // als fehlend) und pumpt sie in eine bestehende oder neue Wants-Liste. Alt-Arts
+  // bleiben dabei erhalten, weil wir die Entries direkt mit ihren variantKeys
+  // uebernehmen — der Clipboard-Umweg waere durch die (V.N)-Parsing-Luecke
+  // ungenau.
+  function openMissingToWantsDialog(deck) {
+    if (isListKind(deck.kind)) return;
+    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+    const missingEntries = deck.entries
+      .map(e => {
+        const sa = da[e.variant];
+        return { cardId: e.cardId, variant: e.variant, count: Math.max(0, e.count - (sa ? sa.real : 0)) };
+      })
+      .filter(e => e.count > 0);
+
+    if (!missingEntries.length) {
+      alert('In dieser Liste fehlen keine Karten.');
+      return;
+    }
+
+    let host = document.getElementById('missing-to-wants-root');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'missing-to-wants-root';
+      document.body.appendChild(host);
+    }
+
+    const wantsLists = state.decksState.decks.filter(d => d.kind === 'wants');
+    const totalCopies = missingEntries.reduce((s, e) => s + e.count, 0);
+
+    host.innerHTML = `
+      <div class="modal-backdrop" id="mtw-modal">
+        <div class="modal-content w-[480px] max-w-[95vw]">
+          <div class="flex justify-between items-start mb-3">
+            <h2 class="text-lg font-bold">Fehlende → Wants-Liste</h2>
+            <button id="mtw-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+          </div>
+          <div class="text-sm text-slate-400 mb-3">
+            Aus „${escapeHtml(deck.name)}": <b>${missingEntries.length}</b> Karten · <b>${totalCopies}</b> Kopien fehlen.
+            Mengen werden zu vorhandenen Wants-Eintraegen <b>addiert</b>.
+          </div>
+          <label class="block mb-3">
+            <div class="text-xs text-slate-400 mb-1">Ziel</div>
+            <select id="mtw-target" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 w-full text-sm">
+              <option value="__new__">— Neue Wants-Liste anlegen —</option>
+              ${wantsLists.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="block mb-3" id="mtw-name-wrap">
+            <div class="text-xs text-slate-400 mb-1">Name der neuen Liste</div>
+            <input id="mtw-name" type="text" value="${escapeAttr(deck.name + ' (Fehlend)')}"
+              class="bg-slate-900 border border-slate-600 rounded px-3 py-2 w-full text-sm" />
+          </label>
+          <div class="flex justify-end gap-2">
+            <button id="mtw-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+            <button id="mtw-go" class="bg-purple-500 hover:bg-purple-400 text-white px-4 py-1.5 rounded text-sm font-semibold">Uebernehmen</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const targetSel = host.querySelector('#mtw-target');
+    const nameWrap = host.querySelector('#mtw-name-wrap');
+    const updateNameVisible = () => {
+      nameWrap.style.display = targetSel.value === '__new__' ? '' : 'none';
+    };
+    targetSel.addEventListener('change', updateNameVisible);
+    updateNameVisible();
+
+    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
+    function esc(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', esc);
+    host.querySelector('#mtw-close').addEventListener('click', close);
+    host.querySelector('#mtw-cancel').addEventListener('click', close);
+    host.querySelector('#mtw-modal').addEventListener('click', e => {
+      if (e.target.id === 'mtw-modal') close();
+    });
+
+    host.querySelector('#mtw-go').addEventListener('click', () => {
+      const target = targetSel.value;
+      let targetDeck;
+      if (target === '__new__') {
+        const name = host.querySelector('#mtw-name').value.trim();
+        if (!name) { alert('Name der neuen Liste fehlt.'); return; }
+        targetDeck = Store.createDeck(state.decksState, name, 'wants');
+      } else {
+        targetDeck = state.decksState.decks.find(d => d.id === target);
+        if (!targetDeck) { alert('Wants-Liste nicht gefunden.'); return; }
+      }
+      for (const e of missingEntries) {
+        Store.addToDeck(targetDeck, e.cardId, e.variant, e.count);
+      }
+      Store.saveDecks(state.decksState);
+      close();
+      // Aktiv lassen wo wir sind — User sieht das Deck weiter. Sidebar wird neu
+      // berechnet und reflektiert die neue Wants-Liste.
+      renderDeckList();
+      renderDeckDetail();
+    });
   }
 
   function openImportIntoDeck(deck) {

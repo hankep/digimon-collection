@@ -119,6 +119,18 @@ def infer_expansion_to_set(products_list, cards_by_id, known_set_codes):
     return mapping
 
 
+def variant_keys_of(card):
+    """Liefert die Variant-Keys einer Karte (Main zuerst, dann _P1, _P2, ...),
+       analog zu CardDB.variantsOf in der Web-App."""
+    keys = []
+    img = card.get('image') or ''
+    if img:
+        keys.append(img.rsplit('.', 1)[0])
+    for alt in card.get('altImages') or []:
+        keys.append(alt.rsplit('.', 1)[0])
+    return keys
+
+
 def main():
     products = load_json(PRODUCTS_JSON)
     prices = load_json(PRICES_JSON)
@@ -145,8 +157,17 @@ def main():
     # idProduct -> price-dict
     price_by_id = {p['idProduct']: p for p in prices_list}
 
+    # Pro Card-ID: alle Produkte sammeln, damit wir am Ende byVariant zuordnen koennen.
+    products_by_cardid = defaultdict(list)
+    for prod in products_list:
+        m = CARD_ID_RE.search(prod.get('name', ''))
+        if not m:
+            continue
+        products_by_cardid[m.group(0)].append(prod)
+
     # cardId -> aggregator
-    #   { low, avg, trend, prints, bySet: { setCode: {low, avg, trend} } }
+    #   { low, avg, trend, prints, bySet: { setCode: {low, avg, trend} },
+    #     byVariant: { variantKey: {low, avg, trend} } }
     agg = {}
 
     skipped_no_id = 0
@@ -178,7 +199,7 @@ def main():
         avg = p.get('avg')
         trend = p.get('trend')
 
-        slot = agg.setdefault(card_id, {'low': None, 'avg': None, 'trend': None, 'prints': 0, 'bySet': {}})
+        slot = agg.setdefault(card_id, {'low': None, 'avg': None, 'trend': None, 'prints': 0, 'bySet': {}, 'byVariant': {}})
         update_slot(slot, low, avg, trend, count_print=True)
 
         set_code = exp_to_set.get(prod.get('idExpansion'))
@@ -186,14 +207,46 @@ def main():
             by_set_slot = slot['bySet'].setdefault(set_code, {'low': None, 'avg': None, 'trend': None})
             update_slot(by_set_slot, low, avg, trend, count_print=False)
 
-    # Leere bySet-Objekte herausnehmen, damit JSON kompakt bleibt.
+    # Per-Variant-Zuordnung (Main / _P1 / _P2 …). Heuristik: sortiere Cardmarket-
+    # Produkte nach idProduct asc (chronologisch angelegt) und matche positional
+    # gegen die App-Variants (Main zuerst, dann Alt-Arts in altImages-Reihenfolge).
+    # Wenn die Anzahl Produkte exakt der Anzahl App-Variants entspricht, ist die
+    # Zuordnung verlaesslich (z.B. AD1-016 ShineGreymon: 3 idProducts == Main+2Alts).
+    # Bei Mismatch: keine byVariant — Fallback auf bySet/Top-Level.
+    variant_matches = 0
+    variant_mismatches = 0
+    for card_id, card in cards_by_id.items():
+        slot = agg.get(card_id)
+        if not slot:
+            continue
+        prods = products_by_cardid.get(card_id, [])
+        variants = variant_keys_of(card)
+        if not variants or len(prods) != len(variants):
+            variant_mismatches += 1
+            continue
+        prods_sorted = sorted(prods, key=lambda p: p['idProduct'])
+        for variant_key, prod in zip(variants, prods_sorted):
+            p = price_by_id.get(prod['idProduct'])
+            if not p:
+                continue
+            vs = {'low': None, 'avg': None, 'trend': None}
+            update_slot(vs, p.get('low'), p.get('avg'), p.get('trend'), count_print=False)
+            slot['byVariant'][variant_key] = vs
+        variant_matches += 1
+
+    # Leere bySet/byVariant-Objekte herausnehmen, damit JSON kompakt bleibt.
     for slot in agg.values():
         if not slot['bySet']:
             del slot['bySet']
+        if not slot['byVariant']:
+            del slot['byVariant']
 
     log(f'Card-IDs mit Preisen: {len(agg)}')
     cards_with_byset = sum(1 for v in agg.values() if 'bySet' in v)
+    cards_with_byvariant = sum(1 for v in agg.values() if 'byVariant' in v)
     log(f'Card-IDs mit Per-Set-Preis (bySet): {cards_with_byset}')
+    log(f'Card-IDs mit Per-Variant-Preis (byVariant): {cards_with_byvariant}')
+    log(f'  davon Variant-Match: {variant_matches} OK, {variant_mismatches} mismatch (fallback auf bySet)')
     log(f'Produkte ohne erkennbare Card-ID uebersprungen: {skipped_no_id}')
     log(f'Produkte ohne Preis-Eintrag uebersprungen: {skipped_no_price}')
 
