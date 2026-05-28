@@ -675,14 +675,17 @@
     return fallback;
   }
 
-  // " V.N" nur für Alt-Arts (n+2), sonst "" — Hauptvariante bekommt keinen Marker.
+  // " (V.N)" wenn die Karte mehrere Varianten hat — N startet bei 1 (Main), 2
+  // für die erste Alt-Art, … (entspricht der Cardmarket-Konvention). Karten mit
+  // nur einer Variante bekommen keinen V-Marker.
   function altVersion(cardId, variant) {
     const card = CardDB.byId.get(cardId);
     if (!card) return '';
-    if (variant === CardDB.mainVariantKey(card)) return '';
-    const alts = CardDB.variantsOf(card).filter(v => v.isAlt);
-    const idx = alts.findIndex(v => v.key === variant);
-    return idx < 0 ? '' : ` V.${idx + 2}`;
+    const variants = CardDB.variantsOf(card);
+    if (variants.length <= 1) return '';
+    const idx = variants.findIndex(v => v.key === variant);
+    if (idx < 0) return '';
+    return ` (V.${idx + 1})`;
   }
 
   function escapeHtml(s) {

@@ -830,7 +830,7 @@
 
     const lines = missingEntries.map(e => {
       const card = CardDB.byId.get(e.cardId);
-      const cardName = card ? card.name : e.cardId;
+      const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const id = card ? card.id : e.cardId;
       const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
       return `${e.count}x ${cardName} ${id}${vSuffix}`;
@@ -1319,7 +1319,7 @@
     if (!mw.items.length) { alert('Nichts zu kopieren.'); return; }
     const lines = mw.items.map(it => {
       const card = CardDB.byId.get(it.cardId);
-      const cardName = card ? card.name : it.cardId;
+      const cardName = card ? CardDB.cleanDisplayName(card) : it.cardId;
       const id = card ? card.id : it.cardId;
       const vSuffix = card ? versionSuffixForVariant(card, it.variant) : '';
       return `${it.count}x ${cardName} ${id}${vSuffix}`;
@@ -1471,7 +1471,7 @@
       }
       const lines = Array.from(merged.values()).map(e => {
         const card = CardDB.byId.get(e.cardId);
-        const cardName = card ? card.name : e.cardId;
+        const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
         const id = card ? card.id : e.cardId;
         const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
         return `${e.count}x ${cardName} ${id}${vSuffix}`;
@@ -1494,13 +1494,15 @@
     });
   }
 
+  // " (V.N)" wenn die Karte mehrere Varianten hat. N startet bei 1 (Main), 2 für
+  // die erste Alt-Art usw. Karten mit nur einer Variante bekommen keinen V-Marker.
   function versionSuffixForVariant(card, variantKey) {
-    const main = CardDB.mainVariantKey(card);
-    if (variantKey === main) return '';
-    const alts = CardDB.variantsOf(card).filter(v => v.isAlt);
-    const idx = alts.findIndex(v => v.key === variantKey);
+    if (!card) return '';
+    const variants = CardDB.variantsOf(card);
+    if (variants.length <= 1) return '';
+    const idx = variants.findIndex(v => v.key === variantKey);
     if (idx < 0) return '';
-    return ` (V.${idx + 2})`;
+    return ` (V.${idx + 1})`;
   }
 
   function fallbackCopy(text, finish) {

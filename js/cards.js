@@ -280,21 +280,26 @@
     return head || s;
   }
 
-  // Liefert den Anzeigenamen einer Karte. Bevorzugt raw.tcgplayer_name (enthaelt
-  // Doppelnamen wie "BeelStarmon // Fly Bullet" und ggf. das "//"-Trennzeichen),
-  // entfernt aber den Disambiguierungs-Suffix " - <cardId>", den manche tcgplayer-
-  // Namen tragen (z.B. "Machinedramon - BT19-065"). Der Card-ID wird in Exporten/
-  // URLs ohnehin separat angehaengt, sonst doppelt sich er.
+  // Liefert den sauberen Anzeigenamen einer Karte.
+  //
+  // raw.tcgplayer_name enthaelt fuer manche Karten ZUSAETZLICHE Informationen,
+  // die wir NICHT im Export wollen:
+  //   - Disambiguierungs-Suffix: "Machinedramon - BT19-065"
+  //   - Release-Kontext in Klammern: "Physical Training (Blast Ace Box Topper)"
+  //   - Rarity-Tags: "MetalGreymon (Secret Rare)"
+  //
+  // Aber er enthaelt fuer Dual-Mode-Karten den vollen Namen mit '//', der in
+  // card.name fehlt: card.name='BeelStarmon', tcgplayer_name='BeelStarmon // Fly Bullet'.
+  //
+  // Regel: tcgplayer_name nur uebernehmen, wenn er den '//' enthaelt (Dual-Mode).
+  // Sonst card.name verwenden — das ist die kuratierte Quelle ohne Kontext-Suffixe.
   function cleanDisplayName(card) {
     if (!card) return '';
     const raw = card.raw && card.raw.tcgplayer_name;
-    if (!raw) return card.name || '';
-    let s = String(raw).replace(/\s*\/\/\s*/g, ' / ');
-    // Card-IDs enthalten nur [A-Za-z0-9-] und sind in einer Regex literal-sicher.
-    if (card.id) {
-      s = s.replace(new RegExp('\\s*[-–]\\s*' + card.id + '\\s*$'), '');
+    if (raw && raw.indexOf('//') !== -1) {
+      return String(raw).replace(/\s*\/\/\s*/g, ' / ');
     }
-    return s;
+    return card.name || '';
   }
 
   // SetCode -> Vollname (z.B. "BT16" -> "BT-16: Booster Beginning Observer").
