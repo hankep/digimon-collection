@@ -435,10 +435,15 @@
   }
 
   // Erzeugt Render-Entries: bei showAlts eine Zeile pro Variant, sonst nur Main.
+  // Wenn der Suchbegriff eine Card-ID enthaelt (z.B. "BT25-092"), werden auch
+  // ohne aktivierten Alt-Arts-Toggle alle Varianten dieser Karte gezeigt —
+  // sonst wuerde nur Main matchen und die Alt-Arts blieben unsichtbar.
   function expandToEntries(cards) {
+    const queryHasCardId = /\b[A-Za-z]+\d*-\d+[A-Za-z]?\b/.test(state.query || '');
+    const expandAlts = state.showAlts || queryHasCardId;
     const out = [];
     for (const card of cards) {
-      if (state.showAlts) {
+      if (expandAlts) {
         const variants = CardDB.variantsOf(card);
         variants.forEach((v, idx) => {
           out.push({ card, variantKey: v.key, isAlt: v.isAlt, altIdx: idx });

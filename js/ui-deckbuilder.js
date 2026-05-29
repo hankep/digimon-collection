@@ -886,9 +886,13 @@
       });
     }
 
-    // Bei showAlts pro Variant einen Eintrag erzeugen
+    // Bei showAlts pro Variant einen Eintrag erzeugen. Auch wenn der Such-
+    // begriff eine Card-ID enthaelt (z.B. "BT25-092"), zeigen wir saemtliche
+    // Varianten der Karte — sonst waere die Suche frustrierend.
+    const queryHasCardId = /\b[A-Za-z]+\d*-\d+[A-Za-z]?\b/.test(state.pickerQuery || '');
+    const expandAlts = state.pickerShowAlts || queryHasCardId;
     let entries = [];
-    if (state.pickerShowAlts) {
+    if (expandAlts) {
       for (const card of results) {
         CardDB.variantsOf(card).forEach((v, idx) => {
           entries.push({ card, variant: v.key, isAlt: v.isAlt, altIdx: idx });
