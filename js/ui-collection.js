@@ -460,7 +460,7 @@
     const variantOwned = k => { const s = idx[k]; return s ? (s.real + s.proxy) : 0; };
     const variantReal  = k => { const s = idx[k]; return s ? s.real : 0; };
     const variantProxy = k => { const s = idx[k]; return s ? s.proxy : 0; };
-    const variantFree  = k => { const s = idx[k]; return s ? (s.freeReal + s.freeProxy) : 0; };
+    const variantFree  = k => { const s = idx[k]; return s ? s.freeReal : 0; }; // nur echt, Proxies kein Besitz
 
     // Filter verketten (alle auf list aufbauen, nicht auf out).
     let list = out;
@@ -843,8 +843,9 @@
       } else {
         const ov = vIdx[v.key];
         if (ov) {
-          const free = (ov.freeReal || 0) + (ov.freeProxy || 0);
-          const owned = (ov.real || 0) + (ov.proxy || 0);
+          // Nur echte Kopien — Proxies sind kein Besitz.
+          const free = ov.freeReal || 0;
+          const owned = ov.real || 0;
           if (free > 0) {
             avHtml = `<span class="text-amber-300 text-[10px] whitespace-nowrap" title="${free} frei / ${owned} besessen dieser Variante">A.v: ${free}/${owned}</span>`;
           }
@@ -878,8 +879,9 @@
       if (v.key === selfVariantKey) continue;
       const ov = vIdx[v.key];
       if (!ov) continue;
-      const free = ov.freeReal + ov.freeProxy;
-      const own = ov.real + ov.proxy;
+      // Nur echte Kopien zaehlen — Proxies sind kein Besitz.
+      const free = ov.freeReal;
+      const own = ov.real;
       if (own > 0) {
         out.totalOther += own;
         out.freeOther += free;

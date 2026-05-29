@@ -165,7 +165,7 @@
         const assigned = sa ? sa.real + sa.proxy : 0;
         if (assigned >= e.count) continue;
         const s = idx[e.variant];
-        if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
+        if (s && s.freeReal > 0) { slottable = true; break; }
       }
     }
     // Vollstaendig, aber mit zugewiesenen Proxies → Name lila markieren.
@@ -585,9 +585,7 @@
     // Globaler Frei-Pool zur Info (aus vorgebautem Variant-Index)
     const vs = ctx.vIdx[entry.variant];
     const freeReal = vs ? vs.freeReal : 0;
-    const freeProxy = vs ? vs.freeProxy : 0;
-
-    const totalFree = freeReal + freeProxy;
+    // Proxies zaehlen NICHT als "verfuegbar" — sie sind Lager-Markierung, kein Besitz.
     // Cross-Variant-Hinweis: andere Varianten derselben Card-ID. A.v zeigt
     // "frei/owned" in anderen Prints. Reine Info — Slotten bleibt variant-genau.
     const av = otherVariantsAv(card, entry.variant, ctx.vIdx);
@@ -598,14 +596,14 @@
     if (complete) {
       ownedClass = 'text-emerald-400';
       needText = '✓';
-    } else if (totalFree > 0) {
+    } else if (freeReal > 0) {
       ownedClass = 'text-sky-400';
       needText = av.freeOther > 0
-        ? `${totalFree} verfügbar <span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>`
-        : `${totalFree} verfügbar`;
+        ? `${freeReal} verfügbar <span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>`
+        : `${freeReal} verfügbar`;
       needTitle = av.freeOther > 0
-        ? `${totalFree} exakt frei · ${av.freeOther} frei / ${av.totalOther} besessen in anderen Varianten: ${av.breakdown.join(', ')}`
-        : `${totalFree} exakt frei`;
+        ? `${freeReal} exakt frei · ${av.freeOther} frei / ${av.totalOther} besessen in anderen Varianten: ${av.breakdown.join(', ')}`
+        : `${freeReal} exakt frei`;
     } else if (av.freeOther > 0) {
       ownedClass = 'text-amber-300';
       needText = `A.v: ${av.freeOther}/${av.totalOther}`;
@@ -615,7 +613,7 @@
     const badgeCls = (assignedReal === 0 && assignedProxy === 0)
       ? 'zero'
       : (complete ? 'full' : '');
-    const slottable = !complete && totalFree > 0;
+    const slottable = !complete && freeReal > 0;
     return `<div class="card-tile entry-tile cursor-pointer ${complete ? 'playset' : ''} ${assignedTotal === 0 ? 'missing' : ''} ${slottable ? 'tile-slottable' : ''} ${assignedProxy > 0 ? 'tile-proxy-slotted' : ''}"
         data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
       <img loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="${escapeAttr(name)}" />
@@ -642,7 +640,7 @@
       <div class="slot-controls" title="Slot: aus Frei-Pool zuweisen / freigeben">
         <button data-slot-dec="${entry.cardId}|${entry.variant}" ${assignedTotal === 0 ? 'disabled' : ''}>− Slot</button>
         <span class="slot-count">${assignedReal}${assignedProxy > 0 ? '+' + assignedProxy + 'P' : ''} zugewiesen</span>
-        <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal + freeProxy === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
+        <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
       </div>
     </div>`;
   }
@@ -657,8 +655,9 @@
       if (v.key === selfVariantKey) continue;
       const ov = vIdx[v.key];
       if (!ov) continue;
-      const free = ov.freeReal + ov.freeProxy;
-      const own = ov.real + ov.proxy;
+      // Nur echte Kopien zaehlen — Proxies sind kein Besitz.
+      const free = ov.freeReal;
+      const own = ov.real;
       if (own > 0) {
         out.totalOther += own;
         out.freeOther += free;
@@ -737,9 +736,8 @@
     const complete = !isWants && slotMissing === 0;
     const vs = ctx.vIdx[entry.variant];
     const freeReal = vs ? vs.freeReal : 0;
-    const freeProxy = vs ? vs.freeProxy : 0;
-    const totalFree = freeReal + freeProxy;
-    const slottable = !isWants && !complete && totalFree > 0;
+    // Proxies zaehlen nicht als verfuegbar / slottbar.
+    const slottable = !isWants && !complete && freeReal > 0;
     const proxySlotted = !isWants && assignedProxy > 0;
 
     // Cross-Variant: Aggregat ueber andere Varianten der selben Card-ID.
@@ -760,7 +758,7 @@
       const cls = complete ? 'text-emerald-400' : (assignedTotal === 0 ? 'text-slate-500' : 'text-amber-400');
       const proxy = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
       const decDisabled = assignedTotal === 0 ? 'disabled' : '';
-      const incDisabled = (totalFree === 0 || assignedTotal >= entry.count) ? 'disabled' : '';
+      const incDisabled = (freeReal === 0 || assignedTotal >= entry.count) ? 'disabled' : '';
       slotCell = `<td class="py-1 pr-3 whitespace-nowrap">
           <span class="inline-flex items-center gap-1">
             <button data-slot-dec="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="− Slot" ${decDisabled}>−</button>
@@ -777,12 +775,12 @@
       let titleAttr = '';
       if (complete) {
         inner = '<span class="text-emerald-400">✓</span>';
-      } else if (totalFree > 0) {
+      } else if (freeReal > 0) {
         const cross = av.freeOther > 0 ? ` <span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>` : '';
-        inner = `<span class="text-sky-400">${totalFree} verfügbar</span>${cross}`;
+        inner = `<span class="text-sky-400">${freeReal} verfügbar</span>${cross}`;
         titleAttr = av.freeOther > 0
-          ? `title="${escapeAttr(totalFree + ' exakt frei · ' + av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}"`
-          : `title="${escapeAttr(totalFree + ' exakt frei')}"`;
+          ? `title="${escapeAttr(freeReal + ' exakt frei · ' + av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}"`
+          : `title="${escapeAttr(freeReal + ' exakt frei')}"`;
       } else if (av.freeOther > 0) {
         inner = `<span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>`;
         titleAttr = `title="${escapeAttr(av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}"`;
@@ -890,7 +888,7 @@
         const assigned = sa ? sa.real + sa.proxy : 0;
         if (assigned >= e.count) return 2;
         const s = idx[e.variant];
-        const free = s ? (s.freeReal + s.freeProxy) : 0;
+        const free = s ? s.freeReal : 0;
         return free > 0 ? 0 : 1;
       };
       // Rang einmal pro Eintrag berechnen (nicht im Comparator → O(Copies + n log n)).

@@ -209,21 +209,20 @@
     }
   }
 
-  // Greedy-Reservierung: zuerst freie reale Kopien (älteste zuerst), dann freie Proxies.
+  // Greedy-Reservierung freier ECHTER Kopien (Proxies werden nie geslottet —
+  // sie sind reine Lager-Markierung). Aelteste zuerst.
   function autoClaim(coll, deckId, variant, n) {
     if (n <= 0) return 0;
     let claimed = 0;
     const free = copiesOfVariant(coll, variant)
-      .filter(c => c.deckId === null)
-      .sort((a, b) => {
-        if (a.isProxy !== b.isProxy) return a.isProxy ? 1 : -1; // real zuerst
-        return (a.addedAt || '').localeCompare(b.addedAt || ''); // älteste zuerst
-      });
+      .filter(c => c.deckId === null && !c.isProxy)
+      .sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''));
     for (const c of free) {
       if (claimed >= n) break;
       coll.copies[c.id].deckId = deckId;
       claimed++;
     }
+    invalidateIndexCache();
     return claimed;
   }
 
@@ -242,6 +241,7 @@
       coll.copies[c.id].deckId = null;
       released++;
     }
+    invalidateIndexCache();
     return released;
   }
 
