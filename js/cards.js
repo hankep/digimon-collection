@@ -467,11 +467,12 @@
         if (setNameToCode(sn) === variantSet) { chosenSetName = sn; break; }
       }
     }
-    // Errata-Reprints (z.B. 'BT20-077-Errata') liegen bei Cardmarket unter dem
-    // 'Special Booster Ver.2.5'-Produkt, nicht unter dem urspruenglichen
-    // Booster. Wenn die Karte einen entsprechenden set_name in der Liste hat,
-    // ueberschreiben wir die Auswahl.
-    if (variantKey && /-Errata$/i.test(variantKey)) {
+    // BT-19 und BT-20 liegen bei Cardmarket komplett unter dem
+    // 'Special Booster Ver.2.5'-Produkt (kein eigener Booster-Produktslug).
+    // Wenn die Karte einen entsprechenden set_name fuehrt, bevorzugen wir den.
+    const preferSpecialBooster = (card.set === 'BT19' || card.set === 'BT20')
+      || (variantKey && /-Errata$/i.test(variantKey));
+    if (preferSpecialBooster) {
       const sb = setNames.find(sn => /Special\s+Booster/i.test(sn));
       if (sb) chosenSetName = sb;
     }

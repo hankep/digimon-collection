@@ -343,7 +343,17 @@
     setListEl.querySelectorAll('.set-item').forEach(btn => {
       btn.addEventListener('click', () => {
         state.selectedSet = btn.dataset.set || null;
-        render();
+        // Active-Class direkt umsetzen — kein render(), damit der Scroll-Stand
+        // der Sidebar erhalten bleibt. Grid + Stats rendern neu.
+        setListEl.querySelectorAll('.set-item').forEach(b => {
+          const isActive = (b.dataset.set || null) === state.selectedSet;
+          b.classList.toggle('bg-amber-500', isActive);
+          b.classList.toggle('text-slate-900', isActive);
+          b.classList.toggle('hover:bg-slate-800', !isActive);
+        });
+        state.filteredCardsCache = null;
+        renderGrid();
+        renderStats();
       });
     });
   }
