@@ -2,8 +2,11 @@
 // Collection-/Backup-/Login-Funktionen liegen in ui-user.js; Proxy-Export im Collection-Tab.
 
 (function () {
+  // Export laeuft immer mit dem 'compact-text'-Format (Name + ID + Variant +
+  // optional V.N) — gut lesbar und re-importierbar. Import erkennt das Format
+  // selbststaendig per autoDetectFormat, daher keine UI-Auswahl mehr noetig.
+  const DEFAULT_EXPORT_FORMAT_ID = 'compact-text';
   const state = {
-    formatId: null,
     activeDeckId: null,
     textValue: ''
   };
@@ -11,25 +14,16 @@
 
   function init(el) {
     rootEl = el;
-    const formats = window.IO_FORMATS || [];
-    if (formats.length && !state.formatId) state.formatId = formats[0].id;
     render();
   }
 
   function render() {
-    const formats = window.IO_FORMATS || [];
     const decksState = Store.loadDecks();
     rootEl.innerHTML = `
       <div class="max-w-3xl mx-auto">
         <h2 class="text-lg font-bold mb-3">Listen Import / Export</h2>
 
         <div class="bg-slate-800 rounded p-4 mb-4 flex flex-wrap gap-3 items-end">
-          <label class="block">
-            <div class="text-xs text-slate-400 mb-1">Export-Format</div>
-            <select id="format-select" class="bg-slate-900 border border-slate-600 rounded px-2 py-2">
-              ${formats.map(f => `<option value="${f.id}" ${f.id === state.formatId ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
-            </select>
-          </label>
           <label class="block flex-1 min-w-[200px]">
             <div class="text-xs text-slate-400 mb-1">Liste (für Export)</div>
             <select id="deck-select" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 w-full">
@@ -91,7 +85,6 @@
       </div>
     `;
 
-    rootEl.querySelector('#format-select').addEventListener('change', e => { state.formatId = e.target.value; });
     rootEl.querySelector('#deck-select').addEventListener('change', e => { state.activeDeckId = e.target.value || null; });
     rootEl.querySelector('#io-text').addEventListener('input', e => { state.textValue = e.target.value; });
     rootEl.querySelector('#do-export').addEventListener('click', doExport);
@@ -281,7 +274,8 @@
   }
 
   function getFormat() {
-    return (window.IO_FORMATS || []).find(f => f.id === state.formatId);
+    const all = window.IO_FORMATS || [];
+    return all.find(f => f.id === DEFAULT_EXPORT_FORMAT_ID) || all[0] || null;
   }
 
   function doExport() {
@@ -400,14 +394,6 @@
     reader.onload = () => {
       state.textValue = String(reader.result || '');
       rootEl.querySelector('#io-text').value = state.textValue;
-      // Export-Format aus der Dateiendung vorbelegen (rein zur Bequemlichkeit
-      // beim spaeteren Re-Export). Der Import erkennt das Format selbststaendig.
-      const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-      const match = (window.IO_FORMATS || []).find(f => (f.fileExtension || '').toLowerCase() === ext);
-      if (match) {
-        state.formatId = match.id;
-        rootEl.querySelector('#format-select').value = match.id;
-      }
       showMsg('Datei geladen. „Import" klicken — Format wird automatisch erkannt.', 'ok');
     };
     reader.readAsText(file);
