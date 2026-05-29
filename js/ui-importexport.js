@@ -453,17 +453,31 @@
   // Collection entfernen + Antwort-Text exportieren.
   // ============================================================================
 
+  // Trade-Flow als State-Machine: 'input' (Phase 1, Textarea) → 'review'
+  // (Phase 2, Lieferansicht) → 'result' (Text fuer den Sender + Kopier-Button).
   const tradeState = {
+    phase: 'input',
     rawText: '',
     entries: [],  // pro Eintrag: {cardId, requestedVariant, wantsCount, deliverVariant, deliverCount, deliverableVariants}
-    view: 'tiles' // 'tiles' | 'text'
+    view: 'tiles', // 'tiles' | 'text'
+    sort: 'id',
+    resultText: '',
+    resultCount: 0
   };
 
   function openTradeDialog() {
+    tradeState.phase = 'input';
     tradeState.rawText = '';
     tradeState.entries = [];
     tradeState.view = Prefs.get('tradeView', 'tiles');
     tradeState.sort = Prefs.get('tradeSort', 'id');
+    tradeState.resultText = '';
+    tradeState.resultCount = 0;
+    renderTradeModal();
+  }
+
+  function setTradePhase(phase) {
+    tradeState.phase = phase;
     renderTradeModal();
   }
 
@@ -501,8 +515,13 @@
   }
 
   function renderTradeModal() {
-    if (!tradeState.entries.length) renderTradePhase1();
-    else renderTradePhase2();
+    if (tradeState.phase === 'result') {
+      renderTradePhaseResult();
+    } else if (tradeState.phase === 'review') {
+      renderTradePhase2();
+    } else {
+      renderTradePhase1();
+    }
   }
 
   function renderTradePhase1() {
@@ -541,7 +560,7 @@
           }
           tradeState.rawText = text;
           tradeState.entries = buildTradeEntries(auto.result.entries);
-          renderTradeModal();
+          setTradePhase('review');
         });
       }
     });
@@ -646,7 +665,7 @@
         });
         content.querySelector('#trade-reset').addEventListener('click', () => {
           tradeState.entries = [];
-          renderTradeModal();
+          setTradePhase('input');
         });
         content.querySelector('#trade-remove').addEventListener('click', confirmRemoveFromCollection);
       }
@@ -839,10 +858,14 @@
       const name = card ? CardDB.cleanDisplayName(card) : variant;
       lines.push(`${n} ${name} ${variant}`);
     }
-    showTradeResult(lines.join('\n') + '\n', t.cardsDeliverable);
+    tradeState.resultText = lines.join('\n') + '\n';
+    tradeState.resultCount = t.cardsDeliverable;
+    setTradePhase('result');
   }
 
-  function showTradeResult(text, count) {
+  function renderTradePhaseResult() {
+    const text = tradeState.resultText;
+    const count = tradeState.resultCount;
     const contentHtml = `
       <div class="flex justify-between items-start mb-3">
         <div>
