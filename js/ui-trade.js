@@ -345,7 +345,7 @@
     const rowStyle = bracketColor ? ` style="--bracket-color:${bracketColor}"` : '';
     return `<tr class="wants-row group cursor-pointer hover:bg-slate-700/60${rowCls}" data-card-id="${escapeAttr(it.cardId)}"${rowStyle}>
         <td class="py-1 pr-4 whitespace-nowrap">${qty}</td>
-        <td class="py-1 pr-4 relative"><span class="block truncate max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="${escapeAttr(it.name)}" /></td>
+        <td class="py-1 pr-4 relative"><span class="block truncate max-w-[12rem] sm:max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="${escapeAttr(it.name)}" /></td>
         <td class="py-1 pr-4 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(it.variant)}</td>
         <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(CardDB.rarityShort(it.rarity))}</td>
         <td class="py-1 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${priceTxt}</td>

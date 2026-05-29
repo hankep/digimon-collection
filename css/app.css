@@ -217,6 +217,12 @@
   }
   .slot-controls button {
     min-height: 44px;
+    min-width: 44px;
+  }
+  .wants-qty-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 0.95rem;
   }
 }
 
@@ -289,6 +295,10 @@
   line-height: 1.3;
   white-space: nowrap;
 }
+
+/* Native Disclosure-Marker auf <summary> entfernen (verwenden eigene Buttons) */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
 
 /* Decklisten: Karten mit zugewiesenen (geslotteten) Proxies lila umranden */
 .card-tile.tile-proxy-slotted {

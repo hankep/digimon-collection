@@ -9,6 +9,7 @@
     pickerType: null,
     pickerOwnedOnly: false,
     pickerShowAlts: false,
+    pickerOpen: false,  // Mobile-Collapse fuer Picker; auf Desktop irrelevant (Summary versteckt, details immer open)
     deckSortBy: 'id',  // id | name | price-asc | price-desc
     deckGroupBy: 'none', // level | cost | type | none
     deckMissingOnly: false, // nur Einträge mit fehlenden echten Kopien anzeigen
@@ -38,6 +39,9 @@
     // Scroll-Position der Listen-Sidebar merken, damit der User beim Wechsel
     // nicht jedes Mal nach oben springt.
     const prevDeckListScroll = (rootEl.querySelector('#deck-list') || {}).scrollTop || 0;
+    // Auf Desktop ist der Picker immer offen (Summary versteckt); auf Mobile haengt es am Session-State.
+    const isDesktopLg = window.matchMedia && window.matchMedia('(min-width:1024px)').matches;
+    const pickerOpen = isDesktopLg || state.pickerOpen;
     rootEl.innerHTML = `
       <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-7rem)]">
         <aside class="w-full lg:w-48 lg:shrink-0 flex flex-col lg:min-h-0">
@@ -53,8 +57,9 @@
         <div class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col">
           <div id="deck-detail" class="lg:flex lg:flex-col lg:flex-1 lg:min-h-0"></div>
         </div>
-        <div class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col">
-          <h2 class="text-sm font-bold uppercase text-slate-400 mb-2 shrink-0">Karten hinzufügen</h2>
+        <details id="picker-details" class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col"${pickerOpen ? ' open' : ''}>
+          <summary class="lg:hidden cursor-pointer bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded font-semibold text-sm select-none mb-2">+ Karten hinzufügen</summary>
+          <h2 class="hidden lg:block text-sm font-bold uppercase text-slate-400 mb-2 shrink-0">Karten hinzufügen</h2>
           <div class="space-y-2 mb-2 shrink-0">
             <input id="picker-search" type="text" placeholder="Name oder ID…" value="${escapeAttr(state.pickerQuery)}"
               class="bg-slate-800 border border-slate-600 rounded px-3 py-2 w-full" />
@@ -78,7 +83,7 @@
             </div>
           </div>
           <div id="picker-results" class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
-        </div>
+        </details>
       </div>
     `;
 
@@ -117,6 +122,12 @@
       Prefs.set('showAlts', state.pickerShowAlts);
       renderPicker();
     });
+    const pickerDetails = rootEl.querySelector('#picker-details');
+    if (pickerDetails) {
+      pickerDetails.addEventListener('toggle', e => {
+        state.pickerOpen = e.target.open;
+      });
+    }
   }
 
   // Wants- und Trade-Listen sind reine Kartenlisten (kein Besitz-/Slot-Abgleich).
@@ -358,13 +369,13 @@
           <input id="deck-missing-only" type="checkbox" ${state.deckMissingOnly ? 'checked' : ''} />
           Nur fehlende
         </label>` : ''}
-        <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-1 rounded font-semibold"
+        <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
-        ${!isListKind(deck.kind) ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white px-3 py-1 rounded font-semibold"
+        ${!isListKind(deck.kind) ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Fehlende Karten direkt in eine Wants-Liste übernehmen (Alt-Arts bleiben erhalten)">Fehlende → Wants</button>` : ''}
-        <button id="export-missing" class="bg-amber-500 text-slate-900 px-3 py-1 rounded font-semibold"
+        <button id="export-missing" class="bg-amber-500 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Exportiert nur Karten/Mengen, die in dieser Liste fehlen (Cardmarket-kompatibel)">Fehlende exportieren</button>
-        <button id="export-full" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1 rounded font-semibold"
+        <button id="export-full" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Kopiert die vollständige Liste (Anzahl Name ID) in die Zwischenablage">Exportieren</button>
       </div>
 
@@ -783,7 +794,7 @@
         ${slotCell}
         ${statusCell}
         <td class="py-1 pr-3">
-          <span class="block truncate max-w-[22rem]" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+          <span class="block truncate max-w-[14rem] sm:max-w-[22rem]" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
         </td>
         <td class="py-1 pr-3 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(entry.variant)}</td>
         <td class="py-1 pr-3 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(rarity)}</td>
