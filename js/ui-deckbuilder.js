@@ -265,26 +265,15 @@
     wireDeckList(el);
   }
 
-  function renderDeckDetail() {
-    if (isMainWants(state.activeDeckId)) {
-      renderMainWantsDetail();
-      return;
-    }
-    const el = rootEl.querySelector('#deck-detail');
-    const deck = currentDeck();
-    if (!deck) {
-      el.innerHTML = `<div class="text-slate-500 mt-8 text-center">Wähle eine Liste oder erstelle eine neue.</div>`;
-      return;
-    }
-    const prevScroll = (el.querySelector('#deck-entries') || {}).scrollTop || 0;
+  // Aggregat fuer die Cost-/Fehlt-/Wants-Coverage-Zeile. Reine Berechnung;
+  // liefert die fertige HTML-Inline-Spannenkette oder '' wenn das Deck leer ist.
+  function buildDeckCostLine(deck) {
     const total = deck.entries.reduce((s, e) => s + e.count, 0);
-    const cost = Store.computeDeckCost(deck, collectionCache);
-    let missingCmSum = 0;
-    let missingCmCount = 0;
-    let missingNoCm = 0;
+    if (!total) return '';
     const isWants = isListKind(deck.kind);
-    // Wants-Coverage: wie viele der fehlenden Slots stehen schon in einer Wants-Liste?
-    // Aggregat pro variant ueber alle kind='wants'-Listen.
+    const cost = Store.computeDeckCost(deck, collectionCache);
+    // Wants-Coverage: wie viele der fehlenden Slots stehen schon in einer
+    // Wants-Liste? Aggregat pro variant ueber alle kind='wants'-Listen.
     const wantsByVariant = new Map();
     if (!isWants) {
       for (const d of state.decksState.decks) {
@@ -294,47 +283,35 @@
         }
       }
     }
-    let missingInWants = 0;
-    if (window.CM && CM.hasData()) {
-      const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
-      for (const entry of deck.entries) {
-        const sa = da[entry.variant];
-        const need = isWants
-          ? entry.count
-          : Math.max(0, entry.count - (sa ? sa.real : 0));
-        if (!need) continue;
-        if (!isWants) {
-          const want = wantsByVariant.get(entry.variant) || 0;
-          missingInWants += Math.min(need, want);
-        }
-        const p = CM.get(entry.cardId);
-        if (p && p.low != null) {
-          missingCmSum += p.low * need;
-          missingCmCount += need;
-        } else {
-          missingNoCm += need;
-        }
-      }
-    } else if (!isWants) {
-      // Auch ohne CM-Daten Wants-Coverage zaehlen.
-      const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
-      for (const entry of deck.entries) {
-        const sa = da[entry.variant];
-        const need = Math.max(0, entry.count - (sa ? sa.real : 0));
-        if (!need) continue;
+    const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
+    const haveCM = !!(window.CM && CM.hasData());
+    let missingCmSum = 0, missingCmCount = 0, missingNoCm = 0, missingInWants = 0;
+    for (const entry of deck.entries) {
+      const sa = da[entry.variant];
+      const need = isWants ? entry.count : Math.max(0, entry.count - (sa ? sa.real : 0));
+      if (!need) continue;
+      if (!isWants) {
         const want = wantsByVariant.get(entry.variant) || 0;
         missingInWants += Math.min(need, want);
       }
+      if (haveCM) {
+        const p = CM.get(entry.cardId);
+        if (p && p.low != null) { missingCmSum += p.low * need; missingCmCount += need; }
+        else missingNoCm += need;
+      }
     }
-    const costLine = total > 0
-      ? `<span class="text-emerald-400 font-bold">${Fmt.eur(cost.total)}</span> <span class="text-slate-500">(bereits bezahlt)</span>`
-        + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}` : '')
-        + (cost.unknown ? ` · <span class="text-slate-400">${cost.unknown} ohne Preis</span>` : '')
-        + (missingCmCount > 0
-            ? ` · <span class="text-amber-400">fehlend CM: ${Fmt.eur(missingCmSum)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
-            : '')
-      : '';
-    el.innerHTML = `
+    return `<span class="text-emerald-400 font-bold">${Fmt.eur(cost.total)}</span> <span class="text-slate-500">(bereits bezahlt)</span>`
+      + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}` : '')
+      + (cost.unknown ? ` · <span class="text-slate-400">${cost.unknown} ohne Preis</span>` : '')
+      + (missingCmCount > 0
+          ? ` · <span class="text-amber-400">fehlend CM: ${Fmt.eur(missingCmSum)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
+          : '');
+  }
+
+  function renderDeckHeaderHtml(deck) {
+    const total = deck.entries.reduce((s, e) => s + e.count, 0);
+    const costLine = buildDeckCostLine(deck);
+    return `
       <div class="bg-slate-800 rounded p-3 mb-3 shrink-0">
         <div class="flex items-center gap-2">
           <input id="deck-name" type="text" value="${escapeAttr(deck.name)}"
@@ -348,7 +325,12 @@
         ${costLine ? `<div class="text-sm mt-1">${costLine}</div>` : ''}
         <div id="color-balance" class="mt-2"></div>
       </div>
+    `;
+  }
 
+  function renderDeckToolbarHtml(deck) {
+    const showListKindControls = !isListKind(deck.kind);
+    return `
       <div class="flex items-center gap-2 mb-2 text-sm flex-wrap shrink-0">
         <span class="text-slate-400">Ansicht:</span>
         <select id="deck-view" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
@@ -370,59 +352,60 @@
           <option value="price-desc" ${state.deckSortBy === 'price-desc' ? 'selected' : ''}>Preis ↓</option>
           <option value="status"     ${state.deckSortBy === 'status'     ? 'selected' : ''}>Status (slottbar → fehlend → fertig)</option>
         </select>
-        ${!isListKind(deck.kind) ? `<label class="flex items-center gap-1 text-slate-300" title="Nur Karten mit fehlenden echten Kopien (Proxies zählen als fehlend)">
+        ${showListKindControls ? `<label class="flex items-center gap-1 text-slate-300" title="Nur Karten mit fehlenden echten Kopien (Proxies zählen als fehlend)">
           <input id="deck-missing-only" type="checkbox" ${state.deckMissingOnly ? 'checked' : ''} />
           Nur fehlende
         </label>` : ''}
         <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
-        ${!isListKind(deck.kind) ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
+        ${showListKindControls ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Fehlende Karten direkt in eine Wants-Liste übernehmen (Alt-Arts bleiben erhalten)">Fehlende → Wants</button>` : ''}
         <button id="export-missing" class="bg-amber-500 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Exportiert nur Karten/Mengen, die in dieser Liste fehlen (Cardmarket-kompatibel)">Fehlende exportieren</button>
-        <button id="export-full" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
+        <button id="export-full" class="btn-primary-emerald"
           title="Kopiert die vollständige Liste (Anzahl Name ID) in die Zwischenablage">Exportieren</button>
       </div>
-
-      <div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>
     `;
+  }
 
-    rootEl.querySelector('#deck-name').addEventListener('change', e => {
+  // Wired Header- + Toolbar-Buttons. scopeEl ist #deck-detail.
+  function wireDeckDetailControls(scopeEl, deck) {
+    scopeEl.querySelector('#deck-name').addEventListener('change', e => {
       deck.name = e.target.value.trim() || 'Untitled';
       deck.updatedAt = new Date().toISOString();
       Store.saveDecks(state.decksState);
       renderDeckList();
     });
-    rootEl.querySelector('#deck-kind').addEventListener('change', e => {
+    scopeEl.querySelector('#deck-kind').addEventListener('change', e => {
       deck.kind = e.target.value;
       deck.updatedAt = new Date().toISOString();
       Store.saveDecks(state.decksState);
       renderDeckList();
     });
-    rootEl.querySelector('#deck-view').addEventListener('change', e => {
+    scopeEl.querySelector('#deck-view').addEventListener('change', e => {
       state.deckView = e.target.value;
       Prefs.set('deckView', state.deckView);
       renderDeckDetail();
     });
-    rootEl.querySelector('#group-by').addEventListener('change', e => {
+    scopeEl.querySelector('#group-by').addEventListener('change', e => {
       state.deckGroupBy = e.target.value;
       renderDeckDetail();
     });
-    rootEl.querySelector('#sort-by').addEventListener('change', e => {
+    scopeEl.querySelector('#sort-by').addEventListener('change', e => {
       state.deckSortBy = e.target.value;
       renderDeckDetail();
     });
-    const deckMissingCb = rootEl.querySelector('#deck-missing-only');
+    const deckMissingCb = scopeEl.querySelector('#deck-missing-only');
     if (deckMissingCb) deckMissingCb.addEventListener('change', e => {
       state.deckMissingOnly = e.target.checked;
       renderDeckEntries(deck);
     });
-    rootEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
-    rootEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
-    rootEl.querySelector('#import-into').addEventListener('click', () => openImportIntoDeck(deck));
-    const mtwBtn = rootEl.querySelector('#missing-to-wants');
+    scopeEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
+    scopeEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
+    scopeEl.querySelector('#import-into').addEventListener('click', () => openImportIntoDeck(deck));
+    const mtwBtn = scopeEl.querySelector('#missing-to-wants');
     if (mtwBtn) mtwBtn.addEventListener('click', () => openMissingToWantsDialog(deck));
-    rootEl.querySelector('#deck-note-host [data-note-trigger]').addEventListener('click', () => {
+    scopeEl.querySelector('#deck-note-host [data-note-trigger]').addEventListener('click', () => {
       Notes.openDialog({
         title: deck.name,
         subtitle: 'Listen-Notiz',
@@ -435,7 +418,24 @@
         }
       });
     });
+  }
 
+  function renderDeckDetail() {
+    if (isMainWants(state.activeDeckId)) {
+      renderMainWantsDetail();
+      return;
+    }
+    const el = rootEl.querySelector('#deck-detail');
+    const deck = currentDeck();
+    if (!deck) {
+      el.innerHTML = `<div class="text-slate-500 mt-8 text-center">Wähle eine Liste oder erstelle eine neue.</div>`;
+      return;
+    }
+    const prevScroll = (el.querySelector('#deck-entries') || {}).scrollTop || 0;
+    el.innerHTML = renderDeckHeaderHtml(deck)
+      + renderDeckToolbarHtml(deck)
+      + `<div id="deck-entries" class="space-y-4 max-h-[78vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto pr-1"></div>`;
+    wireDeckDetailControls(el, deck);
     renderColorBalance(deck);
     renderDeckEntries(deck);
     const entriesEl = rootEl.querySelector('#deck-entries');
