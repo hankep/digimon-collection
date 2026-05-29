@@ -55,14 +55,23 @@
           continue;
         }
 
-        const m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/);
+        // (V.N) am Ende abschneiden — fuer Variant-Index-Mapping spaeter.
+        let body = line;
+        let versionN = null;
+        const vm = body.match(/\s*\(V\.(\d+)\)\s*$/i);
+        if (vm) {
+          versionN = parseInt(vm[1], 10);
+          body = body.slice(0, -vm[0].length).trim();
+        }
+
+        const m = body.match(/^(\d+)\s*[xX]?\s+(.+)$/);
         let count, rest;
         if (m) {
           count = parseInt(m[1], 10);
           rest = m[2];
         } else {
           count = 1;
-          rest = line;
+          rest = body;
         }
 
         const ids = rest.match(ID_RE);
@@ -72,7 +81,9 @@
         }
         const idToken = ids[ids.length - 1];
 
-        const resolved = resolveIdent(idToken);
+        let resolved = null;
+        if (versionN != null) resolved = resolveByVersion(idToken, versionN);
+        if (!resolved) resolved = resolveIdent(idToken);
         if (!resolved) {
           unknown.push(idToken);
           continue;
@@ -85,6 +96,17 @@
       return result;
     }
   });
+
+  // V.1 = variantsOf(card)[0] (Main), V.2 = variantsOf(card)[1] (_P1), ...
+  function resolveByVersion(cardIdToken, versionN) {
+    if (!window.CardDB) return null;
+    const card = CardDB.byId.get(cardIdToken);
+    if (!card) return null;
+    const variants = CardDB.variantsOf(card);
+    const idx = (versionN || 1) - 1;
+    if (idx < 0 || idx >= variants.length) return null;
+    return { cardId: card.id, variant: variants[idx].key };
+  }
 
   function resolveIdent(token) {
     if (!window.CardDB) return null;

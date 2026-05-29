@@ -49,26 +49,42 @@
           continue;
         }
 
+        // Trailing (V.N) abschneiden — wir behalten N fuer die Variant-Wahl.
+        let body = line;
+        let versionN = null;
+        const vm = body.match(/\s*\(V\.(\d+)\)\s*$/i);
+        if (vm) {
+          versionN = parseInt(vm[1], 10);
+          body = body.slice(0, -vm[0].length).trim();
+        }
+
         // "4 BT1-001" / "4x BT1-001" / "BT1-001"
-        const m = line.match(/^(\d+)\s*[xX]?\s+(.+?)(?:\s+(?:\/\/|#).*)?$/);
+        const m = body.match(/^(\d+)\s*[xX]?\s+(.+?)(?:\s+(?:\/\/|#).*)?$/);
         let count, ident;
         if (m) {
           count = parseInt(m[1], 10);
           ident = m[2].trim();
         } else {
           count = 1;
-          ident = line.replace(/\s+(?:\/\/|#).*$/, '').trim();
+          ident = body.replace(/\s+(?:\/\/|#).*$/, '').trim();
         }
         if (!ident) continue;
 
         let resolved = resolveIdent(ident);
         if (!resolved) {
-          // Auch "4 Tsunomon   ST21-01" (Name + ID) erlauben:
-          // suche eine Card-ID irgendwo im ident, bevorzugt am Ende.
+          // "4 Tsunomon   ST21-01" (Name + ID): nehme letzte Card-ID in der Zeile.
           const idMatches = ident.match(/[A-Z]+\d*-\d+[A-Z]?(?:_P\d+)?/g);
           if (idMatches && idMatches.length) {
-            resolved = resolveIdent(idMatches[idMatches.length - 1]);
+            const idToken = idMatches[idMatches.length - 1];
+            if (versionN != null) {
+              resolved = resolveByVersion(idToken, versionN);
+            }
+            if (!resolved) resolved = resolveIdent(idToken);
           }
+        } else if (versionN != null) {
+          // ident war direkt eine Card-ID / Variant-Key; versionN -> Index in variantsOf.
+          const v = resolveByVersion(resolved.cardId, versionN);
+          if (v) resolved = v;
         }
         if (!resolved) {
           unknown.push(ident);
@@ -84,8 +100,6 @@
   });
 
   // Versucht, ein Token als variantKey oder cardId zu erkennen.
-  // CardDB ist garantiert vor diesem Plugin geladen (Script-Reihenfolge),
-  // aber zur Sicherheit defensiv.
   function resolveIdent(token) {
     if (!window.CardDB) return null;
     if (CardDB.allVariants.has(token)) {
@@ -97,5 +111,17 @@
       return { cardId: card.id, variant: CardDB.mainVariantKey(card) };
     }
     return null;
+  }
+
+  // V.1 = variantsOf(card)[0] (Main), V.2 = variantsOf(card)[1] (_P1), V.3 = ...
+  // Spiegelt die Cardmarket-Konvention der Exporte (versionSuffixForVariant).
+  function resolveByVersion(cardIdToken, versionN) {
+    if (!window.CardDB) return null;
+    const card = CardDB.byId.get(cardIdToken);
+    if (!card) return null;
+    const variants = CardDB.variantsOf(card);
+    const idx = (versionN || 1) - 1;
+    if (idx < 0 || idx >= variants.length) return null;
+    return { cardId: card.id, variant: variants[idx].key };
   }
 })();
