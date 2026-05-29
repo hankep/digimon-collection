@@ -190,6 +190,7 @@
         <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
         <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
       </button>
+      <button data-dup="${d.id}" class="text-slate-500 hover:text-sky-400 px-1" title="Liste duplizieren">⎘</button>
       <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
     </div>`;
   }
@@ -245,6 +246,15 @@
         Store.deleteDeck(state.decksState, btn.dataset.del);
         if (state.activeDeckId === btn.dataset.del) state.activeDeckId = null;
         Store.saveDecks(state.decksState);
+        render();
+      });
+    });
+    el.querySelectorAll('[data-dup]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const copy = Store.duplicateDeck(state.decksState, btn.dataset.dup);
+        if (!copy) return;
+        Store.saveDecks(state.decksState);
+        state.activeDeckId = copy.id;
         render();
       });
     });

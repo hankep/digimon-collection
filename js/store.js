@@ -475,6 +475,34 @@
     state.decks = state.decks.filter(d => d.id !== deckId);
   }
 
+  // Dupliziert eine Liste (kind, notes, entries, favorite). Neuer Name: ' 1' an-
+  // gehaengt; wenn schon ' N' hinten dranhing → N+1; bei Kollision weiter hoch.
+  function duplicateDeck(state, srcDeckId) {
+    const src = state.decks.find(d => d.id === srcDeckId);
+    if (!src) return null;
+    const taken = new Set(state.decks.map(d => d.name));
+    const m = src.name.match(/^(.*)\s(\d+)$/);
+    let base, n;
+    if (m) { base = m[1]; n = parseInt(m[2], 10) + 1; }
+    else { base = src.name; n = 1; }
+    let candidate = `${base} ${n}`;
+    while (taken.has(candidate)) { n++; candidate = `${base} ${n}`; }
+    const now = new Date().toISOString();
+    const copy = {
+      id: 'd_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+      name: candidate,
+      kind: src.kind,
+      notes: src.notes || '',
+      favorite: !!src.favorite,
+      createdAt: now,
+      updatedAt: now,
+      // Entries flach kopieren (count + cardId + variant — keine Slot-Refs)
+      entries: (src.entries || []).map(e => ({ cardId: e.cardId, variant: e.variant, count: e.count }))
+    };
+    state.decks.push(copy);
+    return copy;
+  }
+
   // Wird auch beim Löschen eines Decks aufgerufen: gibt alle ihm zugewiesenen Kopien frei.
   function releaseAllForDeck(coll, deckId) {
     let count = 0;
@@ -579,6 +607,7 @@
     saveDecks,
     createDeck,
     deleteDeck,
+    duplicateDeck,
     addToDeck,
     computeDeckCost,
     computeEntryCost
