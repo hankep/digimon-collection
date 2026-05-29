@@ -40,63 +40,24 @@
   // opts.touch === false  → updatedAt NICHT neu setzen (z.B. beim Übernehmen von
   //                          Remote-Daten, damit der Zeitstempel erhalten bleibt).
   // opts.silent === true   → kein 'collection-changed'-Event (kein Auto-Sync-Push).
-  // Save: dispatcht das collection-changed-Event sofort (Sync push debounced
-  // separat), aber den LocalStorage-Write debouncen wir gegen Bulk-Edits. Bei
-  // Bedarf manuell flush() rufen (Logout, beforeunload). Cache wird sofort
-  // invalidiert, damit Renderer frische Daten sehen.
-  const SAVE_DEBOUNCE_MS = 250;
-  let collSaveTimer = null;
-  let collSavePending = null;
-  let decksSaveTimer = null;
-  let decksSavePending = null;
-
+  // Save: synchron in LocalStorage schreiben, danach das change-Event
+  // dispatchen. Cache wird invalidiert, damit Renderer frische Daten sehen.
+  // (Frueher debounced — fuehrte zu stale Reads in Listener, die selbst aus LS
+  // lesen.)
   function saveCollection(collection, opts) {
     opts = opts || {};
     if (opts.touch !== false) collection.updatedAt = new Date().toISOString();
     invalidateIndexCache();
+    writeJSON(COLLECTION_KEY, collection);
     if (!opts.silent) {
       document.dispatchEvent(new CustomEvent('collection-changed'));
     }
-    collSavePending = collection;
-    if (collSaveTimer) clearTimeout(collSaveTimer);
-    collSaveTimer = setTimeout(flushCollectionSave, SAVE_DEBOUNCE_MS);
   }
 
-  function flushCollectionSave() {
-    if (collSaveTimer) { clearTimeout(collSaveTimer); collSaveTimer = null; }
-    if (!collSavePending) return;
-    const coll = collSavePending;
-    collSavePending = null;
-    writeJSON(COLLECTION_KEY, coll);
-  }
-
-  function flushDecksSave() {
-    if (decksSaveTimer) { clearTimeout(decksSaveTimer); decksSaveTimer = null; }
-    if (!decksSavePending) return;
-    const state = decksSavePending;
-    decksSavePending = null;
-    writeJSON(DECKS_KEY, state);
-  }
-
-  // Beide pending Saves sofort durchschreiben. Aufgerufen bei kritischen Punkten
-  // (vor Sync-Push, beforeunload).
-  function flushSaves() {
-    flushCollectionSave();
-    flushDecksSave();
-  }
-
-  // Pending Saves verwerfen (z.B. bei Logout — danach wird LocalStorage
-  // weggewischt; ein nachgelagerter debounced Write wuerde sonst alte Daten
-  // wieder schreiben).
-  function cancelPendingSaves() {
-    if (collSaveTimer) { clearTimeout(collSaveTimer); collSaveTimer = null; }
-    if (decksSaveTimer) { clearTimeout(decksSaveTimer); decksSaveTimer = null; }
-    collSavePending = null;
-    decksSavePending = null;
-  }
-
-  // beforeunload-Garantie: keine debouncten Writes verlieren.
-  window.addEventListener('beforeunload', flushSaves);
+  // No-Ops fuer Aufrufer (Sync.push, app.js Logout), die die alte Debounce-API
+  // erwartet haben — wir schreiben jetzt eh synchron.
+  function flushSaves() {}
+  function cancelPendingSaves() {}
 
   // ── Copy-Primitive ────────────────────────────────────────────────────────
 
@@ -485,16 +446,14 @@
     return readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
   }
 
-  // opts wie bei saveCollection: { touch, silent }. Schreibt debounced.
+  // opts wie bei saveCollection: { touch, silent }. Synchroner Write.
   function saveDecks(state, opts) {
     opts = opts || {};
     if (opts.touch !== false) state.updatedAt = new Date().toISOString();
+    writeJSON(DECKS_KEY, state);
     if (!opts.silent) {
       document.dispatchEvent(new CustomEvent('decks-changed'));
     }
-    decksSavePending = state;
-    if (decksSaveTimer) clearTimeout(decksSaveTimer);
-    decksSaveTimer = setTimeout(flushDecksSave, SAVE_DEBOUNCE_MS);
   }
 
   function createDeck(state, name, kind) {

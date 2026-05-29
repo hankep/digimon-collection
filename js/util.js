@@ -67,8 +67,15 @@
 
   function openModal(opts) {
     const id = opts.id || ('modal-' + Math.random().toString(36).slice(2, 8));
-    const host = document.getElementById(opts.host || 'modal-root');
-    if (!host) throw new Error('Modal-Host nicht gefunden: ' + (opts.host || 'modal-root'));
+    const hostId = opts.host || 'modal-root';
+    let host = document.getElementById(hostId);
+    if (!host) {
+      // Eigenen Host-Knoten on-demand anlegen, damit Module wie Reports/Notes
+      // keinen Setup-Schritt vorab brauchen.
+      host = document.createElement('div');
+      host.id = hostId;
+      document.body.appendChild(host);
+    }
 
     // Falls schon ein Modal mit gleicher ID offen ist: dessen close() aufrufen,
     // damit ESC-Listener nicht leaken.
