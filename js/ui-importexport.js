@@ -451,9 +451,7 @@
     el.className = 'mt-3 text-sm ' + (kind === 'err' ? 'text-red-400' : kind === 'ok' ? 'text-emerald-400' : 'text-slate-400');
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+  const { escapeHtml } = window.Util;
 
   // ============================================================================
   // Trade-Modal: Wants-/Fehlende-Liste eines anderen Users beantworten.

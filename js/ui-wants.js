@@ -703,20 +703,13 @@
     return ` (V.${idx + 1})`;
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  }
-  function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+  const { escapeHtml, escapeAttr, debounce } = window.Util;
 
   // Textsuche: matcht Name, Card-ID oder Variant (case-insensitive).
   function matchesQuery(name, cardId, variant) {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (name + ' ' + cardId + ' ' + variant).toLowerCase().includes(q);
-  }
-  function debounce(fn, ms) {
-    let t;
-    return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
   }
 
   // Live-Refresh: Main Wants hängt vom Besitz ab (collection-changed), die

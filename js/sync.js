@@ -237,10 +237,7 @@
     }
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
+  const { escapeHtml } = window.Util;
 
   // ── Init ────────────────────────────────────────────────────────────────────
 

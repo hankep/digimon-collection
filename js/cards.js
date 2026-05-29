@@ -1,6 +1,7 @@
 // Card-Index aus window.CARDS bauen, Such- und Filter-Helpers.
 
 (function () {
+  const { escapeHtml } = window.Util;
   const CARDS = window.CARDS || [];
 
   const byId = new Map();
@@ -484,10 +485,6 @@
     if (priceTxt) parts.push(priceTxt);
     const title = setNameByCode(code);
     return `<span class="reprint-pill" title="${escapeHtml(title)}">${parts.map(escapeHtml).join(' · ')}</span>`;
-  }
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   window.CardDB = {

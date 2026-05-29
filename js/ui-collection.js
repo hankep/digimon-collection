@@ -1118,16 +1118,7 @@
   function cssEscape(s) {
     return String(s).replace(/[^a-zA-Z0-9_-]/g, ch => '\\' + ch);
   }
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/"/g, '&quot;');
-  }
-  function debounce(fn, ms) {
-    let t;
-    return function (...args) { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
-  }
+  const { escapeHtml, escapeAttr, debounce } = window.Util;
 
   window.UICollection = { init, openCardModal };
 })();

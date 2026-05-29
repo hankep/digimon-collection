@@ -289,10 +289,7 @@
     return new Date(iso).toLocaleDateString('de-DE');
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-  function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+  const { escapeHtml, escapeAttr } = window.Util;
 
   window.UIReports = { init };
 })();

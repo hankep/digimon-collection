@@ -223,12 +223,7 @@
     });
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/"/g, '&quot;');
-  }
+  const { escapeHtml, escapeAttr } = window.Util;
 
   window.UICardMenu = { init, open: openAddToListsDialog };
 })();

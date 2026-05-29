@@ -2,8 +2,8 @@
 // Schema v3: jede physische Karten-Kopie ist eine eigene Instanz mit ID.
 
 (function () {
-  const COLLECTION_KEY = 'digimon.collection';
-  const DECKS_KEY = 'digimon.decks';
+  const COLLECTION_KEY = window.Util.LS_KEYS.collection;
+  const DECKS_KEY = window.Util.LS_KEYS.decks;
 
   function readJSON(key, fallback) {
     try {

@@ -83,8 +83,8 @@
     // Lokale Daten verwerfen — Cloud ist die Quelle der Wahrheit. Beim
     // naechsten Login werden sie frisch reingepulled.
     try {
-      localStorage.removeItem('digimon.collection');
-      localStorage.removeItem('digimon.decks');
+      localStorage.removeItem(window.Util.LS_KEYS.collection);
+      localStorage.removeItem(window.Util.LS_KEYS.decks);
     } catch (e) {}
     showAuthGate();
   }

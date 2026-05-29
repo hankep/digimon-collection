@@ -19,8 +19,8 @@
 
   window.Fmt = { eur, parseEUR };
 
-  // Geteilte UI-Preferences in localStorage.
-  const PREF_KEY = 'digimon.uiPrefs';
+  // Geteilte UI-Preferences in localStorage. Key kommt aus Util.LS_KEYS.
+  const PREF_KEY = window.Util.LS_KEYS.prefs;
   function loadPrefs() {
     try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); }
     catch (e) { return {}; }

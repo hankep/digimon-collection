@@ -470,19 +470,12 @@
     return fallback;
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  }
-  function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+  const { escapeHtml, escapeAttr, debounce } = window.Util;
 
   function matchesQuery(name, cardId, variant) {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (name + ' ' + cardId + ' ' + variant).toLowerCase().includes(q);
-  }
-  function debounce(fn, ms) {
-    let t;
-    return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
   }
 
   // Live-Refresh: Trade-Listen sind Decks (decks-changed). Besitz ist hier
