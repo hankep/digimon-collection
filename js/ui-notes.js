@@ -23,6 +23,8 @@
 
   function openDialog(opts) {
     const { title, subtitle, value, onSave } = opts || {};
+    // Eigener Modal-Host, damit Notes auch ueber dem Hauptmodal (z.B. Card-Detail)
+    // liegen koennen ohne dieses zu ueberschreiben.
     let host = document.getElementById('notes-root');
     if (!host) {
       host = document.createElement('div');
@@ -30,44 +32,38 @@
       document.body.appendChild(host);
     }
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="notes-modal">
-        <div class="modal-content w-[520px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <div class="min-w-0">
-              <h2 class="text-lg font-bold truncate">${escapeHtml(title || 'Notiz')}</h2>
-              ${subtitle ? `<div class="text-xs text-slate-400 truncate">${escapeHtml(subtitle)}</div>` : ''}
-            </div>
-            <button id="notes-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-
-          <textarea id="notes-text" rows="8" placeholder="Notiz eingeben…"
-            class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-sm">${escapeHtml(value || '')}</textarea>
-
-          <div class="flex justify-end gap-2 mt-3">
-            <button id="notes-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="notes-save" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-4 py-1.5 rounded text-sm font-semibold">Speichern</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div class="min-w-0">
+          <h2 class="text-lg font-bold truncate">${escapeHtml(title || 'Notiz')}</h2>
+          ${subtitle ? `<div class="text-xs text-slate-400 truncate">${escapeHtml(subtitle)}</div>` : ''}
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+
+      <textarea id="notes-text" rows="8" placeholder="Notiz eingeben…"
+        class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-sm">${escapeHtml(value || '')}</textarea>
+
+      <div class="flex justify-end gap-2 mt-3">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="notes-save" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-4 py-1.5 rounded text-sm font-semibold">Speichern</button>
       </div>
     `;
 
-    const ta = host.querySelector('#notes-text');
-    setTimeout(() => ta && ta.focus(), 30);
-
-    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
-    function esc(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', esc);
-
-    host.querySelector('#notes-close').addEventListener('click', close);
-    host.querySelector('#notes-cancel').addEventListener('click', close);
-    host.querySelector('#notes-modal').addEventListener('click', e => {
-      if (e.target.id === 'notes-modal') close();
-    });
-    host.querySelector('#notes-save').addEventListener('click', () => {
-      const txt = ta.value;
-      if (typeof onSave === 'function') onSave(txt);
-      close();
+    window.Util.openModal({
+      host: 'notes-root',
+      id: 'notes-modal',
+      sizeClass: 'w-[520px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        const ta = content.querySelector('#notes-text');
+        setTimeout(() => ta && ta.focus(), 30);
+        content.querySelectorAll('[data-modal-close]').forEach(btn => btn.addEventListener('click', close));
+        content.querySelector('#notes-save').addEventListener('click', () => {
+          if (typeof onSave === 'function') onSave(ta.value);
+          close();
+        });
+      }
     });
   }
 

@@ -1137,181 +1137,157 @@
       return;
     }
 
-    let host = document.getElementById('missing-to-wants-root');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'missing-to-wants-root';
-      document.body.appendChild(host);
-    }
-
     const wantsLists = state.decksState.decks.filter(d => d.kind === 'wants');
     const totalCopies = missingEntries.reduce((s, e) => s + e.count, 0);
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="mtw-modal">
-        <div class="modal-content w-[480px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <h2 class="text-lg font-bold">Fehlende → Wants-Liste</h2>
-            <button id="mtw-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-          <div class="text-sm text-slate-400 mb-3">
-            Aus „${escapeHtml(deck.name)}": <b>${missingEntries.length}</b> Karten · <b>${totalCopies}</b> Kopien fehlen.
-            Mengen werden zu vorhandenen Wants-Eintraegen <b>addiert</b>.
-          </div>
-          <label class="block mb-3">
-            <div class="text-xs text-slate-400 mb-1">Ziel</div>
-            <select id="mtw-target" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 w-full text-sm">
-              <option value="__new__">— Neue Wants-Liste anlegen —</option>
-              ${wantsLists.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name)}</option>`).join('')}
-            </select>
-          </label>
-          <label class="block mb-3" id="mtw-name-wrap">
-            <div class="text-xs text-slate-400 mb-1">Name der neuen Liste</div>
-            <input id="mtw-name" type="text" value="${escapeAttr(deck.name + ' (Fehlend)')}"
-              class="bg-slate-900 border border-slate-600 rounded px-3 py-2 w-full text-sm" />
-          </label>
-          <div class="flex justify-end gap-2">
-            <button id="mtw-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="mtw-go" class="bg-purple-500 hover:bg-purple-400 text-white px-4 py-1.5 rounded text-sm font-semibold">Uebernehmen</button>
-          </div>
-        </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <h2 class="text-lg font-bold">Fehlende → Wants-Liste</h2>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <div class="text-sm text-slate-400 mb-3">
+        Aus „${escapeHtml(deck.name)}": <b>${missingEntries.length}</b> Karten · <b>${totalCopies}</b> Kopien fehlen.
+        Mengen werden zu vorhandenen Wants-Eintraegen <b>addiert</b>.
+      </div>
+      <label class="block mb-3">
+        <div class="text-xs text-slate-400 mb-1">Ziel</div>
+        <select id="mtw-target" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 w-full text-sm">
+          <option value="__new__">— Neue Wants-Liste anlegen —</option>
+          ${wantsLists.map(d => `<option value="${escapeAttr(d.id)}">${escapeHtml(d.name)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="block mb-3" id="mtw-name-wrap">
+        <div class="text-xs text-slate-400 mb-1">Name der neuen Liste</div>
+        <input id="mtw-name" type="text" value="${escapeAttr(deck.name + ' (Fehlend)')}"
+          class="bg-slate-900 border border-slate-600 rounded px-3 py-2 w-full text-sm" />
+      </label>
+      <div class="flex justify-end gap-2">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="mtw-go" class="bg-purple-500 hover:bg-purple-400 text-white px-4 py-1.5 rounded text-sm font-semibold">Uebernehmen</button>
       </div>
     `;
 
-    const targetSel = host.querySelector('#mtw-target');
-    const nameWrap = host.querySelector('#mtw-name-wrap');
-    const updateNameVisible = () => {
-      nameWrap.style.display = targetSel.value === '__new__' ? '' : 'none';
-    };
-    targetSel.addEventListener('change', updateNameVisible);
-    updateNameVisible();
+    window.Util.openModal({
+      host: 'missing-to-wants-root',
+      id: 'mtw-modal',
+      sizeClass: 'w-[480px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        const targetSel = content.querySelector('#mtw-target');
+        const nameWrap = content.querySelector('#mtw-name-wrap');
+        const updateNameVisible = () => {
+          nameWrap.style.display = targetSel.value === '__new__' ? '' : 'none';
+        };
+        targetSel.addEventListener('change', updateNameVisible);
+        updateNameVisible();
 
-    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
-    function esc(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', esc);
-    host.querySelector('#mtw-close').addEventListener('click', close);
-    host.querySelector('#mtw-cancel').addEventListener('click', close);
-    host.querySelector('#mtw-modal').addEventListener('click', e => {
-      if (e.target.id === 'mtw-modal') close();
-    });
-
-    host.querySelector('#mtw-go').addEventListener('click', () => {
-      const target = targetSel.value;
-      let targetDeck;
-      if (target === '__new__') {
-        const name = host.querySelector('#mtw-name').value.trim();
-        if (!name) { alert('Name der neuen Liste fehlt.'); return; }
-        targetDeck = Store.createDeck(state.decksState, name, 'wants');
-      } else {
-        targetDeck = state.decksState.decks.find(d => d.id === target);
-        if (!targetDeck) { alert('Wants-Liste nicht gefunden.'); return; }
+        content.querySelector('#mtw-go').addEventListener('click', () => {
+          const target = targetSel.value;
+          let targetDeck;
+          if (target === '__new__') {
+            const name = content.querySelector('#mtw-name').value.trim();
+            if (!name) { window.Util.toast('Name der neuen Liste fehlt.', 'warn'); return; }
+            targetDeck = Store.createDeck(state.decksState, name, 'wants');
+          } else {
+            targetDeck = state.decksState.decks.find(d => d.id === target);
+            if (!targetDeck) { window.Util.toast('Wants-Liste nicht gefunden.', 'error'); return; }
+          }
+          for (const e of missingEntries) {
+            Store.addToDeck(targetDeck, e.cardId, e.variant, e.count);
+          }
+          Store.saveDecks(state.decksState);
+          close();
+          // Aktiv lassen wo wir sind — User sieht das Deck weiter. Sidebar wird neu
+          // berechnet und reflektiert die neue Wants-Liste.
+          renderDeckList();
+          renderDeckDetail();
+        });
       }
-      for (const e of missingEntries) {
-        Store.addToDeck(targetDeck, e.cardId, e.variant, e.count);
-      }
-      Store.saveDecks(state.decksState);
-      close();
-      // Aktiv lassen wo wir sind — User sieht das Deck weiter. Sidebar wird neu
-      // berechnet und reflektiert die neue Wants-Liste.
-      renderDeckList();
-      renderDeckDetail();
     });
   }
 
   function openImportIntoDeck(deck) {
-    let host = document.getElementById('import-into-root');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'import-into-root';
-      document.body.appendChild(host);
-    }
     const formats = (window.IO_FORMATS || []);
     const defaultFmt = formats.find(f => f.id === 'dcgo-text') || formats.find(f => f.id === 'compact-text') || formats[0];
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="import-into-modal">
-        <div class="modal-content w-[640px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <div class="min-w-0">
-              <h2 class="text-lg font-bold truncate">Importieren in „${escapeHtml(deck.name)}"</h2>
-              <div class="text-xs text-slate-400">Mengen werden zu vorhandenen Einträgen <b>addiert</b>.</div>
-            </div>
-            <button id="ii-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-
-          <label class="block mb-2">
-            <span class="text-xs text-slate-400">Format</span>
-            <select id="ii-format" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 ml-2 text-sm">
-              ${formats.map(f => `<option value="${f.id}" ${f.id === (defaultFmt && defaultFmt.id) ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
-            </select>
-          </label>
-
-          <textarea id="ii-text" rows="14" placeholder="z.B. 4 Tsunomon ST21-01"
-            class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"></textarea>
-
-          <div id="ii-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
-
-          <div class="flex justify-end gap-2 mt-3">
-            <button id="ii-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="ii-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Liste übernehmen</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div class="min-w-0">
+          <h2 class="text-lg font-bold truncate">Importieren in „${escapeHtml(deck.name)}"</h2>
+          <div class="text-xs text-slate-400">Mengen werden zu vorhandenen Einträgen <b>addiert</b>.</div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+
+      <label class="block mb-2">
+        <span class="text-xs text-slate-400">Format</span>
+        <select id="ii-format" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 ml-2 text-sm">
+          ${formats.map(f => `<option value="${f.id}" ${f.id === (defaultFmt && defaultFmt.id) ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+        </select>
+      </label>
+
+      <textarea id="ii-text" rows="14" placeholder="z.B. 4 Tsunomon ST21-01"
+        class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"></textarea>
+
+      <div id="ii-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
+
+      <div class="flex justify-end gap-2 mt-3">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="ii-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Liste übernehmen</button>
       </div>
     `;
 
-    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
-    function esc(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', esc);
+    window.Util.openModal({
+      host: 'import-into-root',
+      id: 'import-into-modal',
+      sizeClass: 'w-[640px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#ii-go').addEventListener('click', () => {
+          const fmtId = content.querySelector('#ii-format').value;
+          const fmt = formats.find(f => f.id === fmtId);
+          const text = content.querySelector('#ii-text').value;
+          const msgEl = content.querySelector('#ii-msg');
+          if (!fmt) { msgEl.textContent = 'Format nicht gefunden.'; return; }
+          if (!text.trim()) { msgEl.textContent = 'Textfeld ist leer.'; return; }
 
-    host.querySelector('#ii-close').addEventListener('click', close);
-    host.querySelector('#ii-cancel').addEventListener('click', close);
-    host.querySelector('#import-into-modal').addEventListener('click', e => {
-      if (e.target.id === 'import-into-modal') close();
-    });
+          let result;
+          try { result = fmt.importDeck(text); }
+          catch (e) { msgEl.textContent = 'Parse-Fehler: ' + e.message; return; }
 
-    host.querySelector('#ii-go').addEventListener('click', () => {
-      const fmtId = host.querySelector('#ii-format').value;
-      const fmt = formats.find(f => f.id === fmtId);
-      const text = host.querySelector('#ii-text').value;
-      const msgEl = host.querySelector('#ii-msg');
-      if (!fmt) { msgEl.textContent = 'Format nicht gefunden.'; return; }
-      if (!text.trim()) { msgEl.textContent = 'Textfeld ist leer.'; return; }
+          const validEntries = [];
+          const unknownEntries = [];
+          for (const e of result.entries || []) {
+            const cardKnown = CardDB.byId.has(e.cardId);
+            const variantKnown = CardDB.allVariants.has(e.variant);
+            if (!cardKnown && !variantKnown) { unknownEntries.push(e); continue; }
+            if (!variantKnown && cardKnown) {
+              e.variant = CardDB.mainVariantKey(CardDB.byId.get(e.cardId));
+            }
+            validEntries.push(e);
+          }
+          const skippedFromFormat = (result.unknownIds || []).length;
+          if (!validEntries.length) {
+            msgEl.textContent = `Keine gültigen Einträge gefunden${skippedFromFormat ? ` (${skippedFromFormat} unbekannt)` : ''}.`;
+            return;
+          }
+          const skipped = unknownEntries.length + skippedFromFormat;
+          if (skipped > 0) {
+            const samples = unknownEntries.slice(0, 5).map(e => e.cardId).concat((result.unknownIds || []).slice(0, 5));
+            if (!confirm(`${skipped} unbekannte Einträge werden übersprungen, z.B.:\n${samples.join('\n')}\n\n${validEntries.length} Einträge in „${deck.name}" einfügen?`)) return;
+          }
 
-      let result;
-      try { result = fmt.importDeck(text); }
-      catch (e) { msgEl.textContent = 'Parse-Fehler: ' + e.message; return; }
-
-      const validEntries = [];
-      const unknownEntries = [];
-      for (const e of result.entries || []) {
-        const cardKnown = CardDB.byId.has(e.cardId);
-        const variantKnown = CardDB.allVariants.has(e.variant);
-        if (!cardKnown && !variantKnown) { unknownEntries.push(e); continue; }
-        if (!variantKnown && cardKnown) {
-          e.variant = CardDB.mainVariantKey(CardDB.byId.get(e.cardId));
-        }
-        validEntries.push(e);
+          for (const e of validEntries) {
+            Store.addToDeck(deck, e.cardId, e.variant, Math.max(1, e.count || 1));
+          }
+          Store.saveDecks(state.decksState);
+          close();
+          renderDeckList();
+          renderDeckDetail();
+        });
       }
-      const skippedFromFormat = (result.unknownIds || []).length;
-      if (!validEntries.length) {
-        msgEl.textContent = `Keine gültigen Einträge gefunden${skippedFromFormat ? ` (${skippedFromFormat} unbekannt)` : ''}.`;
-        return;
-      }
-      const skipped = unknownEntries.length + skippedFromFormat;
-      if (skipped > 0) {
-        const samples = unknownEntries.slice(0, 5).map(e => e.cardId).concat((result.unknownIds || []).slice(0, 5));
-        if (!confirm(`${skipped} unbekannte Einträge werden übersprungen, z.B.:\n${samples.join('\n')}\n\n${validEntries.length} Einträge in „${deck.name}" einfügen?`)) return;
-      }
-
-      let added = 0;
-      for (const e of validEntries) {
-        Store.addToDeck(deck, e.cardId, e.variant, Math.max(1, e.count || 1));
-        added += Math.max(1, e.count || 1);
-      }
-      Store.saveDecks(state.decksState);
-      close();
-      renderDeckList();
-      renderDeckDetail();
     });
   }
 
@@ -1589,15 +1565,8 @@
   function openBulkMissingDialog() {
     const decks = state.decksState.decks;
     if (!decks.length) {
-      alert('Noch keine Listen vorhanden.');
+      window.Util.toast('Noch keine Listen vorhanden.', 'warn');
       return;
-    }
-
-    let host = document.getElementById('bulk-missing-root');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'bulk-missing-root';
-      document.body.appendChild(host);
     }
 
     // Pro Deck schon mal Missing berechnen für Anzeige.
@@ -1621,106 +1590,104 @@
       `;
     };
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="bulk-modal">
-        <div class="modal-content w-[560px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <h2 class="text-lg font-bold">Fehlende mehrerer Listen → Clipboard</h2>
-            <button id="bm-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <h2 class="text-lg font-bold">Fehlende mehrerer Listen → Clipboard</h2>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
 
-          <div class="text-xs text-slate-400 mb-2">
-            Mengen werden über die ausgewählten Listen summiert. Proxies werden <b>nicht</b> abgezogen — der Export listet alle echt fehlenden Karten.
-          </div>
+      <div class="text-xs text-slate-400 mb-2">
+        Mengen werden über die ausgewählten Listen summiert. Proxies werden <b>nicht</b> abgezogen — der Export listet alle echt fehlenden Karten.
+      </div>
 
-          <div class="flex gap-2 mb-2 text-xs">
-            <button id="bm-all" class="text-amber-400 hover:underline">Alle aktivieren</button>
-            <button id="bm-none" class="text-slate-400 hover:underline">Alle abwählen</button>
-          </div>
+      <div class="flex gap-2 mb-2 text-xs">
+        <button id="bm-all" class="text-amber-400 hover:underline">Alle aktivieren</button>
+        <button id="bm-none" class="text-slate-400 hover:underline">Alle abwählen</button>
+      </div>
 
-          <div id="bm-decks" class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-1 mb-3">
-            ${perDeck.map(renderRow).join('')}
-          </div>
+      <div id="bm-decks" class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-1 mb-3">
+        ${perDeck.map(renderRow).join('')}
+      </div>
 
-          <div id="bm-summary" class="text-sm text-slate-400 mb-3"></div>
+      <div id="bm-summary" class="text-sm text-slate-400 mb-3"></div>
 
-          <div class="flex justify-end gap-2">
-            <button id="bm-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="bm-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
-          </div>
-        </div>
+      <div class="flex justify-end gap-2">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="bm-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
       </div>
     `;
 
-    const close = () => { host.innerHTML = ''; };
-    host.querySelector('#bm-close').addEventListener('click', close);
-    host.querySelector('#bm-cancel').addEventListener('click', close);
-    host.querySelector('#bulk-modal').addEventListener('click', e => {
-      if (e.target.id === 'bulk-modal') close();
-    });
+    window.Util.openModal({
+      host: 'bulk-missing-root',
+      id: 'bulk-modal',
+      sizeClass: 'w-[560px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        const checkboxes = () => content.querySelectorAll('input[data-deck-idx]:not([disabled])');
+        content.querySelector('#bm-all').addEventListener('click', () => {
+          checkboxes().forEach(cb => { cb.checked = true; }); updateSummary();
+        });
+        content.querySelector('#bm-none').addEventListener('click', () => {
+          content.querySelectorAll('input[data-deck-idx]').forEach(cb => { cb.checked = false; });
+          updateSummary();
+        });
 
-    const checkboxes = () => host.querySelectorAll('input[data-deck-idx]:not([disabled])');
-    host.querySelector('#bm-all').addEventListener('click', () => {
-      checkboxes().forEach(cb => { cb.checked = true; }); updateSummary();
-    });
-    host.querySelector('#bm-none').addEventListener('click', () => {
-      host.querySelectorAll('input[data-deck-idx]').forEach(cb => { cb.checked = false; });
-      updateSummary();
-    });
+        const aggregate = () => {
+          const selected = Array.from(content.querySelectorAll('input[data-deck-idx]:checked'))
+            .map(cb => perDeck[parseInt(cb.dataset.deckIdx, 10)])
+            .filter(Boolean);
+          const merged = new Map();
+          for (const x of selected) {
+            for (const m of x.missing) {
+              const existing = merged.get(m.variant);
+              if (existing) existing.count += m.count;
+              else merged.set(m.variant, { ...m });
+            }
+          }
+          return { selected, merged };
+        };
 
-    const aggregate = () => {
-      const selected = Array.from(host.querySelectorAll('input[data-deck-idx]:checked'))
-        .map(cb => perDeck[parseInt(cb.dataset.deckIdx, 10)])
-        .filter(Boolean);
-      const merged = new Map(); // variant -> { cardId, variant, count }
-      for (const x of selected) {
-        for (const m of x.missing) {
-          const existing = merged.get(m.variant);
-          if (existing) existing.count += m.count;
-          else merged.set(m.variant, { ...m });
-        }
-      }
-      return { selected, merged };
-    };
+        const updateSummary = () => {
+          const { selected, merged } = aggregate();
+          const totalCards = Array.from(merged.values()).reduce((s, e) => s + e.count, 0);
+          const uniqueCards = merged.size;
+          content.querySelector('#bm-summary').innerHTML = selected.length
+            ? `<b>${selected.length}</b> Liste(n) · <b>${uniqueCards}</b> unterschiedliche Karten · <b>${totalCards}</b> Kopien insgesamt`
+            : '<span class="text-slate-500">Keine Liste ausgewählt.</span>';
+        };
+        content.querySelector('#bm-decks').addEventListener('change', updateSummary);
+        updateSummary();
 
-    const updateSummary = () => {
-      const { selected, merged } = aggregate();
-      const totalCards = Array.from(merged.values()).reduce((s, e) => s + e.count, 0);
-      const uniqueCards = merged.size;
-      host.querySelector('#bm-summary').innerHTML = selected.length
-        ? `<b>${selected.length}</b> Liste(n) · <b>${uniqueCards}</b> unterschiedliche Karten · <b>${totalCards}</b> Kopien insgesamt`
-        : '<span class="text-slate-500">Keine Liste ausgewählt.</span>';
-    };
-    host.querySelector('#bm-decks').addEventListener('change', updateSummary);
-    updateSummary();
+        content.querySelector('#bm-copy').addEventListener('click', () => {
+          const { selected, merged } = aggregate();
+          if (!selected.length || !merged.size) {
+            window.Util.toast('Nichts zu kopieren.', 'warn');
+            return;
+          }
+          const lines = Array.from(merged.values()).map(e => {
+            const card = CardDB.byId.get(e.cardId);
+            const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
+            const id = card ? card.id : e.cardId;
+            const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
+            return `${e.count}x ${cardName} ${id}${vSuffix}`;
+          });
+          const text = lines.join('\n') + '\n';
+          const total = Array.from(merged.values()).reduce((s, e) => s + e.count, 0);
 
-    host.querySelector('#bm-copy').addEventListener('click', () => {
-      const { selected, merged } = aggregate();
-      if (!selected.length || !merged.size) {
-        alert('Nichts zu kopieren.');
-        return;
-      }
-      const lines = Array.from(merged.values()).map(e => {
-        const card = CardDB.byId.get(e.cardId);
-        const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
-        const id = card ? card.id : e.cardId;
-        const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
-        return `${e.count}x ${cardName} ${id}${vSuffix}`;
-      });
-      const text = lines.join('\n') + '\n';
-      const total = Array.from(merged.values()).reduce((s, e) => s + e.count, 0);
-
-      const flash = ok => {
-        const btn = host.querySelector('#bm-copy');
-        if (!btn) return;
-        const orig = btn.textContent;
-        btn.textContent = ok ? `✓ ${total} Karten kopiert` : 'Kopieren fehlgeschlagen';
-        setTimeout(() => { btn.textContent = orig; if (ok) close(); }, 1200);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => flash(true), () => fallbackCopy(text, flash));
-      } else {
-        fallbackCopy(text, flash);
+          const flash = ok => {
+            const btn = content.querySelector('#bm-copy');
+            if (!btn) return;
+            const orig = btn.textContent;
+            btn.textContent = ok ? `✓ ${total} Karten kopiert` : 'Kopieren fehlgeschlagen';
+            setTimeout(() => { btn.textContent = orig; if (ok) close(); }, 1200);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => flash(true), () => fallbackCopy(text, flash));
+          } else {
+            fallbackCopy(text, flash);
+          }
+        });
       }
     });
   }

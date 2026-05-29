@@ -70,9 +70,13 @@
     const host = document.getElementById(opts.host || 'modal-root');
     if (!host) throw new Error('Modal-Host nicht gefunden: ' + (opts.host || 'modal-root'));
 
-    // Falls schon ein Modal mit gleicher ID offen ist: erst aufraeumen.
+    // Falls schon ein Modal mit gleicher ID offen ist: dessen close() aufrufen,
+    // damit ESC-Listener nicht leaken.
     const existing = host.querySelector('[data-modal-id="' + id + '"]');
-    if (existing) existing.remove();
+    if (existing) {
+      if (typeof existing._modalClose === 'function') existing._modalClose();
+      else existing.remove();
+    }
 
     const sizeClass = opts.sizeClass || 'w-[640px] max-w-[95vw]';
     const heightClass = opts.flex ? ' max-h-[92vh] flex flex-col' : '';
@@ -98,6 +102,7 @@
     wrapper.addEventListener('click', e => {
       if (e.target === wrapper) close();
     });
+    wrapper._modalClose = close;
 
     if (typeof opts.onMount === 'function') {
       try { opts.onMount(content, close); }

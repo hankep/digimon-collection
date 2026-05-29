@@ -83,7 +83,6 @@
     if (!card) return;
     const decksState = Store.loadDecks();
 
-    const modalRoot = document.getElementById('modal-root');
     // Verschachtelung mit anderem Modal vermeiden: an eigenen Knoten anhängen.
     let host = document.getElementById('cardmenu-root');
     if (!host) {
@@ -125,100 +124,87 @@
 
     const hasAnyDeck = decksState.decks.length > 0;
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="cardmenu-modal">
-        <div class="modal-content w-[480px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <h2 class="text-lg font-bold">Zu Listen hinzufügen</h2>
-            <button id="cm-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <h2 class="text-lg font-bold">Zu Listen hinzufügen</h2>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
 
-          <div class="flex gap-3 mb-3">
-            <img src="${CardDB.imagePath(variantKey)}" alt="" class="w-20 aspect-[5/7] object-cover rounded" />
-            <div class="min-w-0 flex-1">
-              <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)}</div>
-              <div class="text-sm font-semibold truncate">${escapeHtml(CardDB.cleanDisplayName(card))}</div>
-              <div class="text-xs font-mono text-slate-500 mt-1">${escapeHtml(variantKey)}</div>
-            </div>
-            <div class="shrink-0">
-              <label class="text-xs text-slate-400 block mb-1">Anzahl</label>
-              <input id="cm-qty" type="number" min="1" value="1"
-                class="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-16 text-right" />
-            </div>
-          </div>
-
-          <div id="cm-decks" class="max-h-[40vh] overflow-y-auto border border-slate-700 rounded p-1 mb-3">
-            ${hasAnyDeck
-              ? kindSection('Decks', decksByKind.deck || []) +
-                kindSection('Wants', decksByKind.wants || []) +
-                kindSection('Trade', decksByKind.trade || []) +
-                Object.keys(decksByKind).filter(k => !['deck','wants','trade'].includes(k))
-                  .map(k => kindSection(k, decksByKind[k])).join('')
-              : `<div class="text-sm text-slate-500 px-2 py-1">Noch keine Listen vorhanden.</div>`
-            }
-          </div>
-
-          <div class="bg-slate-800/60 border border-slate-700 rounded p-2 mb-3">
-            <div class="text-xs uppercase text-slate-500 font-bold mb-1">+ Neue Liste</div>
-            <div class="flex gap-2">
-              <input id="cm-new-name" type="text" placeholder="Name (leer = nicht anlegen)"
-                class="bg-slate-900 border border-slate-600 rounded px-2 py-1 flex-1 text-sm" />
-              <select id="cm-new-kind" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
-                <option value="deck">deck</option>
-                <option value="wants">wants</option>
-                <option value="trade">trade</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2">
-            <button id="cm-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="cm-confirm" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-3 py-1.5 rounded text-sm font-semibold">Hinzufügen</button>
-          </div>
+      <div class="flex gap-3 mb-3">
+        <img src="${CardDB.imagePath(variantKey)}" alt="" class="w-20 aspect-[5/7] object-cover rounded" />
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)}</div>
+          <div class="text-sm font-semibold truncate">${escapeHtml(CardDB.cleanDisplayName(card))}</div>
+          <div class="text-xs font-mono text-slate-500 mt-1">${escapeHtml(variantKey)}</div>
         </div>
+        <div class="shrink-0">
+          <label class="text-xs text-slate-400 block mb-1">Anzahl</label>
+          <input id="cm-qty" type="number" min="1" value="1"
+            class="bg-slate-800 border border-slate-600 rounded px-2 py-1 w-16 text-right" />
+        </div>
+      </div>
+
+      <div id="cm-decks" class="max-h-[40vh] overflow-y-auto border border-slate-700 rounded p-1 mb-3">
+        ${hasAnyDeck
+          ? kindSection('Decks', decksByKind.deck || []) +
+            kindSection('Wants', decksByKind.wants || []) +
+            kindSection('Trade', decksByKind.trade || []) +
+            Object.keys(decksByKind).filter(k => !['deck','wants','trade'].includes(k))
+              .map(k => kindSection(k, decksByKind[k])).join('')
+          : `<div class="text-sm text-slate-500 px-2 py-1">Noch keine Listen vorhanden.</div>`
+        }
+      </div>
+
+      <div class="bg-slate-800/60 border border-slate-700 rounded p-2 mb-3">
+        <div class="text-xs uppercase text-slate-500 font-bold mb-1">+ Neue Liste</div>
+        <div class="flex gap-2">
+          <input id="cm-new-name" type="text" placeholder="Name (leer = nicht anlegen)"
+            class="bg-slate-900 border border-slate-600 rounded px-2 py-1 flex-1 text-sm" />
+          <select id="cm-new-kind" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
+            <option value="deck">deck</option>
+            <option value="wants">wants</option>
+            <option value="trade">trade</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="cm-confirm" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-3 py-1.5 rounded text-sm font-semibold">Hinzufügen</button>
       </div>
     `;
 
-    function escListener(e) {
-      if (e.key === 'Escape') close();
-    }
-    const close = () => {
-      host.innerHTML = '';
-      document.removeEventListener('keydown', escListener);
-    };
-    host.querySelector('#cm-close').addEventListener('click', close);
-    host.querySelector('#cm-cancel').addEventListener('click', close);
-    host.querySelector('#cardmenu-modal').addEventListener('click', e => {
-      if (e.target.id === 'cardmenu-modal') close();
-    });
-    document.addEventListener('keydown', escListener);
+    window.Util.openModal({
+      host: 'cardmenu-root',
+      id: 'cardmenu-modal',
+      sizeClass: 'w-[480px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(btn => btn.addEventListener('click', close));
+        content.querySelector('#cm-confirm').addEventListener('click', () => {
+          const qty = Math.max(1, parseInt(content.querySelector('#cm-qty').value, 10) || 1);
+          const checked = Array.from(content.querySelectorAll('input[data-deck-id]:checked'))
+            .map(cb => cb.dataset.deckId);
+          const newName = content.querySelector('#cm-new-name').value.trim();
+          const newKind = content.querySelector('#cm-new-kind').value;
 
-    host.querySelector('#cm-confirm').addEventListener('click', () => {
-      const qty = Math.max(1, parseInt(host.querySelector('#cm-qty').value, 10) || 1);
-      const checked = Array.from(host.querySelectorAll('input[data-deck-id]:checked'))
-        .map(cb => cb.dataset.deckId);
-      const newName = host.querySelector('#cm-new-name').value.trim();
-      const newKind = host.querySelector('#cm-new-kind').value;
+          if (!checked.length && !newName) return;
 
-      if (!checked.length && !newName) {
-        // Nichts zu tun.
-        return;
-      }
+          for (const id of checked) {
+            const d = decksState.decks.find(x => x.id === id);
+            if (d) Store.addToDeck(d, cardId, variantKey, qty);
+          }
+          if (newName) {
+            const d = Store.createDeck(decksState, newName, newKind);
+            Store.addToDeck(d, cardId, variantKey, qty);
+          }
+          Store.saveDecks(decksState);
+          close();
 
-      for (const id of checked) {
-        const d = decksState.decks.find(x => x.id === id);
-        if (d) Store.addToDeck(d, cardId, variantKey, qty);
-      }
-      if (newName) {
-        const d = Store.createDeck(decksState, newName, newKind);
-        Store.addToDeck(d, cardId, variantKey, qty);
-      }
-      Store.saveDecks(decksState);
-      close();
-
-      // Aktuell sichtbaren Deckbuilder-Tab refreshen, falls offen.
-      if (window.UIDeckbuilder && typeof window.UIDeckbuilder.refresh === 'function') {
-        window.UIDeckbuilder.refresh();
+          if (window.UIDeckbuilder && typeof window.UIDeckbuilder.refresh === 'function') {
+            window.UIDeckbuilder.refresh();
+          }
+        });
       }
     });
   }

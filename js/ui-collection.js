@@ -936,56 +936,50 @@
       </div>
     ` : '';
 
-    const html = `
-      <div class="modal-backdrop" id="card-modal">
-        <div class="modal-content w-[920px] max-w-[95vw] max-h-[95vh] flex flex-col">
-          <div class="flex justify-between items-start mb-3 shrink-0">
-            <div class="min-w-0">
-              <h2 class="text-lg sm:text-2xl font-bold">${escapeHtml(CardDB.cleanDisplayName(card))}</h2>
-              <div class="flex gap-2 mt-1 text-[10px] sm:text-xs flex-wrap">
-                ${colorPills}
-                ${card.type ? `<span class="bg-slate-700 px-2 py-0.5 rounded">${escapeHtml(card.type)}</span>` : ''}
-                ${card.level != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Lv ${card.level}</span>` : ''}
-                ${card.cost != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Cost ${card.cost}</span>` : ''}
-              </div>
-            </div>
-            <button id="modal-close" class="text-slate-400 hover:text-white text-2xl leading-none shrink-0 ml-2">×</button>
-          </div>
-
-          <div class="flex-1 overflow-auto -mr-2 pr-2">
-            ${heroBlockHtml}
-
-            ${renderDeckUsage(card)}
-
-            ${otherBlocksHtml}
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <div class="min-w-0">
+          <h2 class="text-lg sm:text-2xl font-bold">${escapeHtml(CardDB.cleanDisplayName(card))}</h2>
+          <div class="flex gap-2 mt-1 text-[10px] sm:text-xs flex-wrap">
+            ${colorPills}
+            ${card.type ? `<span class="bg-slate-700 px-2 py-0.5 rounded">${escapeHtml(card.type)}</span>` : ''}
+            ${card.level != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Lv ${card.level}</span>` : ''}
+            ${card.cost != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Cost ${card.cost}</span>` : ''}
           </div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none shrink-0 ml-2">×</button>
+      </div>
+
+      <div class="flex-1 overflow-auto -mr-2 pr-2">
+        ${heroBlockHtml}
+
+        ${renderDeckUsage(card)}
+
+        ${otherBlocksHtml}
       </div>
     `;
 
-    const modalRoot = document.getElementById('modal-root');
-    modalRoot.innerHTML = html;
-
-    const close = () => {
-      modalRoot.innerHTML = '';
-      if (rootEl && rootEl.querySelector('#card-grid')) {
-        renderGrid(); renderStats(); renderSetList();
+    window.Util.openModal({
+      id: 'card-modal',
+      sizeClass: 'w-[920px] max-w-[95vw] max-h-[95vh] flex flex-col',
+      contentHtml,
+      onClose: () => {
+        if (rootEl && rootEl.querySelector('#card-grid')) {
+          renderGrid(); renderStats(); renderSetList();
+        }
+      },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(btn => btn.addEventListener('click', close));
+        // Klick auf eine kleinere Variant-Kachel → Modal mit dieser Variante als Hero.
+        content.querySelectorAll('[data-promote-variant]').forEach(el => {
+          el.addEventListener('click', e => {
+            if (e.target.closest('a')) return; // CM-Links nicht abfangen
+            openCardModal(cardId, el.dataset.promoteVariant);
+          });
+        });
+        wireVariantBlocks(content);
       }
-    };
-    modalRoot.querySelector('#modal-close').addEventListener('click', close);
-    modalRoot.querySelector('#card-modal').addEventListener('click', e => {
-      if (e.target.id === 'card-modal') close();
     });
-
-    // Klick auf eine kleinere Variant-Kachel → Modal mit dieser Variante als Hero.
-    modalRoot.querySelectorAll('[data-promote-variant]').forEach(el => {
-      el.addEventListener('click', e => {
-        if (e.target.closest('a')) return; // CM-Links nicht abfangen
-        openCardModal(cardId, el.dataset.promoteVariant);
-      });
-    });
-
-    wireVariantBlocks(modalRoot);
   }
 
   function renderVariantBody(variantKey) {

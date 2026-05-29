@@ -204,13 +204,6 @@
   }
 
   function openCrossVariantDialog(items, candidates) {
-    let host = document.getElementById('cv-import-root');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'cv-import-root';
-      document.body.appendChild(host);
-    }
-
     const rows = candidates.map((c, idx) => {
       const wantsCard = CardDB.byId.get(c.cardId);
       const wantsName = wantsCard ? wantsCard.name : c.cardId;
@@ -227,57 +220,57 @@
       `;
     }).join('');
 
-    host.innerHTML = `
-      <div class="modal-backdrop" id="cv-import-modal">
-        <div class="modal-content w-[640px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <h2 class="text-lg font-bold">Andere Varianten in Wants gefunden</h2>
-              <div class="text-xs text-slate-400 mt-1">Exakte Treffer werden ohnehin abgezogen. Hier geht's um Wants-Einträge mit derselben Card-ID, aber anderer Variante.</div>
-            </div>
-            <button id="cv-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-
-          <div class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-2 mb-3">
-            ${rows || '<div class="text-sm text-slate-500 px-2 py-1">Nichts zu fragen.</div>'}
-          </div>
-
-          <div class="flex gap-2 mb-3 text-xs">
-            <button id="cv-all" class="text-amber-400 hover:underline">Alle aktivieren</button>
-            <button id="cv-none" class="text-slate-400 hover:underline">Alle abwählen</button>
-          </div>
-
-          <div class="flex justify-end gap-2">
-            <button id="cv-skip" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Überspringen</button>
-            <button id="cv-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">Übernehmen</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          <h2 class="text-lg font-bold">Andere Varianten in Wants gefunden</h2>
+          <div class="text-xs text-slate-400 mt-1">Exakte Treffer werden ohnehin abgezogen. Hier geht's um Wants-Einträge mit derselben Card-ID, aber anderer Variante.</div>
         </div>
+        <button data-modal-cancel class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+
+      <div class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-2 mb-3">
+        ${rows || '<div class="text-sm text-slate-500 px-2 py-1">Nichts zu fragen.</div>'}
+      </div>
+
+      <div class="flex gap-2 mb-3 text-xs">
+        <button id="cv-all" class="text-amber-400 hover:underline">Alle aktivieren</button>
+        <button id="cv-none" class="text-slate-400 hover:underline">Alle abwählen</button>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button data-modal-cancel class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Überspringen</button>
+        <button id="cv-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">Übernehmen</button>
       </div>
     `;
 
-    const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
-    function esc(e) { if (e.key === 'Escape') close(); }
-    document.addEventListener('keydown', esc);
-    host.querySelector('#cv-close').addEventListener('click', () => { close(); finishCmApply(items, null); });
-    host.querySelector('#cv-skip').addEventListener('click', () => { close(); finishCmApply(items, null); });
-    host.querySelector('#cv-import-modal').addEventListener('click', e => {
-      if (e.target.id === 'cv-import-modal') { close(); finishCmApply(items, null); }
-    });
-    host.querySelector('#cv-all').addEventListener('click', () => {
-      host.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = true; });
-    });
-    host.querySelector('#cv-none').addEventListener('click', () => {
-      host.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = false; });
-    });
-    host.querySelector('#cv-go').addEventListener('click', () => {
-      const accepted = Array.from(host.querySelectorAll('input[data-cv-idx]:checked'))
-        .map(cb => {
-          const c = candidates[parseInt(cb.dataset.cvIdx, 10)];
-          return c ? { deckId: c.deckId, cardId: c.cardId, wantsVariant: c.wantsVariant, take: c.maxTake } : null;
-        })
-        .filter(Boolean);
-      close();
-      finishCmApply(items, { acceptCrossVariant: accepted });
+    let confirmed = false;
+    window.Util.openModal({
+      host: 'cv-import-root',
+      id: 'cv-import-modal',
+      sizeClass: 'w-[640px] max-w-[95vw]',
+      contentHtml,
+      onClose: () => { if (!confirmed) finishCmApply(items, null); },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-cancel]').forEach(btn => btn.addEventListener('click', close));
+        content.querySelector('#cv-all').addEventListener('click', () => {
+          content.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = true; });
+        });
+        content.querySelector('#cv-none').addEventListener('click', () => {
+          content.querySelectorAll('input[data-cv-idx]').forEach(cb => { cb.checked = false; });
+        });
+        content.querySelector('#cv-go').addEventListener('click', () => {
+          const accepted = Array.from(content.querySelectorAll('input[data-cv-idx]:checked'))
+            .map(cb => {
+              const c = candidates[parseInt(cb.dataset.cvIdx, 10)];
+              return c ? { deckId: c.deckId, cardId: c.cardId, wantsVariant: c.wantsVariant, take: c.maxTake } : null;
+            })
+            .filter(Boolean);
+          confirmed = true;
+          close();
+          finishCmApply(items, { acceptCrossVariant: accepted });
+        });
+      }
     });
   }
 
@@ -499,69 +492,58 @@
     });
   }
 
-  function tradeHost() {
-    let host = document.getElementById('trade-modal-root');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'trade-modal-root';
-      document.body.appendChild(host);
-    }
-    return host;
-  }
+  // Aktuelles Modal-Handle (close-Funktion + content-Element), damit Phasenwechsel
+  // sauber das alte ESC-Listener-Geruest schliesst, bevor das neue geoeffnet wird.
+  let tradeModal = null;
 
   function closeTradeModal() {
-    const host = document.getElementById('trade-modal-root');
-    if (host) host.innerHTML = '';
-    document.removeEventListener('keydown', tradeEscListener);
+    if (tradeModal) { tradeModal.close(); tradeModal = null; }
   }
-
-  function tradeEscListener(e) { if (e.key === 'Escape') closeTradeModal(); }
 
   function renderTradeModal() {
-    const host = tradeHost();
-    if (!tradeState.entries.length) renderTradePhase1(host);
-    else renderTradePhase2(host);
-    document.addEventListener('keydown', tradeEscListener);
+    if (!tradeState.entries.length) renderTradePhase1();
+    else renderTradePhase2();
   }
 
-  function renderTradePhase1(host) {
-    host.innerHTML = `
-      <div class="modal-backdrop" id="trade-modal">
-        <div class="modal-content w-[680px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <h2 class="text-lg font-bold">Wants beantworten</h2>
-              <div class="text-xs text-slate-400 mt-1">Liste des anderen Users hier einfügen — Cardmarket-Format, Plain-Text oder Compact (Format wird automatisch erkannt).</div>
-            </div>
-            <button id="trade-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-          <textarea id="trade-text" rows="12"
-            class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
-            placeholder="4x Agumon BT5-006&#10;3x Veedramon BT11-029 (V.2)&#10;..."></textarea>
-          <div id="trade-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
-          <div class="flex justify-end gap-2 mt-3">
-            <button id="trade-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="trade-load" class="bg-sky-500 text-slate-900 hover:bg-sky-400 px-4 py-1.5 rounded text-sm font-semibold">Liste übernehmen</button>
-          </div>
+  function renderTradePhase1() {
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          <h2 class="text-lg font-bold">Wants beantworten</h2>
+          <div class="text-xs text-slate-400 mt-1">Liste des anderen Users hier einfügen — Cardmarket-Format, Plain-Text oder Compact (Format wird automatisch erkannt).</div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <textarea id="trade-text" rows="12"
+        class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
+        placeholder="4x Agumon BT5-006&#10;3x Veedramon BT11-029 (V.2)&#10;..."></textarea>
+      <div id="trade-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
+      <div class="flex justify-end gap-2 mt-3">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="trade-load" class="bg-sky-500 text-slate-900 hover:bg-sky-400 px-4 py-1.5 rounded text-sm font-semibold">Liste übernehmen</button>
       </div>
     `;
-    host.querySelector('#trade-close').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-cancel').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-modal').addEventListener('click', e => {
-      if (e.target.id === 'trade-modal') closeTradeModal();
-    });
-    host.querySelector('#trade-load').addEventListener('click', () => {
-      const text = host.querySelector('#trade-text').value;
-      if (!text.trim()) { host.querySelector('#trade-msg').textContent = 'Textfeld ist leer.'; return; }
-      const auto = autoDetectFormat(text);
-      if (!auto || auto.valid === 0) {
-        host.querySelector('#trade-msg').textContent = 'Format nicht erkannt — keine gültigen Einträge.';
-        return;
+    tradeModal = window.Util.openModal({
+      host: 'trade-modal-root',
+      id: 'trade-modal',
+      sizeClass: 'w-[680px] max-w-[95vw]',
+      contentHtml,
+      onClose: () => { tradeModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#trade-load').addEventListener('click', () => {
+          const text = content.querySelector('#trade-text').value;
+          if (!text.trim()) { content.querySelector('#trade-msg').textContent = 'Textfeld ist leer.'; return; }
+          const auto = autoDetectFormat(text);
+          if (!auto || auto.valid === 0) {
+            content.querySelector('#trade-msg').textContent = 'Format nicht erkannt — keine gültigen Einträge.';
+            return;
+          }
+          tradeState.rawText = text;
+          tradeState.entries = buildTradeEntries(auto.result.entries);
+          renderTradeModal();
+        });
       }
-      tradeState.rawText = text;
-      tradeState.entries = buildTradeEntries(auto.result.entries);
-      renderTradeModal();
     });
   }
 
@@ -611,63 +593,64 @@
     return { cardsDeliverable, cardsMissing, valueSum, noPriceCount };
   }
 
-  function renderTradePhase2(host) {
-    const totals = tradeTotals();
-    host.innerHTML = `
-      <div class="modal-backdrop" id="trade-modal">
-        <div class="modal-content w-[960px] max-w-[95vw] max-h-[92vh] flex flex-col">
-          <div class="flex justify-between items-start mb-3 shrink-0">
-            <div>
-              <h2 class="text-lg font-bold">Trade fulfillen</h2>
-              <div class="text-xs text-slate-400 mt-1">${tradeState.entries.length} Karten in der Wants-Liste. Liefer-Variante und Menge pro Eintrag anpassbar; Cross-Variant-Substitute werden automatisch vorgeschlagen.</div>
-            </div>
-            <button id="trade-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-          <div class="flex items-center gap-2 mb-3 text-sm shrink-0 flex-wrap">
-            <span class="text-slate-400">Ansicht:</span>
-            <select id="trade-view" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
-              <option value="tiles" ${tradeState.view === 'tiles' ? 'selected' : ''}>Bilder</option>
-              <option value="text"  ${tradeState.view === 'text'  ? 'selected' : ''}>Text</option>
-            </select>
-            <span class="text-slate-400">Sortierung:</span>
-            <select id="trade-sort" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
-              <option value="id"        ${tradeState.sort === 'id'        ? 'selected' : ''}>ID</option>
-              <option value="price"     ${tradeState.sort === 'price'     ? 'selected' : ''}>Preis ↓</option>
-              <option value="available" ${tradeState.sort === 'available' ? 'selected' : ''}>Verfügbarkeit</option>
-            </select>
-            <button id="trade-reset" class="ml-auto text-xs text-slate-400 hover:text-slate-200 underline">Liste zurücksetzen</button>
-          </div>
-          <div id="trade-body" class="overflow-y-auto flex-1 min-h-0 pr-1"></div>
-          <div id="trade-totals" class="text-sm mt-3 shrink-0 bg-slate-900 rounded p-3"></div>
-          <div class="flex justify-end gap-2 mt-3 shrink-0">
-            <button id="trade-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-            <button id="trade-remove" class="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 rounded text-sm font-semibold">Aus Collection entfernen</button>
-          </div>
+  function renderTradePhase2() {
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <div>
+          <h2 class="text-lg font-bold">Trade fulfillen</h2>
+          <div class="text-xs text-slate-400 mt-1">${tradeState.entries.length} Karten in der Wants-Liste. Liefer-Variante und Menge pro Eintrag anpassbar; Cross-Variant-Substitute werden automatisch vorgeschlagen.</div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <div class="flex items-center gap-2 mb-3 text-sm shrink-0 flex-wrap">
+        <span class="text-slate-400">Ansicht:</span>
+        <select id="trade-view" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+          <option value="tiles" ${tradeState.view === 'tiles' ? 'selected' : ''}>Bilder</option>
+          <option value="text"  ${tradeState.view === 'text'  ? 'selected' : ''}>Text</option>
+        </select>
+        <span class="text-slate-400">Sortierung:</span>
+        <select id="trade-sort" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+          <option value="id"        ${tradeState.sort === 'id'        ? 'selected' : ''}>ID</option>
+          <option value="price"     ${tradeState.sort === 'price'     ? 'selected' : ''}>Preis ↓</option>
+          <option value="available" ${tradeState.sort === 'available' ? 'selected' : ''}>Verfügbarkeit</option>
+        </select>
+        <button id="trade-reset" class="ml-auto text-xs text-slate-400 hover:text-slate-200 underline">Liste zurücksetzen</button>
+      </div>
+      <div id="trade-body" class="overflow-y-auto flex-1 min-h-0 pr-1"></div>
+      <div id="trade-totals" class="text-sm mt-3 shrink-0 bg-slate-900 rounded p-3"></div>
+      <div class="flex justify-end gap-2 mt-3 shrink-0">
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button id="trade-remove" class="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 rounded text-sm font-semibold">Aus Collection entfernen</button>
       </div>
     `;
-    renderTradeBody();
-    renderTradeTotals();
-    host.querySelector('#trade-close').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-cancel').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-modal').addEventListener('click', e => {
-      if (e.target.id === 'trade-modal') closeTradeModal();
+    tradeModal = window.Util.openModal({
+      host: 'trade-modal-root',
+      id: 'trade-modal',
+      sizeClass: 'w-[960px] max-w-[95vw]',
+      flex: true,
+      contentHtml,
+      onClose: () => { tradeModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        renderTradeBody();
+        renderTradeTotals();
+        content.querySelector('#trade-sort').addEventListener('change', e => {
+          tradeState.sort = e.target.value;
+          Prefs.set('tradeSort', tradeState.sort);
+          renderTradeBody();
+        });
+        content.querySelector('#trade-view').addEventListener('change', e => {
+          tradeState.view = e.target.value;
+          Prefs.set('tradeView', tradeState.view);
+          renderTradeBody();
+        });
+        content.querySelector('#trade-reset').addEventListener('click', () => {
+          tradeState.entries = [];
+          renderTradeModal();
+        });
+        content.querySelector('#trade-remove').addEventListener('click', confirmRemoveFromCollection);
+      }
     });
-    host.querySelector('#trade-sort').addEventListener('change', e => {
-      tradeState.sort = e.target.value;
-      Prefs.set('tradeSort', tradeState.sort);
-      renderTradeBody();
-    });
-    host.querySelector('#trade-view').addEventListener('change', e => {
-      tradeState.view = e.target.value;
-      Prefs.set('tradeView', tradeState.view);
-      renderTradeBody();
-    });
-    host.querySelector('#trade-reset').addEventListener('click', () => {
-      tradeState.entries = [];
-      renderTradeModal();
-    });
-    host.querySelector('#trade-remove').addEventListener('click', confirmRemoveFromCollection);
   }
 
   function renderTradeBody() {
@@ -860,37 +843,40 @@
   }
 
   function showTradeResult(text, count) {
-    const host = tradeHost();
-    host.innerHTML = `
-      <div class="modal-backdrop" id="trade-modal">
-        <div class="modal-content w-[640px] max-w-[95vw]">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <h2 class="text-lg font-bold text-emerald-400">✓ ${count} Karten aus Collection entfernt</h2>
-              <div class="text-xs text-slate-400 mt-1">Den Text unten an den Sender geben — er kann ihn im Listen-Import einlesen (Plain-Text, automatisch erkannt).</div>
-            </div>
-            <button id="trade-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-          <textarea id="trade-result-text" rows="12" readonly class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs">${escapeHtml(text)}</textarea>
-          <div class="flex justify-end gap-2 mt-3">
-            <button id="trade-result-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
-            <button id="trade-result-close" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Schließen</button>
-          </div>
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div>
+          <h2 class="text-lg font-bold text-emerald-400">✓ ${count} Karten aus Collection entfernt</h2>
+          <div class="text-xs text-slate-400 mt-1">Den Text unten an den Sender geben — er kann ihn im Listen-Import einlesen (Plain-Text, automatisch erkannt).</div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+      </div>
+      <textarea id="trade-result-text" rows="12" readonly class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs">${escapeHtml(text)}</textarea>
+      <div class="flex justify-end gap-2 mt-3">
+        <button id="trade-result-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
+        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Schließen</button>
       </div>
     `;
-    host.querySelector('#trade-close').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-result-close').addEventListener('click', closeTradeModal);
-    host.querySelector('#trade-result-copy').addEventListener('click', () => {
-      const btn = host.querySelector('#trade-result-copy');
-      const orig = btn.textContent;
-      const finish = ok => { btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen'; setTimeout(() => { btn.textContent = orig; }, 1500); };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => finish(true), () => finish(false));
-      } else {
-        const ta = host.querySelector('#trade-result-text');
-        ta.select();
-        try { finish(document.execCommand('copy')); } catch (e) { finish(false); }
+    tradeModal = window.Util.openModal({
+      host: 'trade-modal-root',
+      id: 'trade-modal',
+      sizeClass: 'w-[640px] max-w-[95vw]',
+      contentHtml,
+      onClose: () => { tradeModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#trade-result-copy').addEventListener('click', () => {
+          const btn = content.querySelector('#trade-result-copy');
+          const orig = btn.textContent;
+          const finish = ok => { btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen'; setTimeout(() => { btn.textContent = orig; }, 1500); };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => finish(true), () => finish(false));
+          } else {
+            const ta = content.querySelector('#trade-result-text');
+            ta.select();
+            try { finish(document.execCommand('copy')); } catch (e) { finish(false); }
+          }
+        });
       }
     });
   }

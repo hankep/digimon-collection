@@ -15,16 +15,6 @@
     wired = true;
   }
 
-  function host() {
-    let el = document.getElementById('reports-root');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'reports-root';
-      document.body.appendChild(el);
-    }
-    return el;
-  }
-
   // State innerhalb des Modals — wird bei jedem Open zurueckgesetzt.
   let state = null;
 
@@ -37,51 +27,52 @@
       loadError: null,
       filterType: 'all',            // 'all' | 'bug' | 'feature'
       filterStatus: 'open',         // 'all' | 'open'
-      expandedId: null
+      expandedId: null,
+      contentEl: null,
+      closeFn: null
     };
-    render();
+    window.Util.openModal({
+      host: 'reports-root',
+      id: 'reports-modal',
+      sizeClass: 'w-[720px] max-w-[95vw]',
+      flex: true,
+      contentHtml: '',
+      onClose: () => { state = null; },
+      onMount: (content, closeFn) => {
+        state.contentEl = content;
+        state.closeFn = closeFn;
+        render();
+      }
+    });
     loadReports();
   }
 
   function close() {
-    const el = document.getElementById('reports-root');
-    if (el) el.innerHTML = '';
-    document.removeEventListener('keydown', escListener);
-    state = null;
+    if (state && state.closeFn) state.closeFn();
   }
 
-  function escListener(e) { if (e.key === 'Escape') close(); }
-
   function render() {
-    const el = host();
-    el.innerHTML = `
-      <div class="modal-backdrop" id="reports-modal">
-        <div class="modal-content w-[720px] max-w-[95vw] max-h-[90vh] flex flex-col">
-          <div class="flex justify-between items-start mb-3 shrink-0">
-            <div>
-              <h2 class="text-lg font-bold">Reports</h2>
-              <div class="text-xs text-slate-400 mt-1">Bugs melden, Features vorschlagen, andere Reports lesen.</div>
-            </div>
-            <button id="reports-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
-          </div>
-
-          <div class="flex gap-2 mb-3 shrink-0">
-            <button data-tab="list" class="px-3 py-1.5 rounded text-sm font-semibold ${state.tab === 'list' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}">Alle Reports</button>
-            <button data-tab="new"  class="px-3 py-1.5 rounded text-sm font-semibold ${state.tab === 'new'  ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}">Neuer Report</button>
-          </div>
-
-          <div id="reports-body" class="overflow-y-auto flex-1 min-h-0 pr-1"></div>
+    if (!state || !state.contentEl) return;
+    state.contentEl.innerHTML = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <div>
+          <h2 class="text-lg font-bold">Reports</h2>
+          <div class="text-xs text-slate-400 mt-1">Bugs melden, Features vorschlagen, andere Reports lesen.</div>
         </div>
+        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
       </div>
+
+      <div class="flex gap-2 mb-3 shrink-0">
+        <button data-tab="list" class="px-3 py-1.5 rounded text-sm font-semibold ${state.tab === 'list' ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}">Alle Reports</button>
+        <button data-tab="new"  class="px-3 py-1.5 rounded text-sm font-semibold ${state.tab === 'new'  ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}">Neuer Report</button>
+      </div>
+
+      <div id="reports-body" class="overflow-y-auto flex-1 min-h-0 pr-1"></div>
     `;
-    el.querySelector('#reports-close').addEventListener('click', close);
-    el.querySelector('#reports-modal').addEventListener('click', e => {
-      if (e.target.id === 'reports-modal') close();
-    });
-    el.querySelectorAll('[data-tab]').forEach(btn => {
+    state.contentEl.querySelectorAll('[data-modal-close]').forEach(btn => btn.addEventListener('click', close));
+    state.contentEl.querySelectorAll('[data-tab]').forEach(btn => {
       btn.addEventListener('click', () => { state.tab = btn.dataset.tab; render(); });
     });
-    document.addEventListener('keydown', escListener);
     renderBody();
   }
 
