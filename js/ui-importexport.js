@@ -2,12 +2,9 @@
 // Collection-/Backup-/Login-Funktionen liegen in ui-user.js; Proxy-Export im Collection-Tab.
 
 (function () {
-  // Export laeuft immer mit dem 'compact-text'-Format (Name + ID + Variant +
-  // optional V.N) — gut lesbar und re-importierbar. Import erkennt das Format
-  // selbststaendig per autoDetectFormat, daher keine UI-Auswahl mehr noetig.
-  const DEFAULT_EXPORT_FORMAT_ID = 'compact-text';
+  // Export laeuft direkt aus der Deckliste (Toolbar "Exportieren"); dieser Tab
+  // ist nur noch fuer Import von Listen-Text und Cardmarket-Daten.
   const state = {
-    activeDeckId: null,
     textValue: ''
   };
   let rootEl = null;
@@ -18,36 +15,21 @@
   }
 
   function render() {
-    const decksState = Store.loadDecks();
     rootEl.innerHTML = `
       <div class="max-w-3xl mx-auto">
-        <h2 class="text-lg font-bold mb-3">Listen Import / Export</h2>
-
-        <div class="bg-slate-800 rounded p-4 mb-4 flex flex-wrap gap-3 items-end">
-          <label class="block flex-1 min-w-[200px]">
-            <div class="text-xs text-slate-400 mb-1">Liste (für Export)</div>
-            <select id="deck-select" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 w-full">
-              <option value="">— wählen —</option>
-              ${decksState.decks.map(d => `<option value="${d.id}" ${d.id === state.activeDeckId ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
-            </select>
-          </label>
-          <button id="do-export" class="bg-amber-500 text-slate-900 px-4 py-2 rounded font-semibold">Export →</button>
-          <label class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded cursor-pointer text-sm">
-            Datei laden…
-            <input id="io-file" type="file" accept=".txt,.json,text/plain,application/json" class="hidden" />
-          </label>
-        </div>
+        <h2 class="text-lg font-bold mb-3">Listen-Import</h2>
+        <p class="text-sm text-slate-400 mb-3">
+          Text einer Liste hier einfuegen — Format wird automatisch erkannt. Export laeuft direkt aus der Deckliste (Decks-Tab → Exportieren).
+        </p>
 
         <textarea id="io-text" rows="18"
           class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
-          placeholder="Hier erscheint der Export — oder füge Text zum Import ein.">${escapeHtml(state.textValue)}</textarea>
+          placeholder="Text zum Import einfuegen…">${escapeHtml(state.textValue)}</textarea>
 
         <div class="flex gap-2 mt-3 flex-wrap items-center">
           <button id="do-import" class="bg-emerald-500 text-slate-900 px-4 py-2 rounded font-semibold">← Import (als neue Liste)</button>
           <input id="import-name" type="text" placeholder="Name der neuen Liste (optional)"
             class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm flex-1 min-w-[200px]" />
-          <button id="do-copy" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded">Kopieren</button>
-          <button id="do-download" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded">Download</button>
           <button id="do-clear" class="ml-auto text-slate-400 hover:text-slate-200 px-4 py-2">Leeren</button>
         </div>
         <div id="io-msg" class="mt-3 text-sm"></div>
@@ -85,18 +67,13 @@
       </div>
     `;
 
-    rootEl.querySelector('#deck-select').addEventListener('change', e => { state.activeDeckId = e.target.value || null; });
     rootEl.querySelector('#io-text').addEventListener('input', e => { state.textValue = e.target.value; });
-    rootEl.querySelector('#do-export').addEventListener('click', doExport);
     rootEl.querySelector('#do-import').addEventListener('click', doImport);
-    rootEl.querySelector('#do-copy').addEventListener('click', doCopy);
-    rootEl.querySelector('#do-download').addEventListener('click', doDownload);
     rootEl.querySelector('#do-clear').addEventListener('click', () => {
       state.textValue = '';
       rootEl.querySelector('#io-text').value = '';
       showMsg('', '');
     });
-    rootEl.querySelector('#io-file').addEventListener('change', loadFile);
 
     rootEl.querySelector('#cm-file').addEventListener('change', cmLoadFile);
     rootEl.querySelector('#cm-clear').addEventListener('click', () => {
@@ -273,28 +250,6 @@
     el.className = 'mt-3 text-sm ' + (kind === 'err' ? 'text-red-400' : kind === 'ok' ? 'text-emerald-400' : 'text-slate-400');
   }
 
-  function getFormat() {
-    const all = window.IO_FORMATS || [];
-    return all.find(f => f.id === DEFAULT_EXPORT_FORMAT_ID) || all[0] || null;
-  }
-
-  function doExport() {
-    const fmt = getFormat();
-    if (!fmt) return showMsg('Kein Format gewählt.', 'err');
-    if (!state.activeDeckId) return showMsg('Bitte Liste auswählen.', 'err');
-    const decksState = Store.loadDecks();
-    const deck = decksState.decks.find(d => d.id === state.activeDeckId);
-    if (!deck) return showMsg('Liste nicht gefunden.', 'err');
-    try {
-      const text = fmt.exportDeck(deck);
-      state.textValue = text;
-      rootEl.querySelector('#io-text').value = text;
-      showMsg(`Exportiert: ${deck.entries.length} Einträge.`, 'ok');
-    } catch (e) {
-      showMsg('Export-Fehler: ' + e.message, 'err');
-    }
-  }
-
   // Versucht jedes registrierte IO_FORMAT auf den Eingabetext anzuwenden und
   // waehlt das Format, das die meisten gueltigen Eintraege liefert (= Card-ID
   // oder Variant-Key in CardDB bekannt). JSON-Formate werden bevorzugt, wenn
@@ -385,43 +340,6 @@
       '. Sichtbar unter Decks & Lists.',
       'ok'
     );
-  }
-
-  function loadFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      state.textValue = String(reader.result || '');
-      rootEl.querySelector('#io-text').value = state.textValue;
-      showMsg('Datei geladen. „Import" klicken — Format wird automatisch erkannt.', 'ok');
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  }
-
-  function doCopy() {
-    const ta = rootEl.querySelector('#io-text');
-    ta.select();
-    try {
-      document.execCommand('copy');
-      showMsg('In Zwischenablage kopiert.', 'ok');
-    } catch (e) {
-      showMsg('Kopieren fehlgeschlagen.', 'err');
-    }
-  }
-
-  function doDownload() {
-    const fmt = getFormat();
-    if (!fmt) return;
-    const text = state.textValue;
-    if (!text) return showMsg('Nichts zum Herunterladen.', 'err');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'deck-export' + (fmt.fileExtension || '.txt');
-    a.click();
-    URL.revokeObjectURL(a.href);
   }
 
   function showMsg(msg, kind) {
