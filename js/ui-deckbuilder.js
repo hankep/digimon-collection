@@ -1758,11 +1758,11 @@
     pendingRefresh = true;
     requestAnimationFrame(() => {
       pendingRefresh = false;
-      // Lokale Mutationen halten collectionCache/state.decksState in-memory
-      // bereits aktuell — kein erneutes Laden aus LocalStorage noetig (und
-      // tatsaechlich gefaehrlich: bei eng getakteten Edits kann das den frisch
-      // mutierten Zustand mit dem persistierten ueberschreiben). Remote-Apply
-      // hat einen eigenen Refresh-Pfad ueber refreshActiveTab.
+      // Aus LS nachladen, weil andere Module (Card-Modal aus ui-collection,
+      // ui-card-menu, ...) eigene Kopien mutieren. Die Saves sind synchron, also
+      // ist LS in dem Moment immer aktuell.
+      collectionCache = Store.loadCollection();
+      state.decksState = Store.loadDecks();
       renderDeckList();
       renderDeckDetail();
       renderPicker();

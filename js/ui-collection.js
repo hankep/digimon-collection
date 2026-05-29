@@ -892,8 +892,9 @@
   function openCardModal(cardId, variantKey) {
     const card = CardDB.byId.get(cardId);
     if (!card) return;
-    // Falls von anderen Tabs aufgerufen: aktuellen Sammlungs-Stand laden.
-    if (!state.collection) state.collection = Store.loadCollection();
+    // Frisch aus LS laden — andere Tabs koennen die Collection in der
+    // Zwischenzeit veraendert haben (Slot-Operationen im Deckbuilder etc.).
+    state.collection = Store.loadCollection();
     const variants = CardDB.variantsOf(card);
     // Hero = explizit angeklickte Variante, sonst Main.
     let heroIdx = variantKey ? variants.findIndex(v => v.key === variantKey) : 0;
