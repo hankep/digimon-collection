@@ -231,7 +231,7 @@
         const assigned = sa ? sa.real + sa.proxy : 0;
         if (assigned >= e.count) continue;
         const s = idx[e.variant];
-        if (s && s.freeReal > 0) { slottable = true; break; }
+        if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
       }
     }
     // Vollstaendig, aber mit zugewiesenen Proxies → Name lila markieren.
@@ -666,9 +666,9 @@
     // Globaler Frei-Pool zur Info (aus vorgebautem Variant-Index)
     const vs = ctx.vIdx[entry.variant];
     const freeReal = vs ? vs.freeReal : 0;
-    // Proxies zaehlen NICHT als "verfuegbar" — sie sind Lager-Markierung, kein Besitz.
-    // Cross-Variant-Hinweis: andere Varianten derselben Card-ID. A.v zeigt
-    // "frei/owned" in anderen Prints. Reine Info — Slotten bleibt variant-genau.
+    const freeProxy = vs ? vs.freeProxy : 0;
+    // Proxies zaehlen NICHT als "verfuegbar"-Anzeige (Besitz), sind aber
+    // slottbar (Platzhalter fuer Decks → +Slot bleibt klickbar wenn freeProxy>0).
     const av = otherVariantsAv(card, entry.variant, ctx.vIdx);
 
     let ownedClass = 'text-slate-500';
@@ -694,7 +694,7 @@
     const badgeCls = (assignedReal === 0 && assignedProxy === 0)
       ? 'zero'
       : (complete ? 'full' : '');
-    const slottable = !complete && freeReal > 0;
+    const slottable = !complete && (freeReal + freeProxy) > 0;
     return `<div class="card-tile entry-tile cursor-pointer ${complete ? 'playset' : ''} ${assignedTotal === 0 ? 'missing' : ''} ${slottable ? 'tile-slottable' : ''} ${assignedProxy > 0 ? 'tile-proxy-slotted' : ''}"
         data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
       <img loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="${escapeAttr(name)}" />
@@ -721,7 +721,7 @@
       <div class="slot-controls" title="Slot: aus Frei-Pool zuweisen / freigeben">
         <button data-slot-dec="${entry.cardId}|${entry.variant}" ${assignedTotal === 0 ? 'disabled' : ''}>− Slot</button>
         <span class="slot-count">${assignedReal}${assignedProxy > 0 ? '+' + assignedProxy + 'P' : ''} zugewiesen</span>
-        <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
+        <button data-slot-inc="${entry.cardId}|${entry.variant}" ${(freeReal + freeProxy) === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
       </div>
     </div>`;
   }
@@ -817,8 +817,9 @@
     const complete = !isWants && slotMissing === 0;
     const vs = ctx.vIdx[entry.variant];
     const freeReal = vs ? vs.freeReal : 0;
-    // Proxies zaehlen nicht als verfuegbar / slottbar.
-    const slottable = !isWants && !complete && freeReal > 0;
+    const freeProxy = vs ? vs.freeProxy : 0;
+    // Verfuegbar-Anzeige zaehlt nur echte Kopien; Slotten geht auch mit Proxies.
+    const slottable = !isWants && !complete && (freeReal + freeProxy) > 0;
     const proxySlotted = !isWants && assignedProxy > 0;
 
     // Cross-Variant: Aggregat ueber andere Varianten der selben Card-ID.
@@ -839,7 +840,7 @@
       const cls = complete ? 'text-emerald-400' : (assignedTotal === 0 ? 'text-slate-500' : 'text-amber-400');
       const proxy = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
       const decDisabled = assignedTotal === 0 ? 'disabled' : '';
-      const incDisabled = (freeReal === 0 || assignedTotal >= entry.count) ? 'disabled' : '';
+      const incDisabled = ((freeReal + freeProxy) === 0 || assignedTotal >= entry.count) ? 'disabled' : '';
       slotCell = `<td class="py-1 pr-3 whitespace-nowrap">
           <span class="inline-flex items-center gap-1">
             <button data-slot-dec="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="− Slot" ${decDisabled}>−</button>
@@ -969,7 +970,7 @@
         const assigned = sa ? sa.real + sa.proxy : 0;
         if (assigned >= e.count) return 2;
         const s = idx[e.variant];
-        const free = s ? s.freeReal : 0;
+        const free = s ? (s.freeReal + s.freeProxy) : 0;
         return free > 0 ? 0 : 1;
       };
       // Rang einmal pro Eintrag berechnen (nicht im Comparator → O(Copies + n log n)).

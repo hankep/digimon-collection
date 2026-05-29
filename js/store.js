@@ -209,14 +209,18 @@
     }
   }
 
-  // Greedy-Reservierung freier ECHTER Kopien (Proxies werden nie geslottet —
-  // sie sind reine Lager-Markierung). Aelteste zuerst.
+  // Greedy-Reservierung: zuerst freie echte Kopien (aelteste zuerst), dann freie
+  // Proxies. Proxies zaehlen NICHT als 'Besitz/verfuegbar' in der Anzeige,
+  // werden aber als Platzhalter geslottet, damit Decks komplett werden koennen.
   function autoClaim(coll, deckId, variant, n) {
     if (n <= 0) return 0;
     let claimed = 0;
     const free = copiesOfVariant(coll, variant)
-      .filter(c => c.deckId === null && !c.isProxy)
-      .sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''));
+      .filter(c => c.deckId === null)
+      .sort((a, b) => {
+        if (a.isProxy !== b.isProxy) return a.isProxy ? 1 : -1; // real zuerst
+        return (a.addedAt || '').localeCompare(b.addedAt || ''); // aelteste zuerst
+      });
     for (const c of free) {
       if (claimed >= n) break;
       coll.copies[c.id].deckId = deckId;
