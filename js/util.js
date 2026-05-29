@@ -43,7 +43,8 @@
     tradeSort:         'tradeSort',         // 'id' | 'price-desc' | 'rarity'
     showAlts:          'showAlts',          // bool, Picker Alt-Arts einzeln
     mainWantsSort:     'mainWantsSort',     // 'id' | 'price-desc'
-    setGroups:         'setGroups'          // {BT,EX,ST,Andere: bool}
+    setGroups:         'setGroups',         // {BT,EX,ST,Andere: bool}
+    deckPickerSplit:   'deckPickerSplit'    // 0..1 — Anteil Picker an Detail+Picker im Decks-Tab (Desktop)
   });
 
   // ── Event-Bus ─────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@
     pickerOwnedOnly: false,
     pickerShowAlts: false,
     pickerOpen: false,  // Mobile-Collapse fuer Picker; auf Desktop irrelevant (Summary versteckt, details immer open)
+    deckPickerSplit: 0.5, // 0..1 — Anteil des PICKER am Detail+Picker-Bereich (Desktop). 0.5 = 50/50.
     deckSortBy: 'id',  // id | name | price-asc | price-desc
     deckGroupBy: 'none', // level | cost | type | none
     deckMissingOnly: false, // nur Einträge mit fehlenden echten Kopien anzeigen
@@ -29,10 +30,18 @@
     state.pickerShowAlts = !!Prefs.get('showAlts', false);
     state.mainWantsSort = Prefs.get('mainWantsSort', 'id');
     state.deckView = Prefs.get('deckView', 'tiles');
+    const savedSplit = Prefs.get(window.Util.PREF_KEYS.deckPickerSplit, 0.5);
+    state.deckPickerSplit = clampSplit(Number(savedSplit));
     if (!state.activeDeckId) {
       state.activeDeckId = MAIN_WANTS_ID;
     }
     render();
+  }
+
+  // Mindestens 0.15 / hoechstens 0.7 — keine kompletten Kollaps-Zustaende.
+  function clampSplit(v) {
+    if (!Number.isFinite(v)) return 0.5;
+    return Math.max(0.15, Math.min(0.7, v));
   }
 
   function render() {
@@ -42,6 +51,9 @@
     // Auf Desktop ist der Picker immer offen (Summary versteckt); auf Mobile haengt es am Session-State.
     const isDesktopLg = window.matchMedia && window.matchMedia('(min-width:1024px)').matches;
     const pickerOpen = isDesktopLg || state.pickerOpen;
+    // Anteil: state.deckPickerSplit gehoert dem PICKER, Rest dem Detail.
+    const pickerPct = (state.deckPickerSplit * 100).toFixed(2);
+    const detailPct = ((1 - state.deckPickerSplit) * 100).toFixed(2);
     rootEl.innerHTML = `
       <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-7rem)]">
         <aside class="w-full lg:w-48 lg:shrink-0 flex flex-col lg:min-h-0">
@@ -54,10 +66,11 @@
           </button>
           <div id="deck-list" class="space-y-1 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto"></div>
         </aside>
-        <div class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col">
+        <div class="min-w-0 lg:min-h-0 lg:flex lg:flex-col flex-1" style="flex-basis: ${detailPct}%">
           <div id="deck-detail" class="lg:flex lg:flex-col lg:flex-1 lg:min-h-0"></div>
         </div>
-        <details id="picker-details" class="flex-1 min-w-0 lg:min-h-0 lg:flex lg:flex-col"${pickerOpen ? ' open' : ''}>
+        <div id="deck-picker-resize" class="hidden lg:block w-1.5 cursor-col-resize bg-slate-700 hover:bg-amber-500 transition-colors rounded shrink-0 self-stretch" title="Ziehen zum Anpassen"></div>
+        <details id="picker-details" class="min-w-0 lg:min-h-0 lg:flex lg:flex-col flex-1" style="flex-basis: ${pickerPct}%"${pickerOpen ? ' open' : ''}>
           <summary class="lg:hidden cursor-pointer bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded font-semibold text-sm select-none mb-2">+ Karten hinzufügen</summary>
           <h2 class="hidden lg:block text-sm font-bold uppercase text-slate-400 mb-2 shrink-0">Karten hinzufügen</h2>
           <div class="space-y-2 mb-2 shrink-0">
@@ -128,6 +141,59 @@
         state.pickerOpen = e.target.open;
       });
     }
+    wireDeckPickerResize();
+  }
+
+  function wireDeckPickerResize() {
+    const handle = rootEl.querySelector('#deck-picker-resize');
+    if (!handle) return;
+    const detailCol = handle.previousElementSibling;
+    const pickerCol = handle.nextElementSibling;
+    if (!detailCol || !pickerCol) return;
+
+    let dragging = false;
+    let containerLeft = 0;
+    let containerWidth = 0;
+    function onMouseMove(e) {
+      if (!dragging) return;
+      // Anteil PICKER von rechts (rechts vom Handle bis zum Container-Ende).
+      const x = e.clientX - containerLeft;
+      let pickerStart = (x / containerWidth);
+      // pickerStart ist die Position der Trennung. Picker bekommt (1 - pickerStart).
+      // Wir wollen 'split = pickerWidth / (detailWidth + pickerWidth)'. Container
+      // umfasst Detail+Handle+Picker; Handle ist schmal — vernachlaessigbar.
+      let split = 1 - pickerStart;
+      split = clampSplit(split);
+      state.deckPickerSplit = split;
+      detailCol.style.flexBasis = ((1 - split) * 100).toFixed(2) + '%';
+      pickerCol.style.flexBasis = (split * 100).toFixed(2) + '%';
+    }
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      Prefs.set(window.Util.PREF_KEYS.deckPickerSplit, state.deckPickerSplit);
+    }
+    handle.addEventListener('mousedown', e => {
+      // Container = Parent des Handles, der Detail + Handle + Picker enthaelt.
+      const parent = handle.parentElement;
+      const rect = parent.getBoundingClientRect();
+      // Nur den Detail+Picker-Bereich verwenden, ohne die Listen-Sidebar (lg:w-48).
+      // Detail beginnt direkt links vom Handle (detailCol-Position).
+      const detailRect = detailCol.getBoundingClientRect();
+      const pickerRect = pickerCol.getBoundingClientRect();
+      containerLeft = detailRect.left;
+      containerWidth = (pickerRect.right - detailRect.left);
+      dragging = true;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      e.preventDefault();
+    });
   }
 
   // Wants- und Trade-Listen sind reine Kartenlisten (kein Besitz-/Slot-Abgleich).
