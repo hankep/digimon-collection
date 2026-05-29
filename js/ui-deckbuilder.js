@@ -133,103 +133,93 @@
   // Wants- und Trade-Listen sind reine Kartenlisten (kein Besitz-/Slot-Abgleich).
   function isListKind(kind) { return kind === 'wants' || kind === 'trade'; }
 
-  function renderDeckList() {
-    const el = rootEl.querySelector('#deck-list');
-    // Pinned "Main Wants" oben
+  function mainWantsItemHtml() {
     const mw = computeMainWants();
     const mwActive = isMainWants(state.activeDeckId);
-    const mainWantsHtml = `<div class="flex items-center gap-1 mb-2">
+    return `<div class="flex items-center gap-1 mb-2">
       <button data-deck="${MAIN_WANTS_ID}" class="deck-item flex-1 text-left px-3 py-2 rounded ${mwActive ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 hover:bg-slate-700'}">
         <div class="font-semibold text-sm">★ Main Wants</div>
         <div class="text-xs opacity-75">${mw.totalCount} fehlend · ${mw.uniqueCount} unique</div>
       </button>
     </div>`;
+  }
 
-    if (!state.decksState.decks.length) {
-      el.innerHTML = mainWantsHtml + `<div class="text-sm text-slate-500">Noch keine Listen.</div>`;
-      el.querySelectorAll('.deck-item').forEach(btn => {
-        btn.addEventListener('click', () => {
-          state.activeDeckId = btn.dataset.deck;
-          render();
-        });
-      });
-      return;
-    }
-    const idx = Store.getVariantIndex(collectionCache);
-    const dIdx = Store.getDeckAssignedIndex(collectionCache);
-
-    const renderItem = d => {
-      const active = d.id === state.activeDeckId;
-      const total = d.entries.reduce((s, e) => s + e.count, 0);
-      const da = dIdx[d.id] || {};   // variant -> { real, proxy } für dieses Deck
-      // Wants-/Trade-Listen sind reine Kartenlisten — kein Komplett-Marker.
-      const listMode = isListKind(d.kind);
-      const complete = !listMode && total > 0 && d.entries.every(e => {
-        const s = da[e.variant];
-        return (s ? s.real + s.proxy : 0) >= e.count;
-      });
-      // Slottable: noch offene Slots UND mindestens 1 freie Kopie passend dazu
-      let slottable = false;
-      if (!complete && !listMode && total > 0) {
-        for (const e of d.entries) {
-          const sa = da[e.variant];
-          const assigned = sa ? sa.real + sa.proxy : 0;
-          if (assigned >= e.count) continue;
-          const s = idx[e.variant];
-          if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
-        }
+  // Pure HTML fuer einen Deck-Listen-Eintrag. idx = VariantIndex, dIdx =
+  // DeckAssignedIndex. Berechnet Komplett-/Slottable-/Proxy-Slotted-State und
+  // mapped auf passende Styles.
+  function deckItemHtml(d, idx, dIdx) {
+    const active = d.id === state.activeDeckId;
+    const total = d.entries.reduce((s, e) => s + e.count, 0);
+    const da = dIdx[d.id] || {};   // variant -> { real, proxy } fuer dieses Deck
+    // Wants-/Trade-Listen sind reine Kartenlisten — kein Komplett-Marker.
+    const listMode = isListKind(d.kind);
+    const complete = !listMode && total > 0 && d.entries.every(e => {
+      const s = da[e.variant];
+      return (s ? s.real + s.proxy : 0) >= e.count;
+    });
+    // Slottable: noch offene Slots UND mindestens 1 freie Kopie passend dazu
+    let slottable = false;
+    if (!complete && !listMode && total > 0) {
+      for (const e of d.entries) {
+        const sa = da[e.variant];
+        const assigned = sa ? sa.real + sa.proxy : 0;
+        if (assigned >= e.count) continue;
+        const s = idx[e.variant];
+        if (s && (s.freeReal + s.freeProxy) > 0) { slottable = true; break; }
       }
-      // Vollständig, aber mit zugewiesenen Proxies → Name lila markieren.
-      const hasSlottedProxy = complete && d.entries.some(e => {
-        const s = da[e.variant];
-        return s && s.proxy > 0;
-      });
-      const cls = active
-        ? 'bg-amber-500 text-slate-900'
-        : (complete
-            ? 'bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/50'
-            : (slottable
-                ? 'bg-yellow-500/15 border border-yellow-400 hover:bg-yellow-500/25 deck-slottable'
-                : 'hover:bg-slate-800'));
-      const nameCls = (hasSlottedProxy && !active) ? 'text-purple-400' : '';
-      const fav = !!d.favorite;
-      const starTitle = fav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren';
-      const starColor = fav ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300';
-      return `<div class="flex items-center gap-1">
-        <button data-fav="${d.id}" class="${starColor} px-1 text-base leading-none" title="${starTitle}">${fav ? '★' : '☆'}</button>
-        <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
-          <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
-          <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
-        </button>
-        <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
-      </div>`;
-    };
+    }
+    // Vollstaendig, aber mit zugewiesenen Proxies → Name lila markieren.
+    const hasSlottedProxy = complete && d.entries.some(e => {
+      const s = da[e.variant];
+      return s && s.proxy > 0;
+    });
+    const cls = active
+      ? 'bg-amber-500 text-slate-900'
+      : (complete
+          ? 'bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/50'
+          : (slottable
+              ? 'bg-yellow-500/15 border border-yellow-400 hover:bg-yellow-500/25 deck-slottable'
+              : 'hover:bg-slate-800'));
+    const nameCls = (hasSlottedProxy && !active) ? 'text-purple-400' : '';
+    const fav = !!d.favorite;
+    const starTitle = fav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren';
+    const starColor = fav ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300';
+    return `<div class="flex items-center gap-1">
+      <button data-fav="${d.id}" class="${starColor} px-1 text-base leading-none" title="${starTitle}">${fav ? '★' : '☆'}</button>
+      <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
+        <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
+        <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
+      </button>
+      <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
+    </div>`;
+  }
 
-    // Favoriten zuerst, sonst Reihenfolge bleibt.
+  // Pure HTML der nach Kind gruppierten Liste (Wants / Trades / Decks +
+  // Sonstige als Fallback, jeweils Favoriten zuerst).
+  function deckListGroupsHtml(idx, dIdx) {
     const favFirst = arr => arr.slice().sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
-
-    // Gruppiert nach Art: Decks / Wants / Trades.
     const GROUPS = [
       { kind: 'wants', label: 'Wants' },
       { kind: 'trade', label: 'Trades' },
       { kind: 'deck',  label: 'Decks' }
     ];
-    let groupedHtml = '';
+    let html = '';
     for (const g of GROUPS) {
       const items = favFirst(state.decksState.decks.filter(d => d.kind === g.kind));
       if (!items.length) continue;
-      groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">${g.label} · ${items.length}</div>`
-        + `<div class="space-y-1">${items.map(renderItem).join('')}</div>`;
+      html += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">${g.label} · ${items.length}</div>`
+        + `<div class="space-y-1">${items.map(d => deckItemHtml(d, idx, dIdx)).join('')}</div>`;
     }
-    // Unbekannte Arten (Fallback) ans Ende.
     const known = new Set(GROUPS.map(g => g.kind));
     const rest = favFirst(state.decksState.decks.filter(d => !known.has(d.kind)));
     if (rest.length) {
-      groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">Sonstige · ${rest.length}</div>`
-        + `<div class="space-y-1">${rest.map(renderItem).join('')}</div>`;
+      html += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">Sonstige · ${rest.length}</div>`
+        + `<div class="space-y-1">${rest.map(d => deckItemHtml(d, idx, dIdx)).join('')}</div>`;
     }
-    el.innerHTML = mainWantsHtml + groupedHtml;
+    return html;
+  }
 
+  function wireDeckList(el) {
     el.querySelectorAll('.deck-item').forEach(btn => {
       btn.addEventListener('click', () => {
         state.activeDeckId = btn.dataset.deck;
@@ -258,6 +248,21 @@
         render();
       });
     });
+  }
+
+  function renderDeckList() {
+    const el = rootEl.querySelector('#deck-list');
+    if (!el) return;
+    const mainWantsHtml = mainWantsItemHtml();
+    if (!state.decksState.decks.length) {
+      el.innerHTML = mainWantsHtml + `<div class="text-sm text-slate-500">Noch keine Listen.</div>`;
+      wireDeckList(el);
+      return;
+    }
+    const idx = Store.getVariantIndex(collectionCache);
+    const dIdx = Store.getDeckAssignedIndex(collectionCache);
+    el.innerHTML = mainWantsHtml + deckListGroupsHtml(idx, dIdx);
+    wireDeckList(el);
   }
 
   function renderDeckDetail() {
