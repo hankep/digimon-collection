@@ -208,11 +208,53 @@
     body.querySelectorAll('[data-filter-status]').forEach(b => b.addEventListener('click', () => {
       state.filterStatus = b.dataset.filterStatus; renderBody();
     }));
-    body.querySelectorAll('[data-toggle-report]').forEach(b => b.addEventListener('click', () => {
+    body.querySelectorAll('[data-toggle-report]').forEach(b => b.addEventListener('click', e => {
+      // Klicks auf Controls (Status-Select, Loeschen) nicht als Expand-Toggle werten.
+      if (e.target.closest('[data-status-select],[data-delete-report]')) return;
       const id = b.dataset.toggleReport;
       state.expandedId = state.expandedId === id ? null : id;
       renderBody();
     }));
+    body.querySelectorAll('[data-status-select]').forEach(sel => {
+      sel.addEventListener('click', e => e.stopPropagation());
+      sel.addEventListener('change', async e => {
+        const id = sel.dataset.statusSelect;
+        const newStatus = e.target.value;
+        const prev = state.reports.find(r => r.id === id);
+        const prevStatus = prev ? prev.status : null;
+        if (prev) prev.status = newStatus;  // optimistic
+        renderBody();
+        const client = window.Sync && Sync.getClient && Sync.getClient();
+        if (!client) {
+          if (prev) prev.status = prevStatus;
+          window.Util.toast('Sync nicht verfuegbar.', 'error');
+          renderBody();
+          return;
+        }
+        const { error } = await client.from('reports').update({ status: newStatus }).eq('id', id);
+        if (error) {
+          if (prev) prev.status = prevStatus;
+          window.Util.toast('Status-Update fehlgeschlagen: ' + (error.message || 'unbekannt'), 'error');
+          renderBody();
+        }
+      });
+    });
+    body.querySelectorAll('[data-delete-report]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = btn.dataset.deleteReport;
+        if (!confirm('Diesen Report wirklich loeschen?')) return;
+        const client = window.Sync && Sync.getClient && Sync.getClient();
+        if (!client) { window.Util.toast('Sync nicht verfuegbar.', 'error'); return; }
+        const { error } = await client.from('reports').delete().eq('id', id);
+        if (error) {
+          window.Util.toast('Loeschen fehlgeschlagen: ' + (error.message || 'unbekannt'), 'error');
+          return;
+        }
+        state.reports = state.reports.filter(r => r.id !== id);
+        renderBody();
+      });
+    });
   }
 
   function typeFilterPills() {
@@ -225,8 +267,10 @@
   }
   function statusFilterPills() {
     const opts = [
-      { v: 'open', l: 'Offen' },
-      { v: 'all',  l: 'Alle'  }
+      { v: 'open',     l: 'Offen' },
+      { v: 'done',     l: 'Erledigt' },
+      { v: 'rejected', l: 'Abgelehnt' },
+      { v: 'all',      l: 'Alle' }
     ];
     return opts.map(o => `<button data-filter-status="${o.v}" class="px-2 py-0.5 rounded ${state.filterStatus === o.v ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}">${o.l}</button>`).join('');
   }
@@ -240,6 +284,11 @@
     const firstLine = (r.text || '').split('\n')[0] || '';
     const shownText = isExpanded ? r.text : firstLine;
     const own = isOwn ? `<span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">Du</span>` : '';
+    const statusOpts = ['open', 'wip', 'done', 'rejected'];
+    const statusSelect = `<select data-status-select="${escapeAttr(r.id)}" class="bg-slate-800 border border-slate-600 rounded px-1 py-0.5 text-[10px]" title="Status aendern">
+      ${statusOpts.map(s => `<option value="${s}" ${r.status === s ? 'selected' : ''}>${statusLabel(s)}</option>`).join('')}
+    </select>`;
+    const delBtn = `<button data-delete-report="${escapeAttr(r.id)}" class="text-slate-500 hover:text-red-400 px-1 text-sm" title="Loeschen">🗑</button>`;
     return `
       <div class="bg-slate-900 rounded p-3 cursor-pointer hover:bg-slate-800" data-toggle-report="${escapeAttr(r.id)}">
         <div class="flex items-center gap-2 mb-1 text-xs">
@@ -248,17 +297,24 @@
           ${own}
           <span class="text-slate-400 truncate flex-1" title="${escapeAttr(r.user_email)}">${escapeHtml(r.user_email)}</span>
           <span class="text-slate-500 whitespace-nowrap" title="${escapeAttr(dateTitle)}">${escapeHtml(relDate)}</span>
+          ${statusSelect}
+          ${delBtn}
         </div>
         <div class="text-sm ${isExpanded ? 'whitespace-pre-wrap' : 'truncate'}">${escapeHtml(shownText)}</div>
       </div>
     `;
   }
 
+  function statusLabel(s) {
+    return ({ open: 'open', wip: 'in Arbeit', done: 'erledigt', rejected: 'abgelehnt' })[s] || s;
+  }
+
   function statusBadgeHtml(s) {
     const map = {
-      open: { cls: 'bg-sky-500/20 text-sky-300',     l: 'open' },
-      wip:  { cls: 'bg-amber-500/20 text-amber-300', l: 'in Arbeit' },
-      done: { cls: 'bg-emerald-500/20 text-emerald-300', l: 'erledigt' }
+      open:     { cls: 'bg-sky-500/20 text-sky-300',         l: 'open' },
+      wip:      { cls: 'bg-amber-500/20 text-amber-300',     l: 'in Arbeit' },
+      done:     { cls: 'bg-emerald-500/20 text-emerald-300', l: 'erledigt' },
+      rejected: { cls: 'bg-slate-600/40 text-slate-300',     l: 'abgelehnt' }
     };
     const cfg = map[s] || map.open;
     return `<span class="text-[10px] ${cfg.cls} px-1.5 py-0.5 rounded">${cfg.l}</span>`;
