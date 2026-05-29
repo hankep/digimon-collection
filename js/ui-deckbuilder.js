@@ -685,10 +685,10 @@
     });
   }
 
-  // Kompakte Tabellen-Zeile fuer Deck-Eintraege (Text-Ansicht). Verzichtet auf
-  // Slot-Buttons im Layout zugunsten Lesbarkeit, behaelt aber +/-Demand-Buttons
-  // und Klick auf die Zeile (Detail-Modal). Wants-/Trade-Listen rendern ohne
-  // Slot-Statusspalte (eine reine Wunsch-/Tauschliste).
+  // Kompakte Tabellen-Zeile fuer Deck-Eintraege (Text-Ansicht). Feature-Paritaet
+  // zum Tile: Slot-Buttons, Highlighting (complete/slottable/proxy-slotted),
+  // Cross-Variant-Hinweis (andere Varianten derselben Card-ID frei verfuegbar).
+  // Wants-/Trade-Listen sind reine Wunsch-/Tauschlisten — keine Slot-Spalten.
   function renderEntryRow(entry, ctx) {
     const deck = currentDeck();
     const isWants = deck && isListKind(deck.kind);
@@ -703,25 +703,88 @@
     const assignedReal = sa ? sa.real : 0;
     const assignedProxy = sa ? sa.proxy : 0;
     const assignedTotal = assignedReal + assignedProxy;
-    const complete = !isWants && assignedTotal >= entry.count;
+    const slotMissing = Math.max(0, entry.count - assignedTotal);
+    const complete = !isWants && slotMissing === 0;
+    const vs = ctx.vIdx[entry.variant];
+    const freeReal = vs ? vs.freeReal : 0;
+    const freeProxy = vs ? vs.freeProxy : 0;
+    const totalFree = freeReal + freeProxy;
+    const slottable = !isWants && !complete && totalFree > 0;
+    const proxySlotted = !isWants && assignedProxy > 0;
 
-    const slotCell = isWants
-      ? ''
-      : (() => {
-          const cls = complete ? 'text-emerald-400' : (assignedTotal === 0 ? 'text-slate-500' : 'text-amber-400');
-          const proxy = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
-          return `<td class="py-1 pr-4 text-xs tabular-nums whitespace-nowrap"><span class="${cls}"><b>${assignedReal}</b>/${entry.count}</span>${proxy}</td>`;
-        })();
+    // Cross-Variant: andere Varianten derselben Card-ID, die frei verfuegbar sind.
+    let freeOtherTotal = 0;
+    const otherBreakdown = [];
+    if (card && !isWants) {
+      for (const v of CardDB.variantsOf(card)) {
+        if (v.key === entry.variant) continue;
+        const ov = ctx.vIdx[v.key];
+        if (!ov) continue;
+        const f = ov.freeReal + ov.freeProxy;
+        if (f > 0) {
+          otherBreakdown.push(`${f}× ${v.key}`);
+          freeOtherTotal += f;
+        }
+      }
+    }
 
+    // Soll-Counter
     const qty = `<span class="inline-flex items-center gap-1">
       <button data-demand-dec="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="Soll −">−</button>
       <span class="font-bold text-amber-400 w-6 text-center tabular-nums">${entry.count}</span>
       <button data-demand-inc="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="Soll +">+</button>
     </span>`;
 
-    return `<tr class="wants-row entry-row group cursor-pointer hover:bg-slate-700/60" data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
+    // Slot-Spalte (Buttons + Anzeige).
+    let slotCell = '';
+    if (!isWants) {
+      const cls = complete ? 'text-emerald-400' : (assignedTotal === 0 ? 'text-slate-500' : 'text-amber-400');
+      const proxy = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
+      const decDisabled = assignedTotal === 0 ? 'disabled' : '';
+      const incDisabled = (totalFree === 0 || assignedTotal >= entry.count) ? 'disabled' : '';
+      slotCell = `<td class="py-1 pr-3 whitespace-nowrap">
+          <span class="inline-flex items-center gap-1">
+            <button data-slot-dec="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="− Slot" ${decDisabled}>−</button>
+            <span class="text-xs tabular-nums"><span class="${cls}"><b>${assignedReal}</b>/${entry.count}</span>${proxy}</span>
+            <button data-slot-inc="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="+ Slot" ${incDisabled}>+</button>
+          </span>
+        </td>`;
+    }
+
+    // Status-Spalte (Verfuegbarkeit / Cross-Variant).
+    let statusCell = '';
+    if (!isWants) {
+      let inner = '<span class="text-slate-500">—</span>';
+      let titleAttr = '';
+      if (complete) {
+        inner = '<span class="text-emerald-400">✓</span>';
+      } else if (totalFree > 0) {
+        const cross = freeOtherTotal > 0 ? ` <span class="text-amber-300">+${freeOtherTotal} andere V.</span>` : '';
+        inner = `<span class="text-sky-400">${totalFree} verfügbar</span>${cross}`;
+        titleAttr = freeOtherTotal > 0
+          ? `title="${escapeAttr(totalFree + ' exakt frei · ' + freeOtherTotal + ' in anderer Variante: ' + otherBreakdown.join(', '))}"`
+          : `title="${escapeAttr(totalFree + ' exakt frei')}"`;
+      } else if (freeOtherTotal > 0) {
+        inner = `<span class="text-amber-300">${freeOtherTotal} andere V.</span>`;
+        titleAttr = `title="${escapeAttr(freeOtherTotal + ' in anderer Variante verfügbar: ' + otherBreakdown.join(', '))}"`;
+      }
+      statusCell = `<td class="py-1 pr-3 text-xs whitespace-nowrap" ${titleAttr}>${inner}</td>`;
+    }
+
+    // Row-Highlighting analog zum Tile.
+    const rowHighlight = isWants
+      ? ''
+      : complete && proxySlotted ? ' bg-purple-900/15'
+      : complete                  ? ' bg-emerald-900/20'
+      : proxySlotted              ? ' bg-purple-900/15'
+      : slottable                 ? ' bg-yellow-900/15'
+      : assignedTotal === 0       ? ' opacity-60'
+      : '';
+
+    return `<tr class="wants-row entry-row group cursor-pointer hover:bg-slate-700/60${rowHighlight}" data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
         <td class="py-1 pr-3 whitespace-nowrap">${qty}</td>
         ${slotCell}
+        ${statusCell}
         <td class="py-1 pr-3">
           <span class="block truncate max-w-[22rem]" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
         </td>
