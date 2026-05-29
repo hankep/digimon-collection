@@ -50,10 +50,9 @@
     return new Set(stored.filter(id => existing.has(id)));
   }
 
-  function cmLow(cardId) {
+  function cmLow(cardId, variant) {
     if (!window.CM || !CM.hasData()) return null;
-    const p = CM.get(cardId);
-    return (p && p.low != null) ? p.low : null;
+    return CM.lowForEntry(cardId, variant);
   }
 
   function bucketOf(price) {
@@ -68,7 +67,7 @@
     for (const list of lists) {
       if (!selected.has(list.id)) continue;
       for (const e of (list.entries || [])) {
-        const price = cmLow(e.cardId);
+        const price = cmLow(e.cardId, e.variant);
         const t = totals[bucketOf(price)];
         t.count += e.count;
         if (price != null) t.value += price * e.count;
@@ -126,7 +125,7 @@
         const rarity = (card && card.rarity) || '—';
         const name = displayName(card, e.cardId);
         if (!matchesQuery(name, e.cardId, e.variant)) continue; // Textsuche
-        const price = cmLow(e.cardId);
+        const price = cmLow(e.cardId, e.variant);
         const bk = bucketOf(price);
         if (!active.has(bk)) continue; // ausgeblendete Preisspanne
 

@@ -40,6 +40,17 @@
     return (p.byVariant && p.byVariant[variantKey]) || null;
   }
 
+  // Liefert den Low-Preis fuer einen Deck-/Wants-Eintrag: bevorzugt den
+  // variantenspezifischen (Alt-Arts sind oft DEUTLICH teurer als die Main!),
+  // faellt nur dann auf den Top-Level-Aggregat zurueck, wenn fuer die Variante
+  // keine Daten existieren. Liefert null, wenn ueberhaupt kein Preis bekannt.
+  function lowForEntry(cardId, variantKey) {
+    const pv = getForVariant(variantKey);
+    if (pv && pv.low != null) return pv.low;
+    const p = get(cardId);
+    return (p && p.low != null) ? p.low : null;
+  }
+
   function fmt(n) {
     if (n == null || Number.isNaN(Number(n))) return '—';
     return Number(n).toFixed(2).replace('.', ',') + ' €';
@@ -65,5 +76,5 @@
     return window.CM_PRICES_UPDATED_AT || null;
   }
 
-  window.CM = { get, getForSet, getForVariant, fmt, fmtLowTrend, hasData, updatedAt };
+  window.CM = { get, getForSet, getForVariant, lowForEntry, fmt, fmtLowTrend, hasData, updatedAt };
 })();

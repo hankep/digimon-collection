@@ -295,8 +295,8 @@
         missingInWants += Math.min(need, want);
       }
       if (haveCM) {
-        const p = CM.get(entry.cardId);
-        if (p && p.low != null) { missingCmSum += p.low * need; missingCmCount += need; }
+        const low = CM.lowForEntry(entry.cardId, entry.variant);
+        if (low != null) { missingCmSum += low * need; missingCmCount += need; }
         else missingNoCm += need;
       }
     }
@@ -849,10 +849,9 @@
 
   function sortEntries(entries) {
     const mode = state.deckSortBy || 'id';
-    const cmLow = id => {
+    const cmLow = (cardId, variant) => {
       if (!window.CM || !CM.hasData()) return null;
-      const p = CM.get(id);
-      return (p && p.low != null) ? p.low : null;
+      return CM.lowForEntry(cardId, variant);
     };
     const byName = (a, b) => {
       const ca = CardDB.byId.get(a.cardId);
@@ -871,8 +870,8 @@
     if (mode === 'price-asc' || mode === 'price-desc') {
       const dir = mode === 'price-asc' ? 1 : -1;
       return entries.slice().sort((a, b) => {
-        const av = cmLow(a.cardId);
-        const bv = cmLow(b.cardId);
+        const av = cmLow(a.cardId, a.variant);
+        const bv = cmLow(b.cardId, b.variant);
         if (av == null && bv == null) return byId(a, b);
         if (av == null) return 1;
         if (bv == null) return -1;
@@ -1331,15 +1330,14 @@
     }
     const items = Array.from(merged.values());
     const mode = state.mainWantsSort || 'id';
-    const cmLow = id => {
+    const cmLow = (cardId, variant) => {
       if (!window.CM || !CM.hasData()) return null;
-      const p = CM.get(id);
-      return (p && p.low != null) ? p.low : null;
+      return CM.lowForEntry(cardId, variant);
     };
     if (mode === 'price-desc') {
       items.sort((a, b) => {
-        const av = cmLow(a.cardId);
-        const bv = cmLow(b.cardId);
+        const av = cmLow(a.cardId, a.variant);
+        const bv = cmLow(b.cardId, b.variant);
         if (av == null && bv == null) return a.variant.localeCompare(b.variant);
         if (av == null) return 1;
         if (bv == null) return -1;
@@ -1425,8 +1423,8 @@
             if (!window.CM || !CM.hasData()) return '';
             let sum = 0, noCm = 0;
             for (const it of mw.items) {
-              const p = CM.get(it.cardId);
-              if (p && p.low != null) sum += p.low * it.count;
+              const low = CM.lowForEntry(it.cardId, it.variant);
+              if (low != null) sum += low * it.count;
               else noCm += it.count;
             }
             return ` · <span class="text-amber-400">CM ≈ ${Fmt.eur(sum)}</span>${noCm > 0 ? ` <span class="text-slate-500">(${noCm} ohne CM-Preis)</span>` : ''}`;
