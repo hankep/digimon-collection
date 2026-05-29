@@ -35,6 +35,9 @@
   }
 
   function render() {
+    // Scroll-Position der Listen-Sidebar merken, damit der User beim Wechsel
+    // nicht jedes Mal nach oben springt.
+    const prevDeckListScroll = (rootEl.querySelector('#deck-list') || {}).scrollTop || 0;
     rootEl.innerHTML = `
       <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-7rem)]">
         <aside class="w-full lg:w-48 lg:shrink-0 flex flex-col lg:min-h-0">
@@ -82,6 +85,10 @@
     renderDeckList();
     renderDeckDetail();
     renderPicker();
+
+    // Scroll der Sidebar wieder herstellen.
+    const dl = rootEl.querySelector('#deck-list');
+    if (dl && prevDeckListScroll) dl.scrollTop = prevDeckListScroll;
 
     rootEl.querySelector('#bulk-missing').addEventListener('click', openBulkMissingDialog);
     rootEl.querySelector('#new-deck').addEventListener('click', () => {
@@ -478,6 +485,10 @@
       return `<div>${head}<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3">${g.entries.map(entry => renderEntryTile(entry, ctx)).join('')}</div></div>`;
     }).join('');
 
+    // Text-Ansicht: Hover-Preview ueber Portal (Element ausserhalb des Scroll-
+    // Containers), damit das Bild nicht von overflow-y-auto abgeschnitten wird.
+    if (useText) wireHoverPreview(entriesEl);
+
     entriesEl.querySelectorAll('[data-demand-inc]').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); modifyDemand(btn.dataset.demandInc, 1); });
     });
@@ -635,6 +646,45 @@
     </div>`;
   }
 
+  // Singleton-Image am <body>, das beim Hover ueber eine Deck-Text-Zeile mit
+  // dem passenden Karten-Bild und Position eingeblendet wird. So ueberlebt es
+  // overflow-y-auto-Container.
+  function getHoverPreview() {
+    let el = document.getElementById('deck-hover-preview');
+    if (!el) {
+      el = document.createElement('img');
+      el.id = 'deck-hover-preview';
+      el.style.cssText = 'position:fixed;display:none;z-index:9999;width:220px;aspect-ratio:5/7;object-fit:cover;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);pointer-events:none;background:#0f172a;';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function wireHoverPreview(scopeEl) {
+    const preview = getHoverPreview();
+    scopeEl.querySelectorAll('.wants-row[data-variant-key]').forEach(row => {
+      row.addEventListener('mouseenter', () => {
+        const variant = row.dataset.variantKey;
+        if (!variant) return;
+        preview.src = CardDB.imagePath(variant);
+        const r = row.getBoundingClientRect();
+        const w = 220, h = Math.round(w * 7 / 5);
+        // bevorzugt rechts vom Cursor / Zeile, klappt sonst nach links.
+        let left = r.right + 12;
+        if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 12);
+        let top = r.top + r.height / 2 - h / 2;
+        if (top < 8) top = 8;
+        if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
+        preview.style.left = `${left}px`;
+        preview.style.top = `${top}px`;
+        preview.style.display = 'block';
+      });
+      row.addEventListener('mouseleave', () => {
+        preview.style.display = 'none';
+      });
+    });
+  }
+
   // Kompakte Tabellen-Zeile fuer Deck-Eintraege (Text-Ansicht). Verzichtet auf
   // Slot-Buttons im Layout zugunsten Lesbarkeit, behaelt aber +/-Demand-Buttons
   // und Klick auf die Zeile (Detail-Modal). Wants-/Trade-Listen rendern ohne
@@ -672,9 +722,8 @@
     return `<tr class="wants-row entry-row group cursor-pointer hover:bg-slate-700/60" data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
         <td class="py-1 pr-3 whitespace-nowrap">${qty}</td>
         ${slotCell}
-        <td class="py-1 pr-3 relative">
+        <td class="py-1 pr-3">
           <span class="block truncate max-w-[22rem]" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
-          <img class="wants-preview" loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="" />
         </td>
         <td class="py-1 pr-3 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(entry.variant)}</td>
         <td class="py-1 pr-3 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(rarity)}</td>

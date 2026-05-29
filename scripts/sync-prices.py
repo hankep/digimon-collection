@@ -87,7 +87,13 @@ def infer_expansion_to_set(products_list, cards_by_id, known_set_codes):
     """Bestimmt fuer jede idExpansion den zugehoerigen setCode per Heuristik:
        Pro idExpansion zaehlen wir die Set-Codes aus raw.set_name aller
        enthaltenen Karten. Der haeufigste Code mit Treffer-Quote >= Schwellwert
-       gewinnt. Origin- und Reprint-Sets erreichen typischerweise 100%."""
+       gewinnt. Origin- und Reprint-Sets erreichen typischerweise 100%.
+
+       Liefert zusaetzlich exp_use_card_set: Set von idExpansions, in denen die
+       Karten zu >=90% auf 1-2 setCodes konzentriert sind (z.B. 'Special
+       Booster Ver.2.5' enthaelt BT19 und BT20 als Original-Release). In dem
+       Fall soll das Badge pro Variante auf card.set zurueckfallen statt auf
+       das gemeinsame Label."""
     exp_to_cards = defaultdict(list)
     for prod in products_list:
         name = prod.get('name', '')
@@ -101,6 +107,7 @@ def infer_expansion_to_set(products_list, cards_by_id, known_set_codes):
         exp_to_cards[prod['idExpansion']].append(card)
 
     mapping = {}
+    use_card_set = set()
     for exp_id, cards in exp_to_cards.items():
         counter = Counter()
         for card in cards:
@@ -112,12 +119,19 @@ def infer_expansion_to_set(products_list, cards_by_id, known_set_codes):
                 if code and code not in seen_in_card:
                     counter[code] += 1
                     seen_in_card.add(code)
-        if not counter:
-            continue
-        most_code, hits = counter.most_common(1)[0]
-        if hits >= EXP_MATCH_THRESHOLD * len(cards):
-            mapping[exp_id] = most_code
-    return mapping
+        if counter:
+            most_code, hits = counter.most_common(1)[0]
+            if hits >= EXP_MATCH_THRESHOLD * len(cards):
+                mapping[exp_id] = most_code
+                continue
+        # Kein dominanter Set-Code: pruefe Cohesion ueber card.set.
+        own_counter = Counter(c.get('set') for c in cards if c.get('set'))
+        if own_counter:
+            total = sum(own_counter.values())
+            top2 = sum(n for _, n in own_counter.most_common(2))
+            if top2 / total >= 0.9:
+                use_card_set.add(exp_id)
+    return mapping, use_card_set
 
 
 def derive_label_from_nonsingles_name(name):
@@ -157,7 +171,11 @@ def derive_label_from_nonsingles_name(name):
     if not words:
         return None
     label = ' '.join(words[:2])
-    return label[:14] if label else None
+    # Nicht mid-word abschneiden — eher ein bisschen laenger als verstuemmelt.
+    if len(label) > 20:
+        cut = label.rfind(' ', 0, 20)
+        label = label[:cut] if cut > 0 else label[:20]
+    return label or None
 
 
 def build_exp_to_label(exp_to_set, ns_products):
@@ -214,8 +232,9 @@ def main():
             known_set_codes.add(c['set'])
     log(f'Bekannte Set-Codes: {len(known_set_codes)}')
 
-    exp_to_set = infer_expansion_to_set(products_list, cards_by_id, known_set_codes)
+    exp_to_set, exp_use_card_set = infer_expansion_to_set(products_list, cards_by_id, known_set_codes)
     log(f'idExpansion -> setCode Mapping: {len(exp_to_set)} Sets erkannt')
+    log(f'idExpansion mit Per-Variant-card.set-Badge: {len(exp_use_card_set)} (gemischte Origin-Sets)')
     exp_to_label = build_exp_to_label(exp_to_set, nonsingles_list)
     log(f'idExpansion -> Label (inkl. Fallback aus Nonsingles): {len(exp_to_label)} Sets erkannt')
 
@@ -314,10 +333,22 @@ def main():
             prods_by_exp[prod.get('idExpansion')].append(prod)
 
         for id_exp, ps in prods_by_exp.items():
-            set_code = exp_to_set.get(id_exp) or exp_to_label.get(id_exp)
+            set_code = exp_to_set.get(id_exp)
+            if not set_code and id_exp in exp_use_card_set:
+                # Gemischtes Origin-Set: nutze card.set als per-Variante-Badge.
+                set_code = card.get('set') or ''
+            if not set_code:
+                set_code = exp_to_label.get(id_exp)
             if not set_code:
                 continue
-            ps_sorted = sorted(ps, key=lambda p: p['idProduct'])
+            # Sortier-Heuristik: low-Preis aufsteigend (Main meist guenstiger als
+            # Alt-Arts). Faellt auf idProduct-asc zurueck als Tie-Breaker und
+            # wenn beide Preise None sind. Bei ST24-04 etwa wurde das teurere
+            # Alt-Art zuerst angelegt — idProduct-Reihenfolge alleine waere falsch.
+            def _sort_key(p):
+                low = (price_by_id.get(p['idProduct']) or {}).get('low')
+                return (low is None, low if low is not None else 0, p['idProduct'])
+            ps_sorted = sorted(ps, key=_sort_key)
             if len(ps_sorted) > len(variants):
                 overfill_groups += 1
             # Positional INNERHALB der idExpansion-Gruppe matchen: CM-V.1 -> Main,

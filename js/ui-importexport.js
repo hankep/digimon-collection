@@ -25,7 +25,7 @@
 
         <div class="bg-slate-800 rounded p-4 mb-4 flex flex-wrap gap-3 items-end">
           <label class="block">
-            <div class="text-xs text-slate-400 mb-1">Format</div>
+            <div class="text-xs text-slate-400 mb-1">Export-Format</div>
             <select id="format-select" class="bg-slate-900 border border-slate-600 rounded px-2 py-2">
               ${formats.map(f => `<option value="${f.id}" ${f.id === state.formatId ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
             </select>
@@ -299,59 +299,96 @@
     }
   }
 
+  // Versucht jedes registrierte IO_FORMAT auf den Eingabetext anzuwenden und
+  // waehlt das Format, das die meisten gueltigen Eintraege liefert (= Card-ID
+  // oder Variant-Key in CardDB bekannt). JSON-Formate werden bevorzugt, wenn
+  // der Text wie JSON aussieht; sonst alle Text-Formate.
+  function autoDetectFormat(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return null;
+    const isJsonLike = trimmed.startsWith('{') || trimmed.startsWith('[');
+    const all = window.IO_FORMATS || [];
+    const candidates = isJsonLike
+      ? all.filter(f => /json/i.test(f.id))
+      : all.filter(f => !/json/i.test(f.id));
+    let best = null;
+    for (const fmt of candidates) {
+      let result;
+      try { result = fmt.importDeck(trimmed); }
+      catch (e) { continue; }
+      const entries = result && Array.isArray(result.entries) ? result.entries : [];
+      let valid = 0;
+      for (const e of entries) {
+        if (CardDB.byId.has(e.cardId) || CardDB.allVariants.has(e.variant)) valid++;
+      }
+      const unknown = (result && result.unknownIds || []).length + (entries.length - valid);
+      const score = valid - unknown * 0.5;
+      if (!best || score > best.score) best = { fmt, result, score, valid, unknown };
+    }
+    return best;
+  }
+
   function doImport() {
-    const fmt = getFormat();
-    if (!fmt) return showMsg('Kein Format gewählt.', 'err');
     const text = state.textValue.trim();
     if (!text) return showMsg('Textfeld ist leer.', 'err');
-    try {
-      const result = fmt.importDeck(text);
 
-      // Validator: prüfe ob Card-IDs und Varianten existieren.
-      const unknownEntries = [];
-      const validEntries = [];
-      for (const e of result.entries) {
-        const cardKnown = CardDB.byId.has(e.cardId);
-        const variantKnown = CardDB.allVariants.has(e.variant);
-        if (!cardKnown && !variantKnown) {
-          unknownEntries.push(e);
-        } else {
-          if (!variantKnown && cardKnown) {
-            e.variant = CardDB.mainVariantKey(CardDB.byId.get(e.cardId));
-          }
-          validEntries.push(e);
-        }
-      }
-      const unknownFromFormat = (result.unknownIds || []);
-
-      if (unknownEntries.length || unknownFromFormat.length) {
-        const samples = unknownEntries.slice(0, 5).map(e => e.cardId + (e.variant !== e.cardId ? ' / ' + e.variant : ''))
-          .concat(unknownFromFormat.slice(0, 5));
-        const ok = confirm(
-          `${unknownEntries.length + unknownFromFormat.length} unbekannte Einträge gefunden, z.B.:\n` +
-          samples.join('\n') +
-          `\n\nTrotzdem importieren (${validEntries.length} gültige Einträge)?`
-        );
-        if (!ok) return showMsg('Import abgebrochen.', 'err');
-      }
-
-      const decksState = Store.loadDecks();
-      const customName = rootEl.querySelector('#import-name').value.trim();
-      const deck = Store.createDeck(decksState, customName || result.name, result.kind);
-      deck.notes = result.notes || '';
-      deck.entries = validEntries;
-      Store.saveDecks(decksState);
-
-      const skipped = unknownEntries.length + unknownFromFormat.length;
-      showMsg(
-        `Importiert: "${deck.name}" mit ${deck.entries.length} Einträgen` +
-        (skipped ? ` (${skipped} übersprungen)` : '') +
-        '. Sichtbar unter Decks & Lists.',
-        'ok'
+    const auto = autoDetectFormat(text);
+    if (!auto || auto.valid === 0) {
+      const sampleUnknown = auto && auto.result && auto.result.unknownIds
+        ? auto.result.unknownIds.slice(0, 5).join(', ')
+        : '';
+      return showMsg(
+        'Format nicht erkannt — keine gültigen Einträge gefunden.' +
+        (sampleUnknown ? ` Unbekannt z.B.: ${sampleUnknown}` : ''),
+        'err'
       );
-    } catch (e) {
-      showMsg('Import-Fehler: ' + e.message, 'err');
     }
+    const fmt = auto.fmt;
+    const result = auto.result;
+
+    // Validator: prüfe ob Card-IDs und Varianten existieren.
+    const unknownEntries = [];
+    const validEntries = [];
+    for (const e of result.entries) {
+      const cardKnown = CardDB.byId.has(e.cardId);
+      const variantKnown = CardDB.allVariants.has(e.variant);
+      if (!cardKnown && !variantKnown) {
+        unknownEntries.push(e);
+      } else {
+        if (!variantKnown && cardKnown) {
+          e.variant = CardDB.mainVariantKey(CardDB.byId.get(e.cardId));
+        }
+        validEntries.push(e);
+      }
+    }
+    const unknownFromFormat = (result.unknownIds || []);
+
+    if (unknownEntries.length || unknownFromFormat.length) {
+      const samples = unknownEntries.slice(0, 8).map(e => e.cardId + (e.variant !== e.cardId ? ' / ' + e.variant : ''))
+        .concat(unknownFromFormat.slice(0, 8));
+      const ok = confirm(
+        `Format erkannt: ${fmt.label}\n\n` +
+        `${unknownEntries.length + unknownFromFormat.length} unbekannte Einträge gefunden, z.B.:\n` +
+        samples.join('\n') +
+        `\n\nTrotzdem importieren (${validEntries.length} gültige Einträge)?`
+      );
+      if (!ok) return showMsg('Import abgebrochen.', 'err');
+    }
+
+    const decksState = Store.loadDecks();
+    const customName = rootEl.querySelector('#import-name').value.trim();
+    const deck = Store.createDeck(decksState, customName || result.name, result.kind);
+    deck.notes = result.notes || '';
+    deck.entries = validEntries;
+    Store.saveDecks(decksState);
+
+    const skipped = unknownEntries.length + unknownFromFormat.length;
+    showMsg(
+      `Importiert (${fmt.label}): "${deck.name}" mit ${deck.entries.length} Einträgen` +
+      (skipped ? ` (${skipped} übersprungen)` : '') +
+      '. Sichtbar unter Decks & Lists.',
+      'ok'
+    );
   }
 
   function loadFile(e) {
@@ -361,15 +398,15 @@
     reader.onload = () => {
       state.textValue = String(reader.result || '');
       rootEl.querySelector('#io-text').value = state.textValue;
+      // Export-Format aus der Dateiendung vorbelegen (rein zur Bequemlichkeit
+      // beim spaeteren Re-Export). Der Import erkennt das Format selbststaendig.
       const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
       const match = (window.IO_FORMATS || []).find(f => (f.fileExtension || '').toLowerCase() === ext);
       if (match) {
         state.formatId = match.id;
         rootEl.querySelector('#format-select').value = match.id;
-        showMsg(`Datei geladen, Format auf "${match.label}" gesetzt. Jetzt "Import" klicken.`, 'ok');
-      } else {
-        showMsg('Datei geladen. Format ggf. manuell wählen, dann "Import".', 'ok');
       }
+      showMsg('Datei geladen. „Import" klicken — Format wird automatisch erkannt.', 'ok');
     };
     reader.readAsText(file);
     e.target.value = '';
