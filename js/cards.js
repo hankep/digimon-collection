@@ -419,10 +419,16 @@
   }
 
   // Slug-Helper fuer Cardmarket-URLs: Sonderzeichen raus, Leerzeichen zu Bindestrich.
+  // Versionsnummern wie 'Ver.2.5' werden zu 'Ver-25' transformiert: Periode
+  // zwischen Ziffern entfaellt (2.5 → 25), Periode nach Buchstabe wird Trennung
+  // (Ver. → Ver -). So matched der Slug Cardmarkets eigenes Schema fuer das
+  // 'Special Booster Ver.2.5'-Produkt.
   function slugify(s) {
     return String(s || '')
       .replace(/&/g, 'and')
-      .replace(/[()'":;,.!?]/g, '')
+      .replace(/(\d)\.(?=\d)/g, '$1')   // 2.5 → 25
+      .replace(/\./g, ' ')              // restliche Periode (z.B. nach 'Ver') → Trenner
+      .replace(/[()'":;,!?]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
@@ -460,6 +466,14 @@
       for (const sn of setNames) {
         if (setNameToCode(sn) === variantSet) { chosenSetName = sn; break; }
       }
+    }
+    // Errata-Reprints (z.B. 'BT20-077-Errata') liegen bei Cardmarket unter dem
+    // 'Special Booster Ver.2.5'-Produkt, nicht unter dem urspruenglichen
+    // Booster. Wenn die Karte einen entsprechenden set_name in der Liste hat,
+    // ueberschreiben wir die Auswahl.
+    if (variantKey && /-Errata$/i.test(variantKey)) {
+      const sb = setNames.find(sn => /Special\s+Booster/i.test(sn));
+      if (sb) chosenSetName = sb;
     }
     if (!chosenSetName) {
       return `https://www.cardmarket.com/de/Digimon/Products/Search?searchString=${encodeURIComponent(card.id)}`;
