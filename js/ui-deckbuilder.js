@@ -515,9 +515,7 @@
     entriesEl.querySelectorAll('.entry-row, .entry-tile').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('[data-demand-inc], [data-demand-dec], [data-slot-inc], [data-slot-dec], [data-note-trigger]')) return;
-        if (window.UICollection && typeof window.UICollection.openCardModal === 'function') {
-          window.UICollection.openCardModal(row.dataset.entryCardId, row.dataset.variantKey);
-        }
+        window.Util.bus.emit('open-card-modal', { cardId: row.dataset.entryCardId, variantKey: row.dataset.variantKey });
       });
     });
     entriesEl.querySelectorAll('[data-note-trigger]').forEach(btn => {
@@ -1453,9 +1451,7 @@
     entriesEl.querySelectorAll('.entry-tile').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('[data-note-trigger], [data-mw-dec]')) return;
-        if (window.UICollection && typeof window.UICollection.openCardModal === 'function') {
-          window.UICollection.openCardModal(row.dataset.entryCardId, row.dataset.variantKey);
-        }
+        window.Util.bus.emit('open-card-modal', { cardId: row.dataset.entryCardId, variantKey: row.dataset.variantKey });
       });
     });
     entriesEl.querySelectorAll('[data-note-trigger]').forEach(btn => {
@@ -1738,7 +1734,7 @@
   }
 
   let pendingRefresh = false;
-  document.addEventListener('collection-changed', () => {
+  function onExternalChange() {
     if (!rootEl || !rootEl.querySelector('#deck-detail')) return;
     // Wenn der Tab nicht sichtbar ist: nur Cache invalidieren, kein DOM-Refresh.
     const panel = document.getElementById('tab-decks');
@@ -1753,11 +1749,14 @@
     requestAnimationFrame(() => {
       pendingRefresh = false;
       collectionCache = Store.loadCollection();
+      state.decksState = Store.loadDecks();
       renderDeckList();
       renderDeckDetail();
       renderPicker();
     });
-  });
+  }
+  document.addEventListener('collection-changed', onExternalChange);
+  document.addEventListener('decks-changed', onExternalChange);
 
   window.UIDeckbuilder = { init, refresh };
 })();

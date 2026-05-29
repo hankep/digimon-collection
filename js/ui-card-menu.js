@@ -199,11 +199,8 @@
             Store.addToDeck(d, cardId, variantKey, qty);
           }
           Store.saveDecks(decksState);
+          // saveDecks dispatcht decks-changed; Deckbuilder lauscht und refresht sich.
           close();
-
-          if (window.UIDeckbuilder && typeof window.UIDeckbuilder.refresh === 'function') {
-            window.UIDeckbuilder.refresh();
-          }
         });
       }
     });

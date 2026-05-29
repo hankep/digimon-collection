@@ -34,12 +34,17 @@
   let scrollObserver = null;
   const BATCH_SIZE = 120;
 
+  let busWired = false;
   function init(el) {
     rootEl = el;
     state.collection = Store.loadCollection();
     state.showAlts = !!Prefs.get('showAlts', false);
     const sg = Prefs.get('setGroups', null);
     if (sg && typeof sg === 'object') state.setGroups = Object.assign({ BT: true, EX: true, ST: true, Andere: true }, sg);
+    if (!busWired) {
+      window.Util.bus.on('open-card-modal', ({ cardId, variantKey }) => openCardModal(cardId, variantKey));
+      busWired = true;
+    }
     render();
   }
 
