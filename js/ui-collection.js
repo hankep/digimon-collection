@@ -806,6 +806,17 @@
       ? `<span class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
       : '';
 
+    // A.v: Aggregat ueber andere Varianten der selben Card-ID — wieviele
+    // sind frei verfuegbar / insgesamt besessen. Nur anzeigen, wenn frei > 0.
+    const vIdx = state.variantIdx || (state.collection ? Store.buildVariantIndex(state.collection) : null);
+    let avHtml = '';
+    if (vIdx) {
+      const av = otherVariantsAvLocal(card, v.key, vIdx);
+      if (av.freeOther > 0) {
+        avHtml = `<span class="text-amber-300 text-[10px] whitespace-nowrap" title="${escapeAttr(av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}">A.v: ${av.freeOther}/${av.totalOther}</span>`;
+      }
+    }
+
     if (hero) {
       return `
         <div class="text-sm font-mono text-slate-400 flex items-baseline justify-between gap-2">
@@ -814,7 +825,7 @@
         </div>
         <div class="text-[11px] text-slate-300 mb-2 flex items-baseline justify-between gap-2">
           <span>${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
-          ${setBadge}
+          <span class="flex items-baseline gap-2">${avHtml}${setBadge}</span>
         </div>`;
     }
     // Kompakt-Layout: drei Zeilen, jede mit eigenem Platz.
@@ -824,7 +835,28 @@
         <span class="truncate">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
         ${setBadge}
       </div>
+      ${avHtml ? `<div class="mt-0.5">${avHtml}</div>` : ''}
       ${priceHtml ? `<div class="text-xs mt-1">${priceHtml}</div>` : ''}`;
+  }
+
+  // Wie otherVariantsAv im Deckbuilder, lokal kopiert da Collection-Tab
+  // unabhaengig laeuft. Card + Variant-Key der eigenen Variante + Index.
+  function otherVariantsAvLocal(card, selfVariantKey, vIdx) {
+    const out = { freeOther: 0, totalOther: 0, breakdown: [] };
+    if (!card || !vIdx) return out;
+    for (const v of CardDB.variantsOf(card)) {
+      if (v.key === selfVariantKey) continue;
+      const ov = vIdx[v.key];
+      if (!ov) continue;
+      const free = ov.freeReal + ov.freeProxy;
+      const own = ov.real + ov.proxy;
+      if (own > 0) {
+        out.totalOther += own;
+        out.freeOther += free;
+        out.breakdown.push(`${own}× ${v.key}${free > 0 ? ` (${free} frei)` : ''}`);
+      }
+    }
+    return out;
   }
 
   function openCardModal(cardId, variantKey) {

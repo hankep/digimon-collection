@@ -574,22 +574,9 @@
     const freeProxy = vs ? vs.freeProxy : 0;
 
     const totalFree = freeReal + freeProxy;
-    // Cross-Variant-Hinweis: andere Varianten derselben Card-ID, die frei
-    // verfuegbar sind. Reine Info — Slotten bleibt variant-genau, User entscheidet.
-    let freeOtherTotal = 0;
-    const otherBreakdown = [];
-    if (card) {
-      for (const v of CardDB.variantsOf(card)) {
-        if (v.key === entry.variant) continue;
-        const ov = ctx.vIdx[v.key];
-        if (!ov) continue;
-        const f = ov.freeReal + ov.freeProxy;
-        if (f > 0) {
-          otherBreakdown.push(`${f}× ${v.key}`);
-          freeOtherTotal += f;
-        }
-      }
-    }
+    // Cross-Variant-Hinweis: andere Varianten derselben Card-ID. A.v zeigt
+    // "frei/owned" in anderen Prints. Reine Info — Slotten bleibt variant-genau.
+    const av = otherVariantsAv(card, entry.variant, ctx.vIdx);
 
     let ownedClass = 'text-slate-500';
     let needText = '';
@@ -599,16 +586,16 @@
       needText = '✓';
     } else if (totalFree > 0) {
       ownedClass = 'text-sky-400';
-      needText = freeOtherTotal > 0
-        ? `${totalFree} verfügbar <span class="text-amber-300">+${freeOtherTotal} andere Variante</span>`
+      needText = av.freeOther > 0
+        ? `${totalFree} verfügbar <span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>`
         : `${totalFree} verfügbar`;
-      needTitle = freeOtherTotal > 0
-        ? `${totalFree} exakt frei · ${freeOtherTotal} in anderer Variante: ${otherBreakdown.join(', ')}`
+      needTitle = av.freeOther > 0
+        ? `${totalFree} exakt frei · ${av.freeOther} frei / ${av.totalOther} besessen in anderen Varianten: ${av.breakdown.join(', ')}`
         : `${totalFree} exakt frei`;
-    } else if (freeOtherTotal > 0) {
+    } else if (av.freeOther > 0) {
       ownedClass = 'text-amber-300';
-      needText = `${freeOtherTotal} andere Variante`;
-      needTitle = `${freeOtherTotal} in anderer Variante verfügbar: ${otherBreakdown.join(', ')}`;
+      needText = `A.v: ${av.freeOther}/${av.totalOther}`;
+      needTitle = `${av.freeOther} frei / ${av.totalOther} besessen in anderen Varianten: ${av.breakdown.join(', ')}`;
     }
 
     const badgeCls = (assignedReal === 0 && assignedProxy === 0)
@@ -644,6 +631,27 @@
         <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal + freeProxy === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
       </div>
     </div>`;
+  }
+
+  // Sammelt fuer eine Karte die Aggregate ueber alle ANDEREN Varianten (nicht
+  // selfVariantKey): wieviele sind frei und wieviele insgesamt besessen.
+  // Liefert auch eine Breakdown-Liste fuer Tooltips.
+  function otherVariantsAv(card, selfVariantKey, vIdx) {
+    const out = { freeOther: 0, totalOther: 0, breakdown: [] };
+    if (!card || !vIdx) return out;
+    for (const v of CardDB.variantsOf(card)) {
+      if (v.key === selfVariantKey) continue;
+      const ov = vIdx[v.key];
+      if (!ov) continue;
+      const free = ov.freeReal + ov.freeProxy;
+      const own = ov.real + ov.proxy;
+      if (own > 0) {
+        out.totalOther += own;
+        out.freeOther += free;
+        out.breakdown.push(`${own}× ${v.key}${free > 0 ? ` (${free} frei)` : ''}`);
+      }
+    }
+    return out;
   }
 
   // Singleton-Image am <body>, das beim Hover ueber eine Deck-Text-Zeile mit
@@ -712,21 +720,10 @@
     const slottable = !isWants && !complete && totalFree > 0;
     const proxySlotted = !isWants && assignedProxy > 0;
 
-    // Cross-Variant: andere Varianten derselben Card-ID, die frei verfuegbar sind.
-    let freeOtherTotal = 0;
-    const otherBreakdown = [];
-    if (card && !isWants) {
-      for (const v of CardDB.variantsOf(card)) {
-        if (v.key === entry.variant) continue;
-        const ov = ctx.vIdx[v.key];
-        if (!ov) continue;
-        const f = ov.freeReal + ov.freeProxy;
-        if (f > 0) {
-          otherBreakdown.push(`${f}× ${v.key}`);
-          freeOtherTotal += f;
-        }
-      }
-    }
+    // Cross-Variant: Aggregat ueber andere Varianten der selben Card-ID.
+    const av = !isWants
+      ? otherVariantsAv(card, entry.variant, ctx.vIdx)
+      : { freeOther: 0, totalOther: 0, breakdown: [] };
 
     // Soll-Counter
     const qty = `<span class="inline-flex items-center gap-1">
@@ -759,14 +756,14 @@
       if (complete) {
         inner = '<span class="text-emerald-400">✓</span>';
       } else if (totalFree > 0) {
-        const cross = freeOtherTotal > 0 ? ` <span class="text-amber-300">+${freeOtherTotal} andere V.</span>` : '';
+        const cross = av.freeOther > 0 ? ` <span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>` : '';
         inner = `<span class="text-sky-400">${totalFree} verfügbar</span>${cross}`;
-        titleAttr = freeOtherTotal > 0
-          ? `title="${escapeAttr(totalFree + ' exakt frei · ' + freeOtherTotal + ' in anderer Variante: ' + otherBreakdown.join(', '))}"`
+        titleAttr = av.freeOther > 0
+          ? `title="${escapeAttr(totalFree + ' exakt frei · ' + av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}"`
           : `title="${escapeAttr(totalFree + ' exakt frei')}"`;
-      } else if (freeOtherTotal > 0) {
-        inner = `<span class="text-amber-300">${freeOtherTotal} andere V.</span>`;
-        titleAttr = `title="${escapeAttr(freeOtherTotal + ' in anderer Variante verfügbar: ' + otherBreakdown.join(', '))}"`;
+      } else if (av.freeOther > 0) {
+        inner = `<span class="text-amber-300">A.v: ${av.freeOther}/${av.totalOther}</span>`;
+        titleAttr = `title="${escapeAttr(av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}"`;
       }
       statusCell = `<td class="py-1 pr-3 text-xs whitespace-nowrap" ${titleAttr}>${inner}</td>`;
     }
