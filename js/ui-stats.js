@@ -219,7 +219,7 @@
               <img src="${CardDB.imagePath(CardDB.mainVariantKey(t.card))}" loading="lazy" class="w-10 h-14 object-cover rounded" alt="" />
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-mono text-slate-400">${escapeHtml(t.card.id)}</div>
-                <div class="text-sm font-semibold truncate">${escapeHtml(t.card.name)}</div>
+                <div class="text-sm font-semibold truncate">${escapeHtml(CardDB.cleanDisplayName(t.card))}</div>
                 <div class="text-xs text-amber-400 font-bold">×${t.count}${t.value ? ` · ${Fmt.eur(t.value)}` : ''}</div>
               </div>
             </div>

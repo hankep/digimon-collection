@@ -29,7 +29,7 @@
 
       for (const entry of deck.entries) {
         const card = CardDB.byId.get(entry.cardId);
-        const name = card ? card.name : entry.cardId;
+        const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
         // Variante als Suffix, falls Alt-Art (z.B. ST21-01_P1).
         lines.push(`${entry.count} ${name}   ${entry.variant}`);
       }

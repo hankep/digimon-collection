@@ -24,7 +24,7 @@
 
       for (const entry of deck.entries) {
         const card = CardDB.byId.get(entry.cardId);
-        const name = card ? card.name : entry.cardId;
+        const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
         const id = card ? card.id : entry.cardId;
         const vSuffix = versionSuffix(card, entry.variant);
         lines.push(`${entry.count}x ${name} (${id})${vSuffix}`);

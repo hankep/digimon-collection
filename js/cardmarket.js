@@ -96,7 +96,7 @@
     }
     return {
       cardId: card.id,
-      cardName: card.name,
+      cardName: CardDB.cleanDisplayName(card),
       variant: chosen.key,
       isAlt: chosen.isAlt
     };

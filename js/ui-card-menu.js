@@ -137,7 +137,7 @@
             <img src="${CardDB.imagePath(variantKey)}" alt="" class="w-20 aspect-[5/7] object-cover rounded" />
             <div class="min-w-0 flex-1">
               <div class="text-xs font-mono text-slate-400">${escapeHtml(card.id)}</div>
-              <div class="text-sm font-semibold truncate">${escapeHtml(card.name)}</div>
+              <div class="text-sm font-semibold truncate">${escapeHtml(CardDB.cleanDisplayName(card))}</div>
               <div class="text-xs font-mono text-slate-500 mt-1">${escapeHtml(variantKey)}</div>
             </div>
             <div class="shrink-0">

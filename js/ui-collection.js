@@ -230,7 +230,7 @@
     for (const [variant, n] of Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
       const info = CardDB.allVariants.get(variant);
       const card = info ? CardDB.byId.get(info.cardId) : null;
-      const name = card ? card.name : variant;
+      const name = card ? CardDB.cleanDisplayName(card) : variant;
       const id = card ? card.id : variant;
       lines.push(`${n} ${name} ${id}`);
       total += n;
@@ -563,7 +563,7 @@
         const cardId = tile.dataset.cardId;
         const card = CardDB.byId.get(cardId);
         Notes.openDialog({
-          title: card ? card.name : cardId,
+          title: card ? CardDB.cleanDisplayName(card) : cardId,
           subtitle: cardId,
           value: Store.getCardNote(state.collection, cardId),
           onSave: txt => {
@@ -685,14 +685,14 @@
     const inUseReal = Math.max(0, count - freeReal);
     return `
       <div class="card-tile ${missing ? 'missing' : ''} ${playset ? 'playset' : ''} ${proxy > 0 ? 'tile-proxy-slotted' : ''}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}">
-        <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(card.name)}" />
+        <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(CardDB.cleanDisplayName(card))}" />
         ${badge}
         <span class="tile-note">${Notes.iconHtml(!!note)}</span>
         ${renderPriceRow(card.id)}
         <div class="p-2 pt-1 flex items-center gap-2">
           <div class="min-w-0 flex-1">
             <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${entryRarity(entry) ? ` <span class="text-slate-300">${escapeHtml(rarityLabel(entryRarity(entry)))}</span>` : ''}${state.showAlts && entry.isAlt ? ` <span class="text-amber-400">·${entry.altIdx}</span>` : ''}</div>
-            <div class="text-sm font-semibold truncate" title="${escapeAttr(card.name)}">${escapeHtml(card.name)}</div>
+            <div class="text-sm font-semibold truncate" title="${escapeAttr(CardDB.cleanDisplayName(card))}">${escapeHtml(CardDB.cleanDisplayName(card))}</div>
             ${count > 0 ? `<div class="text-[10px] text-slate-500" title="frei / in Decks">${freeReal} frei${inUseReal > 0 ? ` · ${inUseReal} in Decks` : ''}</div>` : ''}
           </div>
           <div class="flex items-center gap-1 shrink-0">
@@ -782,8 +782,9 @@
     `;
   }
 
-  // Liefert das HTML fuer einen Variant-Header (Variant-Key + CM-Preis/Link +
-  // Main/Alt-Rarity-Zeile + Set-Badge). hero=true wendet groessere Schrift an.
+  // Liefert das HTML fuer einen Variant-Header. Hero-Layout: Variant-Key + Preis
+  // nebeneinander (mehr Platz). Kompakt-Layout (in 'Andere Varianten'-Tiles): in
+  // 3 Zeilen, damit Variant-Key + Set-Badge nicht abgeschnitten werden.
   function variantHeaderHtml(card, v, hero) {
     const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
     const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
@@ -795,21 +796,31 @@
           ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Auf Cardmarket öffnen">CM ${vPriceLow} ↗</a>`
           : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>`)
       : (cmUrl
-          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">Cardmarket ↗</a>`
+          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">CM ↗</a>`
           : '');
     const setBadge = vSet
-      ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
+      ? `<span class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
       : '';
-    const sizeCls = hero ? 'text-sm' : 'text-xs';
+
+    if (hero) {
+      return `
+        <div class="text-sm font-mono text-slate-400 flex items-baseline justify-between gap-2">
+          <span class="truncate">${escapeHtml(v.key)}</span>
+          ${priceHtml}
+        </div>
+        <div class="text-[11px] text-slate-300 mb-2 flex items-baseline justify-between gap-2">
+          <span>${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
+          ${setBadge}
+        </div>`;
+    }
+    // Kompakt-Layout: drei Zeilen, jede mit eigenem Platz.
     return `
-      <div class="${sizeCls} font-mono text-slate-400 flex items-baseline justify-between gap-2">
-        <span class="truncate">${escapeHtml(v.key)}</span>
-        ${priceHtml}
-      </div>
-      <div class="text-[11px] text-slate-300 mb-2 flex items-baseline justify-between gap-2">
-        <span>${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
+      <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(v.key)}">${escapeHtml(v.key)}</div>
+      <div class="text-[11px] text-slate-300 flex items-baseline justify-between gap-2">
+        <span class="truncate">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
         ${setBadge}
-      </div>`;
+      </div>
+      ${priceHtml ? `<div class="text-xs mt-1">${priceHtml}</div>` : ''}`;
   }
 
   function openCardModal(cardId, variantKey) {
@@ -869,7 +880,7 @@
         <div class="modal-content w-[920px] max-w-[95vw]">
           <div class="flex justify-between items-start mb-3">
             <div>
-              <h2 class="text-2xl font-bold">${escapeHtml(card.name)}</h2>
+              <h2 class="text-2xl font-bold">${escapeHtml(CardDB.cleanDisplayName(card))}</h2>
               <div class="flex gap-2 mt-1 text-xs flex-wrap">
                 ${colorPills}
                 ${card.type ? `<span class="bg-slate-700 px-2 py-0.5 rounded">${escapeHtml(card.type)}</span>` : ''}

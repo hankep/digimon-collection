@@ -260,6 +260,18 @@
     let missingCmCount = 0;
     let missingNoCm = 0;
     const isWants = isListKind(deck.kind);
+    // Wants-Coverage: wie viele der fehlenden Slots stehen schon in einer Wants-Liste?
+    // Aggregat pro variant ueber alle kind='wants'-Listen.
+    const wantsByVariant = new Map();
+    if (!isWants) {
+      for (const d of state.decksState.decks) {
+        if (d.kind !== 'wants') continue;
+        for (const e of d.entries) {
+          wantsByVariant.set(e.variant, (wantsByVariant.get(e.variant) || 0) + e.count);
+        }
+      }
+    }
+    let missingInWants = 0;
     if (window.CM && CM.hasData()) {
       const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
       for (const entry of deck.entries) {
@@ -268,6 +280,10 @@
           ? entry.count
           : Math.max(0, entry.count - (sa ? sa.real : 0));
         if (!need) continue;
+        if (!isWants) {
+          const want = wantsByVariant.get(entry.variant) || 0;
+          missingInWants += Math.min(need, want);
+        }
         const p = CM.get(entry.cardId);
         if (p && p.low != null) {
           missingCmSum += p.low * need;
@@ -276,10 +292,20 @@
           missingNoCm += need;
         }
       }
+    } else if (!isWants) {
+      // Auch ohne CM-Daten Wants-Coverage zaehlen.
+      const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+      for (const entry of deck.entries) {
+        const sa = da[entry.variant];
+        const need = Math.max(0, entry.count - (sa ? sa.real : 0));
+        if (!need) continue;
+        const want = wantsByVariant.get(entry.variant) || 0;
+        missingInWants += Math.min(need, want);
+      }
     }
     const costLine = total > 0
       ? `<span class="text-emerald-400 font-bold">${Fmt.eur(cost.total)}</span> <span class="text-slate-500">(bereits bezahlt)</span>`
-        + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>` : '')
+        + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}` : '')
         + (cost.unknown ? ` · <span class="text-slate-400">${cost.unknown} ohne Preis</span>` : '')
         + (missingCmCount > 0
             ? ` · <span class="text-amber-400">fehlend CM: ${Fmt.eur(missingCmSum)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
@@ -480,7 +506,7 @@
         const cardId = row.dataset.entryCardId;
         const card = CardDB.byId.get(cardId);
         Notes.openDialog({
-          title: card ? card.name : cardId,
+          title: card ? CardDB.cleanDisplayName(card) : cardId,
           subtitle: cardId,
           value: Store.getCardNote(collectionCache, cardId),
           onSave: txt => {
@@ -497,8 +523,8 @@
     const deck = currentDeck();
     const isWants = deck && isListKind(deck.kind);
     const card = CardDB.byId.get(entry.cardId);
-    const name = card ? card.name : entry.cardId;
-    const cm = (window.CM && CM.hasData()) ? CM.get(entry.cardId) : null;
+    const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
+    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
     const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
 
@@ -856,14 +882,15 @@
             ? `<div class="absolute top-1 left-1 bg-amber-500 text-slate-900 text-[10px] font-bold rounded px-1.5 py-0.5">Alt ${altIdx}</div>`
             : `<div class="absolute top-1 left-1 bg-slate-700 text-slate-200 text-[10px] font-bold rounded px-1.5 py-0.5">Main</div>`;
         }
+        const cName = CardDB.cleanDisplayName(card);
         return `<button data-add="${card.id}|${variant}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}"
           class="card-tile ${ownedShown === 0 ? 'missing' : ''} ${ownedShown >= 4 ? 'playset' : ''} text-left">
-          <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(card.name)}" />
+          <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(cName)}" />
           ${badge}
           <div class="p-2 flex items-center gap-2">
             <div class="min-w-0 flex-1">
               <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
-              <div class="text-sm font-semibold truncate" title="${escapeAttr(card.name)}">${escapeHtml(card.name)}</div>
+              <div class="text-sm font-semibold truncate" title="${escapeAttr(cName)}">${escapeHtml(cName)}</div>
             </div>
             <div class="flex items-center gap-1 shrink-0">
               ${proxyShown > 0 ? `<div class="proxy-badge" title="${proxyShown} Proxy">+${proxyShown}P</div>` : ''}
@@ -938,7 +965,7 @@
     if (!deck.entries.length) { alert('Diese Liste ist leer.'); return; }
     const lines = deck.entries.map(e => {
       const card = CardDB.byId.get(e.cardId);
-      const cardName = card ? card.name : e.cardId;
+      const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const id = card ? card.id : e.cardId;
       const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
       return `${e.count} ${cardName} ${id}${vSuffix}`;
@@ -1330,7 +1357,7 @@
         const cardId = row.dataset.entryCardId;
         const card = CardDB.byId.get(cardId);
         Notes.openDialog({
-          title: card ? card.name : cardId,
+          title: card ? CardDB.cleanDisplayName(card) : cardId,
           subtitle: cardId,
           value: Store.getCardNote(collectionCache, cardId),
           onSave: txt => {
@@ -1345,8 +1372,8 @@
 
   function renderMainWantsTile(item) {
     const card = CardDB.byId.get(item.cardId);
-    const name = card ? card.name : item.cardId;
-    const cm = (window.CM && CM.hasData()) ? CM.get(item.cardId) : null;
+    const name = card ? CardDB.cleanDisplayName(card) : item.cardId;
+    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(item.variant) : null;
     const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
     const note = Store.getCardNote(collectionCache, item.cardId);
     const tooltip = item.sources.map(s => `${s.name}: ${s.n}`).join('\n');
