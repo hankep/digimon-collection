@@ -251,7 +251,7 @@
   function renderSetBlock(block) {
     const rarityPills = Array.from(block.perRarity.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([r, n]) => `<span class="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs">${escapeHtml(r)}: <span class="font-semibold">${n}</span></span>`)
+      .map(([r, n]) => `<span class="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs">${escapeHtml(CardDB.rarityShort(r))}: <span class="font-semibold">${n}</span></span>`)
       .join(' ');
 
     const bucketPills = BUCKETS
@@ -321,7 +321,7 @@
         ${priceRow}
         <div class="p-2 pt-1 flex items-center gap-2">
           <div class="min-w-0 flex-1">
-            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(it.variant)}${it.rarity ? ` <span class="text-slate-300">${escapeHtml(it.rarity)}</span>` : ''}</div>
+            <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(it.variant)}${it.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(it.rarity))}</span>` : ''}</div>
             <div class="text-sm font-semibold truncate" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</div>
           </div>
           <div class="count-badge shrink-0">${it.count}</div>
@@ -346,7 +346,7 @@
         <td class="py-1 pr-4 whitespace-nowrap">${qty}</td>
         <td class="py-1 pr-4 relative"><span class="block truncate max-w-[22rem]" title="${escapeAttr(it.name)}">${escapeHtml(it.name)}</span><img class="wants-preview" loading="lazy" src="${CardDB.imagePath(it.variant)}" alt="${escapeAttr(it.name)}" /></td>
         <td class="py-1 pr-4 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(it.variant)}</td>
-        <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(it.rarity)}</td>
+        <td class="py-1 pr-4 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(CardDB.rarityShort(it.rarity))}</td>
         <td class="py-1 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${priceTxt}</td>
       </tr>`;
   }

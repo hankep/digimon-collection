@@ -20,9 +20,8 @@
     setGroups: { BT: true, EX: true, ST: true, Andere: true }
   };
 
-  // Anzeige-Label je Rarity (UR → Ultimate Rare). Wert bleibt intern "UR".
-  const RARITY_DISPLAY = { 'UR': 'Ultimate Rare' };
-  function rarityLabel(r) { return RARITY_DISPLAY[r] || r; }
+  // Anzeige-Label je Rarity: kompakte Abkuerzung (C/U/R/SR/SEC/UR/P/Alt).
+  function rarityLabel(r) { return (window.CardDB && CardDB.rarityShort) ? CardDB.rarityShort(r) : (r || ''); }
   // Effektive Rarity einer Variante: Alt-Arts gelten als "Alternative Art".
   const ALT_RARITY = 'Alternative Art';
   function entryRarity(entry) { return entry.isAlt ? ALT_RARITY : entry.card.rarity; }

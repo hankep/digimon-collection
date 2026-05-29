@@ -538,7 +538,7 @@
           <span class="text-amber-400" title="Cardmarket low">${cmLow ? 'CM: ' + cmLow : ''}</span>
         </div>
         <div class="p-2 pt-1">
-          <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(entry.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
+          <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(entry.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
           <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
         </div>
         <div class="qty-controls">
@@ -614,7 +614,7 @@
       </div>
       <div class="p-2 pt-1 flex items-center gap-2">
         <div class="min-w-0 flex-1">
-          <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(entry.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
+          <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(entry.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
           <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
         </div>
         <div class="flex items-center gap-1 shrink-0">
@@ -647,7 +647,7 @@
     const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
     const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
-    const rarity = card && card.rarity ? card.rarity : '';
+    const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
 
     const sa = ctx.da[entry.variant];
     const assignedReal = sa ? sa.real : 0;
@@ -889,7 +889,7 @@
           ${badge}
           <div class="p-2 flex items-center gap-2">
             <div class="min-w-0 flex-1">
-              <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
+              <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
               <div class="text-sm font-semibold truncate" title="${escapeAttr(cName)}">${escapeHtml(cName)}</div>
             </div>
             <div class="flex items-center gap-1 shrink-0">
@@ -1387,7 +1387,7 @@
         <span class="text-rose-400" title="${escapeAttr(tooltip)}">fehlt <b>${item.count}</b></span>
       </div>
       <div class="p-2 pt-1">
-        <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(item.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(card.rarity)}</span>` : ''}</div>
+        <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(item.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
         <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
         ${reprintPills ? `<div class="reprint-pills mt-1">${reprintPills}</div>` : ''}
       </div>

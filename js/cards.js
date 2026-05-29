@@ -280,6 +280,26 @@
     return head || s;
   }
 
+  // Rarity-Anzeige als Kurz-Code (C/U/R/SR/SEC/UR/P/Alt). cards.js normalisiert
+  // bereits auf die ausgeschriebenen Formen (Common/Uncommon/...), das hier ist
+  // die Umkehrung fuer kompaktes Display in Tiles/Tabellen.
+  const RARITY_SHORT = {
+    'Common': 'C',
+    'Uncommon': 'U',
+    'Rare': 'R',
+    'Super Rare': 'SR',
+    'Secret Rare': 'SEC',
+    'Ultimate Rare': 'UR',
+    'UR': 'UR',
+    'Promo': 'P',
+    'Token': 'T',
+    'Alternative Art': 'Alt'
+  };
+  function rarityShort(r) {
+    if (!r) return '';
+    return RARITY_SHORT[r] || r;
+  }
+
   // Liefert den sauberen Anzeigenamen einer Karte.
   //
   // raw.tcgplayer_name enthaelt fuer manche Karten ZUSAETZLICHE Informationen,
@@ -485,6 +505,7 @@
     allSetsPillsHtml,
     cardmarketUrl,
     setNameByCode,
-    cleanDisplayName
+    cleanDisplayName,
+    rarityShort
   };
 })();
