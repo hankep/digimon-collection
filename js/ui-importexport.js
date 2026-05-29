@@ -550,7 +550,7 @@
   // Baut den vollständigen Trade-State aus Sender-Einträgen.
   function buildTradeEntries(entries) {
     const coll = Store.loadCollection();
-    const vIdx = Store.buildVariantIndex(coll);
+    const vIdx = Store.getVariantIndex(coll);
     return entries.map(e => {
       const card = CardDB.byId.get(e.cardId);
       const variants = card ? CardDB.variantsOf(card) : [];

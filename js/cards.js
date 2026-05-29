@@ -147,7 +147,13 @@
     return card.image ? variantKeyFromImage(card.image) : card.id;
   }
 
+  // Per-Card memoisiert. Carddata ist statisch fuer die Session, der Cache lebt
+  // bis Reload. Spart hundert+ redundante Iterationen pro Grid-Render.
+  const variantsOfCache = new Map();
   function variantsOf(card) {
+    if (!card) return [];
+    const hit = variantsOfCache.get(card.id);
+    if (hit) return hit;
     const list = [];
     if (card.image) list.push({ key: variantKeyFromImage(card.image), isAlt: false });
     if (Array.isArray(card.altImages)) {
@@ -155,6 +161,7 @@
         list.push({ key: variantKeyFromImage(alt), isAlt: true });
       }
     }
+    variantsOfCache.set(card.id, list);
     return list;
   }
 

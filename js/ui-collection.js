@@ -44,7 +44,6 @@
   }
 
   function render() {
-    state.variantIdx = Store.buildVariantIndex(state.collection);
     rootEl.innerHTML = `
       <div class="flex flex-col md:flex-row gap-4">
         <aside class="w-full md:w-64 md:shrink-0">
@@ -348,7 +347,7 @@
     // Reprint-aware: Karten zählen, wenn sie unter dem Set erhältlich sind
     // (Origin oder Reprint). Konsistent mit dem Set-Filter im Grid.
     const cards = setCode ? CardDB.all.filter(c => CardDB.appearsInSet(c, setCode)) : CardDB.all;
-    const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
+    const idx = Store.getVariantIndex(state.collection);
     let owned = 0;
     for (const c of cards) {
       for (const v of CardDB.variantsOf(c)) {
@@ -364,7 +363,7 @@
     // renderGrid füllt filteredCardsCache vor jedem renderStats; Fallback für
     // den seltenen Fall, dass renderStats allein läuft.
     const cards = state.filteredCardsCache || filteredCards();
-    const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
+    const idx = Store.getVariantIndex(state.collection);
     let ownedUnique = 0, totalCopies = 0, totalProxies = 0;
     for (const c of cards) {
       let realCopies = 0, proxyCopies = 0;
@@ -452,7 +451,7 @@
         out.push({ card, variantKey: CardDB.mainVariantKey(card), isAlt: false, altIdx: 0 });
       }
     }
-    const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
+    const idx = Store.getVariantIndex(state.collection);
     const variantOwned = k => { const s = idx[k]; return s ? (s.real + s.proxy) : 0; };
     const variantReal  = k => { const s = idx[k]; return s ? s.real : 0; };
     const variantProxy = k => { const s = idx[k]; return s ? s.proxy : 0; };
@@ -490,7 +489,6 @@
   }
 
   function renderGrid() {
-    state.variantIdx = Store.buildVariantIndex(state.collection);
     // Suchergebnis cachen, damit renderStats es nicht ein zweites Mal berechnet.
     state.filteredCardsCache = filteredCards();
     lastFilteredCards = expandToEntries(state.filteredCardsCache);
@@ -542,7 +540,6 @@
           Store.setCount(state.collection, variant, current + delta);
         }
         Store.saveCollection(state.collection);
-        state.variantIdx = Store.buildVariantIndex(state.collection);
         // Counts haben sich geändert → Cache verwerfen, damit renderStats unter
         // aktivem „Nur fehlende/Besitz/Proxy"-Filter korrekt neu zählt.
         state.filteredCardsCache = null;
@@ -657,7 +654,7 @@
   function renderTile(entry) {
     const card = entry.card;
     const variant = entry.variantKey;
-    const idx = state.variantIdx || Store.buildVariantIndex(state.collection);
+    const idx = Store.getVariantIndex(state.collection);
     const s = idx[variant] || { real: 0, proxy: 0, freeReal: 0, freeProxy: 0, assignedReal: 0, assignedProxy: 0 };
     const count = s.real;
     const proxy = s.proxy;
@@ -721,7 +718,7 @@
   function renderDeckUsage(card) {
     const decksState = Store.loadDecks();
     if (!decksState || !decksState.decks || !decksState.decks.length) return '';
-    const dIdx = Store.buildDeckAssignedIndex(state.collection);
+    const dIdx = Store.getDeckAssignedIndex(state.collection);
     // Gruppiert nach kind: wants / deck / trade (Reihenfolge fest, sonstige ans Ende).
     // Pro Deck eine Zeile, die alle Variant-Eintraege dieser Card-ID aggregiert —
     // im Deckbau ist nur die Card-ID relevant, nicht die konkrete Variante / das
@@ -827,7 +824,7 @@
     // selben Card-ID (welche Alternativen habe ich noch); im kompakten Tile
     // einer Alt-Variante zeigt es x/y dieser EXAKTEN Variante (wie viele habe
     // ich davon frei / insgesamt). Nur anzeigen, wenn frei > 0.
-    const vIdx = state.variantIdx || (state.collection ? Store.buildVariantIndex(state.collection) : null);
+    const vIdx = state.collection ? Store.getVariantIndex(state.collection) : null;
     let avHtml = '';
     if (vIdx) {
       if (hero) {
@@ -1090,7 +1087,6 @@
   }
 
   function refreshVariant(block, variantKey) {
-    state.variantIdx = Store.buildVariantIndex(state.collection);
     state.filteredCardsCache = null;  // Counts geändert → renderStats neu zählen lassen
     const body = block.querySelector(`[data-variant-body="${cssEscape(variantKey)}"]`);
     body.innerHTML = renderVariantBody(variantKey);

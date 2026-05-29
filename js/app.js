@@ -81,7 +81,10 @@
 
   function onLoggedOut() {
     // Lokale Daten verwerfen — Cloud ist die Quelle der Wahrheit. Beim
-    // naechsten Login werden sie frisch reingepulled.
+    // naechsten Login werden sie frisch reingepulled. Pending debounced Saves
+    // muessen vorher gecancelt sein, damit sie nicht nach dem Clear noch
+    // hineinschreiben.
+    if (window.Store && Store.cancelPendingSaves) Store.cancelPendingSaves();
     try {
       localStorage.removeItem(window.Util.LS_KEYS.collection);
       localStorage.removeItem(window.Util.LS_KEYS.decks);

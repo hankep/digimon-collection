@@ -40,14 +40,63 @@
   // opts.touch === false  → updatedAt NICHT neu setzen (z.B. beim Übernehmen von
   //                          Remote-Daten, damit der Zeitstempel erhalten bleibt).
   // opts.silent === true   → kein 'collection-changed'-Event (kein Auto-Sync-Push).
+  // Save: dispatcht das collection-changed-Event sofort (Sync push debounced
+  // separat), aber den LocalStorage-Write debouncen wir gegen Bulk-Edits. Bei
+  // Bedarf manuell flush() rufen (Logout, beforeunload). Cache wird sofort
+  // invalidiert, damit Renderer frische Daten sehen.
+  const SAVE_DEBOUNCE_MS = 250;
+  let collSaveTimer = null;
+  let collSavePending = null;
+  let decksSaveTimer = null;
+  let decksSavePending = null;
+
   function saveCollection(collection, opts) {
     opts = opts || {};
     if (opts.touch !== false) collection.updatedAt = new Date().toISOString();
-    writeJSON(COLLECTION_KEY, collection);
+    invalidateIndexCache();
     if (!opts.silent) {
       try { document.dispatchEvent(new CustomEvent('collection-changed')); } catch (e) {}
     }
+    collSavePending = collection;
+    if (collSaveTimer) clearTimeout(collSaveTimer);
+    collSaveTimer = setTimeout(flushCollectionSave, SAVE_DEBOUNCE_MS);
   }
+
+  function flushCollectionSave() {
+    if (collSaveTimer) { clearTimeout(collSaveTimer); collSaveTimer = null; }
+    if (!collSavePending) return;
+    const coll = collSavePending;
+    collSavePending = null;
+    writeJSON(COLLECTION_KEY, coll);
+  }
+
+  function flushDecksSave() {
+    if (decksSaveTimer) { clearTimeout(decksSaveTimer); decksSaveTimer = null; }
+    if (!decksSavePending) return;
+    const state = decksSavePending;
+    decksSavePending = null;
+    writeJSON(DECKS_KEY, state);
+  }
+
+  // Beide pending Saves sofort durchschreiben. Aufgerufen bei kritischen Punkten
+  // (vor Sync-Push, beforeunload).
+  function flushSaves() {
+    flushCollectionSave();
+    flushDecksSave();
+  }
+
+  // Pending Saves verwerfen (z.B. bei Logout — danach wird LocalStorage
+  // weggewischt; ein nachgelagerter debounced Write wuerde sonst alte Daten
+  // wieder schreiben).
+  function cancelPendingSaves() {
+    if (collSaveTimer) { clearTimeout(collSaveTimer); collSaveTimer = null; }
+    if (decksSaveTimer) { clearTimeout(decksSaveTimer); decksSaveTimer = null; }
+    collSavePending = null;
+    decksSavePending = null;
+  }
+
+  // beforeunload-Garantie: keine debouncten Writes verlieren.
+  window.addEventListener('beforeunload', flushSaves);
 
   // ── Copy-Primitive ────────────────────────────────────────────────────────
 
@@ -67,6 +116,35 @@
       if (c.variant === variant) out.push(Object.assign({ id }, c));
     }
     return out;
+  }
+
+  // ── Index-Cache ──────────────────────────────────────────────────────────
+  // VariantIndex/DeckAssignedIndex sind teure O(N)-Walks ueber alle Copies. Sie
+  // werden in jedem Render mehrmals gebraucht; ohne Cache lief das pro Filter-
+  // Tastendruck 4-5 mal. Cache lebt solange coll referenziell gleich bleibt UND
+  // kein Mutator/Save invalidiert hat.
+  let cachedColl = null;
+  let cachedVIdx = null;
+  let cachedDAIdx = null;
+
+  function invalidateIndexCache() {
+    cachedColl = null;
+    cachedVIdx = null;
+    cachedDAIdx = null;
+  }
+
+  function getVariantIndex(coll) {
+    if (coll === cachedColl && cachedVIdx) return cachedVIdx;
+    if (coll !== cachedColl) { cachedColl = coll; cachedDAIdx = null; }
+    cachedVIdx = buildVariantIndex(coll);
+    return cachedVIdx;
+  }
+
+  function getDeckAssignedIndex(coll) {
+    if (coll === cachedColl && cachedDAIdx) return cachedDAIdx;
+    if (coll !== cachedColl) { cachedColl = coll; cachedVIdx = null; }
+    cachedDAIdx = buildDeckAssignedIndex(coll);
+    return cachedDAIdx;
   }
 
   // Performance-Helper: ein einziger Walk durch alle Copies, liefert pro Variante
@@ -147,19 +225,27 @@
       // dem Reprint-Umbau oder manuell hinzugefügte Kopie ohne Set-Info).
       originSet: opts.originSet || null
     };
+    invalidateIndexCache();
     return id;
   }
 
   function deleteCopy(coll, copyId) {
     delete coll.copies[copyId];
+    invalidateIndexCache();
   }
 
   function assignToDeck(coll, copyId, deckId) {
-    if (coll.copies[copyId]) coll.copies[copyId].deckId = deckId;
+    if (coll.copies[copyId]) {
+      coll.copies[copyId].deckId = deckId;
+      invalidateIndexCache();
+    }
   }
 
   function releaseToFree(coll, copyId) {
-    if (coll.copies[copyId]) coll.copies[copyId].deckId = null;
+    if (coll.copies[copyId]) {
+      coll.copies[copyId].deckId = null;
+      invalidateIndexCache();
+    }
   }
 
   // Greedy-Reservierung: zuerst freie reale Kopien (älteste zuerst), dann freie Proxies.
@@ -315,6 +401,7 @@
     for (let i = 0; i < toRemove && i < reals.length; i++) {
       delete coll.copies[reals[i].id];
     }
+    invalidateIndexCache();
   }
 
   function getPrices(coll, variant) {
@@ -329,6 +416,7 @@
     const sorted = realCopiesSortedByPrice(coll, variant);
     if (idx < 0 || idx >= sorted.length) return;
     delete coll.copies[sorted[idx].id];
+    invalidateIndexCache();
   }
 
   function setPriceAt(coll, variant, idx, price) {
@@ -336,6 +424,7 @@
     if (idx < 0 || idx >= sorted.length) return;
     const id = sorted[idx].id;
     coll.copies[id].price = (price == null || Number.isNaN(Number(price))) ? null : Number(price);
+    // Preis aendert keine Counts → kein Cache-Invalidate noetig.
   }
 
   function getProxyCount(coll, variant) {
@@ -361,6 +450,7 @@
     for (let i = 0; i < toRemove && i < proxies.length; i++) {
       delete coll.copies[proxies[i].id];
     }
+    invalidateIndexCache();
   }
 
   function getOwnedTotal(coll, variant) {
@@ -395,14 +485,16 @@
     return readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
   }
 
-  // opts wie bei saveCollection: { touch, silent }.
+  // opts wie bei saveCollection: { touch, silent }. Schreibt debounced.
   function saveDecks(state, opts) {
     opts = opts || {};
     if (opts.touch !== false) state.updatedAt = new Date().toISOString();
-    writeJSON(DECKS_KEY, state);
     if (!opts.silent) {
       try { document.dispatchEvent(new CustomEvent('decks-changed')); } catch (e) {}
     }
+    decksSavePending = state;
+    if (decksSaveTimer) clearTimeout(decksSaveTimer);
+    decksSaveTimer = setTimeout(flushDecksSave, SAVE_DEBOUNCE_MS);
   }
 
   function createDeck(state, name, kind) {
@@ -477,13 +569,18 @@
     // Collection
     loadCollection,
     saveCollection,
+    flushSaves,
+    cancelPendingSaves,
 
     // Copy-Primitive
     allCopies,
     copiesOfVariant,
     buildVariantIndex,
+    getVariantIndex,
+    invalidateIndexCache,
     variantStats,
     buildDeckAssignedIndex,
+    getDeckAssignedIndex,
     deckAssignedStats,
     createCopy,
     deleteCopy,

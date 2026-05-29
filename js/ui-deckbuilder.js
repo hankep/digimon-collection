@@ -155,8 +155,8 @@
       });
       return;
     }
-    const idx = Store.buildVariantIndex(collectionCache);
-    const dIdx = Store.buildDeckAssignedIndex(collectionCache);
+    const idx = Store.getVariantIndex(collectionCache);
+    const dIdx = Store.getDeckAssignedIndex(collectionCache);
 
     const renderItem = d => {
       const active = d.id === state.activeDeckId;
@@ -291,7 +291,7 @@
     }
     let missingInWants = 0;
     if (window.CM && CM.hasData()) {
-      const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+      const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
       for (const entry of deck.entries) {
         const sa = da[entry.variant];
         const need = isWants
@@ -312,7 +312,7 @@
       }
     } else if (!isWants) {
       // Auch ohne CM-Daten Wants-Coverage zaehlen.
-      const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+      const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
       for (const entry of deck.entries) {
         const sa = da[entry.variant];
         const need = Math.max(0, entry.count - (sa ? sa.real : 0));
@@ -468,8 +468,8 @@
     // Indizes einmal pro Render bauen und an alle Tiles durchreichen (statt
     // O(Copies)-Scans pro Eintrag). da = Slots dieses Decks, vIdx = Frei-Pool.
     const ctx = {
-      vIdx: Store.buildVariantIndex(collectionCache),
-      da: Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {}
+      vIdx: Store.getVariantIndex(collectionCache),
+      da: Store.getDeckAssignedIndex(collectionCache)[deck.id] || {}
     };
     // Filter „Nur fehlende": Einträge mit fehlenden ECHTEN Kopien (Proxies zählen
     // als fehlend). Nur für echte Decks — Wants/Trade sind reine Listen.
@@ -871,8 +871,8 @@
     }
     if (mode === 'status') {
       const deck = currentDeck();
-      const idx = Store.buildVariantIndex(collectionCache);
-      const da = deck ? (Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {}) : {};
+      const idx = Store.getVariantIndex(collectionCache);
+      const da = deck ? (Store.getDeckAssignedIndex(collectionCache)[deck.id] || {}) : {};
       // 0 = slottbar (fehlt + frei verfügbar), 1 = fehlt aber nicht verfügbar, 2 = fertig
       const rankOf = e => {
         if (!deck) return 2;
@@ -946,7 +946,7 @@
       sortBy: 'name'
     });
     // Einmal pro Render bauen — für den Owned-Filter UND die Tile-Counts unten.
-    const vIdx = Store.buildVariantIndex(collectionCache);
+    const vIdx = Store.getVariantIndex(collectionCache);
     if (state.pickerOwnedOnly) {
       results = results.filter(c => {
         for (const v of CardDB.variantsOf(c)) {
@@ -1042,7 +1042,7 @@
 
   function exportMissing(deck) {
     const isWants = isListKind(deck.kind);
-    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+    const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
     const missingEntries = deck.entries
       .map(e => {
         const sa = da[e.variant];
@@ -1124,7 +1124,7 @@
   // braucht — der User slottet vorher manuell, was er noch verteilen kann.
   function openMissingToWantsDialog(deck) {
     if (isListKind(deck.kind)) return;
-    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+    const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
     const missingEntries = deck.entries
       .map(e => {
         const sa = da[e.variant];
@@ -1550,7 +1550,7 @@
     // Pro Eintrag: echter Slot-Fehlbestand (Proxies zählen als „fehlt", weil ersetzt).
     // Wants-/Trade-Listen sind explizit Listen fehlender Karten — der ganze Count zählt.
     const isWants = isListKind(deck.kind);
-    const da = Store.buildDeckAssignedIndex(collectionCache)[deck.id] || {};
+    const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
     const out = [];
     for (const e of deck.entries) {
       const sa = da[e.variant];

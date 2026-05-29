@@ -131,6 +131,9 @@
   async function push() {
     if (!client || !isLoggedIn()) return;
     clearTimeout(pushTimer);
+    // LocalStorage muss aktuell sein, bevor wir hochladen — Store debounced
+    // den Disk-Write, daher vorm Push sicher flushen.
+    if (Store.flushSaves) Store.flushSaves();
     setStatus('syncing');
     const snapshot = localUpdatedAt();   // Stand, den dieser Push hochlädt
     const payload = {
