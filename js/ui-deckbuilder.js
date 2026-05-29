@@ -1777,5 +1777,29 @@
   document.addEventListener('collection-changed', onExternalChange);
   document.addEventListener('decks-changed', onExternalChange);
 
-  window.UIDeckbuilder = { init, refresh };
+  // Aktuell aktive Deck-Liste (nicht Main-Wants, nicht null). Nutzbar von
+  // anderen Modulen (z.B. Card-Modal: 'zu aktiver Liste hinzufuegen').
+  function getActiveDeck() {
+    if (!state.activeDeckId || isMainWants(state.activeDeckId)) return null;
+    const decks = (state.decksState && state.decksState.decks) || Store.loadDecks().decks || [];
+    return decks.find(d => d.id === state.activeDeckId) || null;
+  }
+
+  // Karte direkt der aktiven Liste hinzufuegen. Persistiert + Auto-Claim
+  // (nur bei Decks, nicht bei Wants/Trade). Refresh laeuft ueber das
+  // decks-changed-Event.
+  function addToActiveDeck(cardId, variantKey, n) {
+    n = n || 1;
+    if (!state.decksState) state.decksState = Store.loadDecks();
+    if (!collectionCache) collectionCache = Store.loadCollection();
+    const deck = state.decksState.decks.find(d => d.id === state.activeDeckId);
+    if (!deck || isMainWants(state.activeDeckId)) return false;
+    Store.addToDeck(deck, cardId, variantKey, n);
+    if (!isListKind(deck.kind)) Store.autoClaim(collectionCache, deck.id, variantKey, n);
+    Store.saveDecks(state.decksState);
+    Store.saveCollection(collectionCache);
+    return true;
+  }
+
+  window.UIDeckbuilder = { init, refresh, getActiveDeck, addToActiveDeck };
 })();

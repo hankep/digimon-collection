@@ -919,6 +919,16 @@
     const colorPills = (card.color || []).map(c => `<span class="color-${c} px-2 py-0.5 rounded text-xs font-bold">${c}</span>`).join(' ');
     const effect = card.effect || (card.raw && card.raw.main_effect) || '';
 
+    // 'Zur aktiven Liste hinzufuegen'-Button: nur sichtbar wenn der Deckbuilder
+    // gerade eine echte Liste aktiv hat (nicht Main-Wants).
+    const activeDeck = (window.UIDeckbuilder && UIDeckbuilder.getActiveDeck) ? UIDeckbuilder.getActiveDeck() : null;
+    const addToDeckBtn = activeDeck
+      ? `<button data-add-to-active-deck class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded inline-flex items-center gap-1 max-w-full"
+           title="Diese Variante zu &quot;${escapeAttr(activeDeck.name)}&quot; (${escapeAttr(activeDeck.kind)}) hinzufuegen">
+           <span class="shrink-0">+ Zu Liste:</span><span class="truncate">${escapeHtml(activeDeck.name)}</span>
+         </button>`
+      : '';
+
     const heroBlockHtml = `
       <div class="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-4 mb-4" data-variant-block="${escapeAttr(heroVariant.key)}">
         <div class="min-w-0">
@@ -926,6 +936,7 @@
         </div>
         <div class="space-y-3 min-w-0">
           ${variantHeaderHtml(card, heroVariant, true)}
+          ${addToDeckBtn}
           ${effect ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap leading-relaxed">${escapeHtml(effect)}</div>` : ''}
           <div class="bg-slate-900 rounded p-3" data-variant-body="${escapeAttr(heroVariant.key)}">${renderVariantBody(heroVariant.key)}</div>
         </div>
@@ -985,6 +996,17 @@
             openCardModal(cardId, el.dataset.promoteVariant);
           });
         });
+        const addBtn = content.querySelector('[data-add-to-active-deck]');
+        if (addBtn) {
+          addBtn.addEventListener('click', () => {
+            if (!window.UIDeckbuilder || !UIDeckbuilder.addToActiveDeck) return;
+            const ok = UIDeckbuilder.addToActiveDeck(cardId, heroVariant.key, 1);
+            if (ok && window.Util && Util.toast) {
+              const d = UIDeckbuilder.getActiveDeck();
+              Util.toast(`Hinzugefügt zu „${d ? d.name : ''}"`, 'success', 2200);
+            }
+          });
+        }
         wireVariantBlocks(content);
       }
     });
