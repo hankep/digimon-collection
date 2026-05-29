@@ -12,8 +12,12 @@
   };
 
   const initialised = new Set();
+  const dirty = new Set();
   let activeTab = null;
 
+  // Beim Wechsel teurer Tab-Wechsel: Init nur, wenn (a) noch nie initialisiert
+  // oder (b) Daten haben sich geaendert, waehrend dieser Tab versteckt war.
+  // Sichtbare Tabs reagieren ohnehin auf collection-/decks-changed selbst.
   function activateTab(name) {
     if (!tabs[name]) return;
     activeTab = name;
@@ -23,10 +27,18 @@
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === name);
     });
-    // Beim Wechsel neu rendern, damit z.B. Decks-Tab Änderungen aus IO-Tab sieht.
-    tabs[name].initFn();
-    initialised.add(name);
+    if (!initialised.has(name) || dirty.has(name)) {
+      tabs[name].initFn();
+      initialised.add(name);
+      dirty.delete(name);
+    }
   }
+
+  function markOtherTabsDirty() {
+    Object.keys(tabs).forEach(t => { if (t !== activeTab) dirty.add(t); });
+  }
+  document.addEventListener('collection-changed', markOtherTabsDirty);
+  document.addEventListener('decks-changed', markOtherTabsDirty);
 
   let appShellWired = false;
 
@@ -89,6 +101,9 @@
       localStorage.removeItem(window.Util.LS_KEYS.collection);
       localStorage.removeItem(window.Util.LS_KEYS.decks);
     } catch (e) {}
+    // Tab-State zuruecksetzen — beim naechsten Login wird frisch initialisiert.
+    initialised.clear();
+    dirty.clear();
     showAuthGate();
   }
 
@@ -114,9 +129,15 @@
     }
   }
 
-  // Rendert den aktuell sichtbaren Tab neu (z.B. nachdem Sync Remote-Daten angewandt hat).
+  // Rendert den aktuell sichtbaren Tab neu (z.B. nachdem Sync Remote-Daten
+  // angewandt hat). Andere Tabs werden als dirty markiert; bei naechstem
+  // Aktivieren rendern sie sich frisch.
   function refreshActiveTab() {
-    if (activeTab && tabs[activeTab]) tabs[activeTab].initFn();
+    if (activeTab && tabs[activeTab]) {
+      tabs[activeTab].initFn();
+      initialised.add(activeTab);
+    }
+    markOtherTabsDirty();
   }
 
   window.App = { refreshActiveTab };
