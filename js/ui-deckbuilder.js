@@ -1758,8 +1758,11 @@
     pendingRefresh = true;
     requestAnimationFrame(() => {
       pendingRefresh = false;
-      collectionCache = Store.loadCollection();
-      state.decksState = Store.loadDecks();
+      // Lokale Mutationen halten collectionCache/state.decksState in-memory
+      // bereits aktuell — kein erneutes Laden aus LocalStorage noetig (und
+      // tatsaechlich gefaehrlich: bei eng getakteten Edits kann das den frisch
+      // mutierten Zustand mit dem persistierten ueberschreiben). Remote-Apply
+      // hat einen eigenen Refresh-Pfad ueber refreshActiveTab.
       renderDeckList();
       renderDeckDetail();
       renderPicker();
