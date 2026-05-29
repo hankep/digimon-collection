@@ -68,14 +68,9 @@
     }
   });
 
+  // Im compact-Format bleibt die Main-Variante ohne V-Suffix (Konvention).
   function versionSuffix(card, variantKey) {
-    if (!card) return '';
-    const main = CardDB.mainVariantKey(card);
-    if (variantKey === main) return '';
-    const alts = CardDB.variantsOf(card).filter(v => v.isAlt);
-    const idx = alts.findIndex(v => v.key === variantKey);
-    if (idx < 0) return '';
-    return ` (V.${idx + 2})`;
+    return CardDB.versionSuffix(card, variantKey, false);
   }
 
   function variantFor(cardId, version) {

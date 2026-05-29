@@ -1696,15 +1696,10 @@
     });
   }
 
-  // " (V.N)" wenn die Karte mehrere Varianten hat. N startet bei 1 (Main), 2 für
-  // die erste Alt-Art usw. Karten mit nur einer Variante bekommen keinen V-Marker.
+  // Wrapper auf CardDB.versionSuffix mit der Main-inclusive-Konvention
+  // (Multi-Variant-Main bekommt (V.1)).
   function versionSuffixForVariant(card, variantKey) {
-    if (!card) return '';
-    const variants = CardDB.variantsOf(card);
-    if (variants.length <= 1) return '';
-    const idx = variants.findIndex(v => v.key === variantKey);
-    if (idx < 0) return '';
-    return ` (V.${idx + 1})`;
+    return CardDB.versionSuffix(card, variantKey, true);
   }
 
   function fallbackCopy(text, finish) {

@@ -303,6 +303,32 @@
     'Token': 'T',
     'Alternative Art': 'Alt'
   };
+  // Liefert " (V.N)" fuer eine Variante. Bei einer einzigen Variante: leer.
+  // includeMain=true (Default): Main-Variante einer Multi-Variant-Karte bekommt
+  // (V.1) — verwendet in Wants-/Decklisten-Exports.
+  // includeMain=false: Main bekommt keinen Suffix, nur Alts ab (V.2) —
+  // verwendet im compact-text-Format fuer kompakte Listen.
+  function versionSuffix(card, variantKey, includeMain) {
+    if (!card) return '';
+    const variants = variantsOf(card);
+    if (variants.length <= 1) return '';
+    const idx = variants.findIndex(v => v.key === variantKey);
+    if (idx < 0) return '';
+    if (idx === 0 && includeMain === false) return '';
+    return ` (V.${idx + 1})`;
+  }
+
+  // Liefert die Variant-Key zu einer (V.N)-Spezifikation. N startet bei 1
+  // (Main). Wirft nicht — gibt null zurueck, wenn die Karte fehlt oder N out
+  // of range ist.
+  function variantByVersion(card, n) {
+    if (!card) return null;
+    const variants = variantsOf(card);
+    if (n == null) return variants[0] ? variants[0].key : null;
+    const idx = Math.max(0, (n | 0) - 1);
+    return variants[idx] ? variants[idx].key : null;
+  }
+
   function rarityShort(r) {
     if (!r) return '';
     return RARITY_SHORT[r] || r;
@@ -518,6 +544,8 @@
     cardmarketUrl,
     setNameByCode,
     cleanDisplayName,
-    rarityShort
+    rarityShort,
+    versionSuffix,
+    variantByVersion
   };
 })();
