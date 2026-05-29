@@ -469,10 +469,10 @@
     }
     // BT-19 und BT-20 liegen bei Cardmarket komplett unter dem
     // 'Special Booster Ver.2.5'-Produkt (kein eigener Booster-Produktslug).
-    // Wenn die Karte einen entsprechenden set_name fuehrt, bevorzugen wir den.
-    const preferSpecialBooster = (card.set === 'BT19' || card.set === 'BT20')
-      || (variantKey && /-Errata$/i.test(variantKey));
-    if (preferSpecialBooster) {
+    // Errata-Reprints einzelner Karten anderer Sets bleiben dagegen bei
+    // ihrem Original-Booster — die Errata-Erkennung am Variant-Suffix taugt
+    // nicht zur Set-Auswahl, weil Errata jede Karte treffen kann.
+    if (card.set === 'BT19' || card.set === 'BT20') {
       const sb = setNames.find(sn => /Special\s+Booster/i.test(sn));
       if (sb) chosenSetName = sb;
     }
