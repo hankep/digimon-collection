@@ -74,6 +74,9 @@
       statusEl.textContent = `${window.CARDS.length.toLocaleString('de-DE')} Karten geladen`;
     }
     activateTab(activeTab || 'collection');
+    if (window.UIReports && typeof window.UIReports.init === 'function') {
+      window.UIReports.init();
+    }
   }
 
   function onLoggedOut() {

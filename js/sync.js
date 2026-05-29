@@ -295,6 +295,9 @@
     flushThenReload,
     mountLoginUI,
     isLoggedIn: () => isLoggedIn(),
-    isConfigured
+    isConfigured,
+    getClient: () => client,
+    getSessionEmail: () => (session && session.user) ? session.user.email : null,
+    getUserId: () => (session && session.user) ? session.user.id : null
   };
 })();
