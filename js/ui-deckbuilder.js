@@ -937,22 +937,16 @@
     renderDeckList();
   }
 
-  function renderPicker() {
-    const el = rootEl.querySelector('#picker-results');
-    if (!el) return;
-    const deck = currentDeck();
-    if (!deck) {
-      el.innerHTML = `<div class="text-slate-500 text-sm">Erst Liste wählen.</div>`;
-      return;
-    }
+  // Reine Filter-/Sammel-Logik. Liefert die ersten 100 Entries plus Flags fuer
+  // die beiden Empty-States. Kein DOM-Zugriff — laesst sich isoliert testen.
+  function buildPickerCandidates(vIdx) {
     const q = state.pickerQuery.trim();
+    const hasFilter = !!(q || state.pickerColor || state.pickerType || state.pickerOwnedOnly);
     let results = CardDB.search(q, {
       color: state.pickerColor,
       type: state.pickerType,
       sortBy: 'name'
     });
-    // Einmal pro Render bauen — für den Owned-Filter UND die Tile-Counts unten.
-    const vIdx = Store.getVariantIndex(collectionCache);
     if (state.pickerOwnedOnly) {
       results = results.filter(c => {
         for (const v of CardDB.variantsOf(c)) {
@@ -962,14 +956,14 @@
         return false;
       });
     }
-
     // Bei showAlts pro Variant einen Eintrag erzeugen. Auch wenn der Such-
     // begriff eine Card-ID enthaelt (z.B. "BT25-092"), zeigen wir saemtliche
     // Varianten der Karte — sonst waere die Suche frustrierend.
     const queryHasCardId = /\b[A-Za-z]+\d*-\d+[A-Za-z]?\b/.test(state.pickerQuery || '');
     const expandAlts = state.pickerShowAlts || queryHasCardId;
-    let entries = [];
+    let entries;
     if (expandAlts) {
+      entries = [];
       for (const card of results) {
         CardDB.variantsOf(card).forEach((v, idx) => {
           entries.push({ card, variant: v.key, isAlt: v.isAlt, altIdx: idx });
@@ -978,60 +972,54 @@
     } else {
       entries = results.map(card => ({ card, variant: CardDB.mainVariantKey(card), isAlt: false, altIdx: 0 }));
     }
-    const limited = entries.slice(0, 100);
+    return { entries: entries.slice(0, 100), hasFilter };
+  }
 
-    if (!q && !state.pickerColor && !state.pickerType && !state.pickerOwnedOnly) {
-      el.innerHTML = `<div class="text-slate-500 text-sm">Suche oder filtere, um Karten hinzuzufügen.</div>`;
-      return;
-    }
-
-    if (!limited.length) {
-      el.innerHTML = `<div class="text-slate-500 text-sm col-span-full">Keine Treffer.</div>`;
+  // Einzelnes Picker-Tile. Reine Template-Funktion.
+  function renderPickerTile(entry, vIdx) {
+    const { card, variant, isAlt, altIdx } = entry;
+    const vsThis = vIdx[variant];
+    const realThisVariant = vsThis ? vsThis.real : 0;
+    const proxyThisVariant = vsThis ? vsThis.proxy : 0;
+    let realShown, proxyShown;
+    if (state.pickerShowAlts) {
+      realShown = realThisVariant;
+      proxyShown = proxyThisVariant;
     } else {
-      el.innerHTML = limited.map(entry => {
-        const { card, variant, isAlt, altIdx } = entry;
-        const vsThis = vIdx[variant];
-        const realThisVariant = vsThis ? vsThis.real : 0;
-        const proxyThisVariant = vsThis ? vsThis.proxy : 0;
-        let realShown, proxyShown, ownedShown;
-        if (state.pickerShowAlts) {
-          realShown = realThisVariant;
-          proxyShown = proxyThisVariant;
-        } else {
-          let r = 0, p = 0;
-          for (const v of CardDB.variantsOf(card)) {
-            const vs = vIdx[v.key];
-            if (vs) { r += vs.real; p += vs.proxy; }
-          }
-          realShown = r; proxyShown = p;
-        }
-        ownedShown = realShown + proxyShown;
-        let badge = '';
-        if (state.pickerShowAlts) {
-          badge = isAlt
-            ? `<div class="absolute top-1 left-1 bg-amber-500 text-slate-900 text-[10px] font-bold rounded px-1.5 py-0.5">Alt ${altIdx}</div>`
-            : `<div class="absolute top-1 left-1 bg-slate-700 text-slate-200 text-[10px] font-bold rounded px-1.5 py-0.5">Main</div>`;
-        }
-        const cName = CardDB.cleanDisplayName(card);
-        return `<button data-add="${card.id}|${variant}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}"
-          class="card-tile ${ownedShown === 0 ? 'missing' : ''} ${ownedShown >= 4 ? 'playset' : ''} text-left">
-          <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(cName)}" />
-          ${badge}
-          <div class="p-2 flex items-center gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
-              <div class="text-sm font-semibold truncate" title="${escapeAttr(cName)}">${escapeHtml(cName)}</div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              ${proxyShown > 0 ? `<div class="proxy-badge" title="${proxyShown} Proxy">+${proxyShown}P</div>` : ''}
-              <div class="count-badge ${realShown === 0 && proxyShown === 0 ? 'zero' : (ownedShown >= 4 ? 'full' : '')}">${realShown}</div>
-            </div>
-          </div>
-        </button>`;
-      }).join('');
+      let r = 0, p = 0;
+      for (const v of CardDB.variantsOf(card)) {
+        const vs = vIdx[v.key];
+        if (vs) { r += vs.real; p += vs.proxy; }
+      }
+      realShown = r; proxyShown = p;
     }
+    const ownedShown = realShown + proxyShown;
+    let badge = '';
+    if (state.pickerShowAlts) {
+      badge = isAlt
+        ? `<div class="absolute top-1 left-1 bg-amber-500 text-slate-900 text-[10px] font-bold rounded px-1.5 py-0.5">Alt ${altIdx}</div>`
+        : `<div class="absolute top-1 left-1 bg-slate-700 text-slate-200 text-[10px] font-bold rounded px-1.5 py-0.5">Main</div>`;
+    }
+    const cName = CardDB.cleanDisplayName(card);
+    return `<button data-add="${card.id}|${variant}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}"
+      class="card-tile ${ownedShown === 0 ? 'missing' : ''} ${ownedShown >= 4 ? 'playset' : ''} text-left">
+      <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(cName)}" />
+      ${badge}
+      <div class="p-2 flex items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
+          <div class="text-sm font-semibold truncate" title="${escapeAttr(cName)}">${escapeHtml(cName)}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          ${proxyShown > 0 ? `<div class="proxy-badge" title="${proxyShown} Proxy">+${proxyShown}P</div>` : ''}
+          <div class="count-badge ${realShown === 0 && proxyShown === 0 ? 'zero' : (ownedShown >= 4 ? 'full' : '')}">${realShown}</div>
+        </div>
+      </div>
+    </button>`;
+  }
 
-    el.querySelectorAll('[data-add]').forEach(btn => {
+  function wirePicker(scopeEl, deck) {
+    scopeEl.querySelectorAll('[data-add]').forEach(btn => {
       btn.addEventListener('click', () => {
         const [cardId, variant] = btn.dataset.add.split('|');
         Store.addToDeck(deck, cardId, variant, 1);
@@ -1044,6 +1032,28 @@
         renderDeckList();
       });
     });
+  }
+
+  function renderPicker() {
+    const el = rootEl.querySelector('#picker-results');
+    if (!el) return;
+    const deck = currentDeck();
+    if (!deck) {
+      el.innerHTML = `<div class="text-slate-500 text-sm">Erst Liste wählen.</div>`;
+      return;
+    }
+    const vIdx = Store.getVariantIndex(collectionCache);
+    const { entries, hasFilter } = buildPickerCandidates(vIdx);
+    if (!hasFilter) {
+      el.innerHTML = `<div class="text-slate-500 text-sm">Suche oder filtere, um Karten hinzuzufügen.</div>`;
+      return;
+    }
+    if (!entries.length) {
+      el.innerHTML = `<div class="text-slate-500 text-sm col-span-full">Keine Treffer.</div>`;
+      return;
+    }
+    el.innerHTML = entries.map(e => renderPickerTile(e, vIdx)).join('');
+    wirePicker(el, deck);
   }
 
   function exportMissing(deck) {
