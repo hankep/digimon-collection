@@ -570,7 +570,10 @@
           onSave: txt => {
             Store.setCardNote(state.collection, cardId, txt);
             Store.saveCollection(state.collection);
-            renderGrid();
+            // Nur das Note-Icon des betroffenen Tiles aktualisieren — kein
+            // Full-Rebuild des Grids.
+            const noteSpan = tile.querySelector('.tile-note');
+            if (noteSpan) noteSpan.innerHTML = Notes.iconHtml(!!(txt && txt.trim()));
           }
         });
       });

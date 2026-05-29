@@ -679,28 +679,36 @@
     return el;
   }
 
+  // Ein einziger delegierter Listener auf dem Scope-Container — egal wie viele
+  // .wants-row-Elemente drin sind. Pro Render-Pass werden 2 statt N Listener
+  // angehaengt.
   function wireHoverPreview(scopeEl) {
     const preview = getHoverPreview();
-    scopeEl.querySelectorAll('.wants-row[data-variant-key]').forEach(row => {
-      row.addEventListener('mouseenter', () => {
-        const variant = row.dataset.variantKey;
-        if (!variant) return;
-        preview.src = CardDB.imagePath(variant);
-        const r = row.getBoundingClientRect();
-        const w = 220, h = Math.round(w * 7 / 5);
-        // bevorzugt rechts vom Cursor / Zeile, klappt sonst nach links.
-        let left = r.right + 12;
-        if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 12);
-        let top = r.top + r.height / 2 - h / 2;
-        if (top < 8) top = 8;
-        if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
-        preview.style.left = `${left}px`;
-        preview.style.top = `${top}px`;
-        preview.style.display = 'block';
-      });
-      row.addEventListener('mouseleave', () => {
-        preview.style.display = 'none';
-      });
+    scopeEl.addEventListener('mouseover', e => {
+      const row = e.target.closest('.wants-row[data-variant-key]');
+      if (!row || !scopeEl.contains(row)) return;
+      // Nur reagieren, wenn die Maus tatsaechlich neu in die Zeile rein kommt
+      // (relatedTarget liegt ausserhalb der Zeile).
+      if (row.contains(e.relatedTarget)) return;
+      const variant = row.dataset.variantKey;
+      if (!variant) return;
+      preview.src = CardDB.imagePath(variant);
+      const r = row.getBoundingClientRect();
+      const w = 220, h = Math.round(w * 7 / 5);
+      let left = r.right + 12;
+      if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 12);
+      let top = r.top + r.height / 2 - h / 2;
+      if (top < 8) top = 8;
+      if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
+      preview.style.left = `${left}px`;
+      preview.style.top = `${top}px`;
+      preview.style.display = 'block';
+    });
+    scopeEl.addEventListener('mouseout', e => {
+      const row = e.target.closest('.wants-row[data-variant-key]');
+      if (!row) return;
+      if (row.contains(e.relatedTarget)) return;
+      preview.style.display = 'none';
     });
   }
 
