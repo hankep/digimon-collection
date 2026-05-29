@@ -791,20 +791,37 @@
   // 3 Zeilen, damit Variant-Key + Set-Badge nicht abgeschnitten werden.
   function variantHeaderHtml(card, v, hero) {
     const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
-    const vPriceText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(vPrice) : null;
-    const vSet = vPrice && vPrice.set ? vPrice.set : null;
     const rarityTxt = card.rarity ? rarityLabel(card.rarity) : '';
-    const cmUrl = CardDB.cardmarketUrl(card, v.key);
-    const priceHtml = vPriceText
-      ? (cmUrl
-          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Cardmarket low / trend">${vPriceText} ↗</a>`
-          : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low / trend">${vPriceText}</span>`)
-      : (cmUrl
-          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">CM ↗</a>`
-          : '');
-    const setBadge = vSet
-      ? `<span class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
+
+    // Pro Set, in dem die Variante existiert, EINE Preis-Pill — mit Set-Code,
+    // Preis und Link zur jeweiligen CM-Seite. Origin-Set zuerst, Reprints nach
+    // Set-Code sortiert. So sieht der User z.B. fuer BT20-102 Main beide
+    // Angebote (BT20 17,39 € / AD1 10,00 €) statt nur eines.
+    let setCodes = (vPrice && vPrice.bySet) ? Object.keys(vPrice.bySet) : [];
+    if (!setCodes.length && vPrice && vPrice.set) setCodes = [vPrice.set];
+    setCodes.sort((a, b) => {
+      if (a === card.set) return -1;
+      if (b === card.set) return 1;
+      return a.localeCompare(b);
+    });
+    const setPills = setCodes.map(code => {
+      const sub = (vPrice && vPrice.bySet && vPrice.bySet[code]) || vPrice;
+      const priceText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(sub) : null;
+      const url = CardDB.cardmarketUrl(card, v.key, code);
+      const isOrigin = code === card.set;
+      const badgeCls = isOrigin ? 'bg-slate-700 text-slate-200' : 'bg-amber-500/20 text-amber-300';
+      const fullSetName = CardDB.setNameByCode(code);
+      const inner = `<span class="font-mono">${escapeHtml(code)}</span><span class="${priceText ? 'text-amber-200' : 'text-slate-400'}"> ${priceText || 'CM'}</span>`;
+      return url
+        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" class="${badgeCls} hover:brightness-125 rounded px-1.5 py-0.5 text-[10px] inline-flex items-center gap-1 whitespace-nowrap" title="${escapeAttr(fullSetName)}">${inner} ↗</a>`
+        : `<span class="${badgeCls} rounded px-1.5 py-0.5 text-[10px] inline-flex items-center gap-1 whitespace-nowrap" title="${escapeAttr(fullSetName)}">${inner}</span>`;
+    }).join(' ');
+    // Fallback wenn gar keine Set-Info: einfache CM-Link-Pille.
+    const fallbackCmUrl = !setCodes.length ? CardDB.cardmarketUrl(card, v.key) : null;
+    const fallbackPill = fallbackCmUrl
+      ? `<a href="${escapeAttr(fallbackCmUrl)}" target="_blank" rel="noopener" class="bg-slate-700 text-sky-400 rounded px-1.5 py-0.5 text-[10px] inline-flex items-center gap-1 whitespace-nowrap" title="Auf Cardmarket öffnen">CM ↗</a>`
       : '';
+    const setRowHtml = setPills || fallbackPill;
 
     // A.v: x/y. Im Hero-Block ist es das Aggregat ueber ANDERE Varianten der
     // selben Card-ID (welche Alternativen habe ich noch); im kompakten Tile
@@ -832,24 +849,19 @@
 
     if (hero) {
       return `
-        <div class="text-sm font-mono text-slate-400 flex items-baseline justify-between gap-2">
-          <span class="truncate">${escapeHtml(v.key)}</span>
-          ${priceHtml}
-        </div>
+        <div class="text-sm font-mono text-slate-400 truncate">${escapeHtml(v.key)}</div>
         <div class="text-[11px] text-slate-300 mb-2 flex items-baseline justify-between gap-2">
           <span>${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
-          <span class="flex items-baseline gap-2">${avHtml}${setBadge}</span>
-        </div>`;
+          ${avHtml}
+        </div>
+        ${setRowHtml ? `<div class="flex flex-wrap gap-1 mb-2">${setRowHtml}</div>` : ''}`;
     }
     // Kompakt-Layout: drei Zeilen, jede mit eigenem Platz.
     return `
       <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(v.key)}">${escapeHtml(v.key)}</div>
-      <div class="text-[11px] text-slate-300 flex items-baseline justify-between gap-2">
-        <span class="truncate">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</span>
-        ${setBadge}
-      </div>
+      <div class="text-[11px] text-slate-300 truncate">${v.isAlt ? 'Alt' : 'Main'}${rarityTxt ? ` · ${escapeHtml(rarityTxt)}` : ''}</div>
       ${avHtml ? `<div class="mt-0.5">${avHtml}</div>` : ''}
-      ${priceHtml ? `<div class="text-xs mt-1">${priceHtml}</div>` : ''}`;
+      ${setRowHtml ? `<div class="flex flex-wrap gap-1 mt-1">${setRowHtml}</div>` : ''}`;
   }
 
   // Wie otherVariantsAv im Deckbuilder, lokal kopiert da Collection-Tab

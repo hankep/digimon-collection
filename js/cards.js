@@ -408,7 +408,7 @@
   // 2024-Promos) faellt der Link auf die CM-Such-URL fuer die Card-ID zurueck.
   // Die Suche fuehrt immer auf das richtige Ergebnis, auch wenn der User
   // dort 1x klicken muss.
-  function cardmarketUrl(card, variantKey) {
+  function cardmarketUrl(card, variantKey, setOverride) {
     if (!card || !card.id) return null;
     const setNames = (card.raw && Array.isArray(card.raw.set_name)) ? card.raw.set_name : [];
 
@@ -417,7 +417,7 @@
       const p = CM.getForVariant(vk);
       return p && p.set ? p.set : null;
     };
-    const variantSet = variantSetOf(variantKey);
+    const variantSet = setOverride || variantSetOf(variantKey);
 
     // Match: Variant-Set muss ein echter setCode (Eintrag in bySet) sein UND in
     // raw.set_name vorkommen. Sonst Search-Fallback.
@@ -453,10 +453,19 @@
     const nameSlug = slugify(cleanDisplayName(card));
     if (!nameSlug) return null;
 
-    // V-Index: Position innerhalb der Variants, die demselben Set zugeordnet sind.
-    // Einzelvariante in einem Set -> kein V-Suffix.
+    // V-Index: Position innerhalb der Variants, die in DIESEM Set verfuegbar
+    // sind. Mit setOverride: wir schauen in jede Variant's bySet, nicht nur den
+    // Default-Set-Eintrag — sonst werden Mehrfach-Set-Variants (Main in BT20 UND
+    // AD1) falsch gezaehlt.
     const variants = variantsOf(card);
-    const sameSet = variants.filter(v => variantSetOf(v.key) === variantSet);
+    const variantInSet = vk => {
+      if (!window.CM || !CM.getForVariant) return false;
+      const p = CM.getForVariant(vk);
+      if (!p) return false;
+      if (p.bySet && p.bySet[variantSet]) return true;
+      return p.set === variantSet;
+    };
+    const sameSet = variants.filter(v => variantInSet(v.key));
     let vSuffix = '';
     if (sameSet.length > 1) {
       const idx = sameSet.findIndex(v => v.key === variantKey);
