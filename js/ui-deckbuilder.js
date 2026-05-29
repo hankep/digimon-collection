@@ -1058,8 +1058,9 @@
     return { entries: entries.slice(0, 100), hasFilter };
   }
 
-  // Einzelnes Picker-Tile. Reine Template-Funktion.
-  function renderPickerTile(entry, vIdx) {
+  // Einzelnes Picker-Tile. Reine Template-Funktion. inDeckCount = wie oft die
+  // Variante schon in der aktiven Liste vorkommt (Demand, nicht Slot).
+  function renderPickerTile(entry, vIdx, inDeckCount) {
     const { card, variant, isAlt, altIdx } = entry;
     const vsThis = vIdx[variant];
     const realThisVariant = vsThis ? vsThis.real : 0;
@@ -1084,8 +1085,9 @@
         : `<div class="absolute top-1 left-1 bg-slate-700 text-slate-200 text-[10px] font-bold rounded px-1.5 py-0.5">Main</div>`;
     }
     const cName = CardDB.cleanDisplayName(card);
-    return `<button data-add="${card.id}|${variant}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}"
-      class="card-tile ${ownedShown === 0 ? 'missing' : ''} ${ownedShown >= 4 ? 'playset' : ''} text-left">
+    const inDeck = inDeckCount || 0;
+    return `<div data-pick-card-id="${escapeAttr(card.id)}" data-pick-variant="${escapeAttr(variant)}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}"
+      class="card-tile cursor-pointer ${ownedShown === 0 ? 'missing' : ''} ${ownedShown >= 4 ? 'playset' : ''} ${inDeck > 0 ? 'tile-slottable' : ''} text-left flex flex-col">
       <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(cName)}" />
       ${badge}
       <div class="p-2 flex items-center gap-2">
@@ -1095,26 +1097,60 @@
         </div>
         <div class="flex items-center gap-1 shrink-0">
           ${proxyShown > 0 ? `<div class="proxy-badge" title="${proxyShown} Proxy">+${proxyShown}P</div>` : ''}
-          <div class="count-badge ${realShown === 0 && proxyShown === 0 ? 'zero' : (ownedShown >= 4 ? 'full' : '')}">${realShown}</div>
+          <div class="count-badge ${realShown === 0 && proxyShown === 0 ? 'zero' : (ownedShown >= 4 ? 'full' : '')}" title="Echte Kopien im Besitz">${realShown}</div>
         </div>
       </div>
-    </button>`;
+      <div class="qty-controls mt-auto" title="Im Deck: Soll-Anzahl ${inDeck}">
+        <button data-pick-dec="${card.id}|${variant}" ${inDeck === 0 ? 'disabled' : ''}>−</button>
+        <span class="entry-count">${inDeck} im Deck</span>
+        <button data-pick-inc="${card.id}|${variant}">+</button>
+      </div>
+    </div>`;
   }
 
   function wirePicker(scopeEl, deck) {
-    scopeEl.querySelectorAll('[data-add]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const [cardId, variant] = btn.dataset.add.split('|');
-        Store.addToDeck(deck, cardId, variant, 1);
-        if (!isListKind(deck.kind)) {
-          Store.autoClaim(collectionCache, deck.id, variant, 1);
-        }
-        Store.saveDecks(state.decksState);
-        Store.saveCollection(collectionCache);
-        renderDeckDetail();
-        renderDeckList();
+    scopeEl.querySelectorAll('[data-pick-inc]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const [cardId, variant] = btn.dataset.pickInc.split('|');
+        modifyPickerEntry(cardId, variant, 1);
       });
     });
+    scopeEl.querySelectorAll('[data-pick-dec]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const [cardId, variant] = btn.dataset.pickDec.split('|');
+        modifyPickerEntry(cardId, variant, -1);
+      });
+    });
+    scopeEl.querySelectorAll('[data-pick-card-id]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('[data-pick-inc], [data-pick-dec]')) return;
+        window.Util.bus.emit('open-card-modal', { cardId: el.dataset.pickCardId, variantKey: el.dataset.pickVariant });
+      });
+    });
+  }
+
+  function modifyPickerEntry(cardId, variant, delta) {
+    const deck = currentDeck();
+    if (!deck) return;
+    Store.addToDeck(deck, cardId, variant, delta);
+    if (!isListKind(deck.kind)) {
+      if (delta > 0) {
+        Store.autoClaim(collectionCache, deck.id, variant, delta);
+      } else if (delta < 0) {
+        const entry = deck.entries.find(e => e.cardId === cardId && e.variant === variant);
+        const assigned = Store.assignedTo(collectionCache, deck.id, variant);
+        const newCount = entry ? entry.count : 0;
+        if (assigned > newCount) {
+          Store.releaseN(collectionCache, deck.id, variant, assigned - newCount);
+        }
+      }
+    }
+    Store.saveDecks(state.decksState);
+    Store.saveCollection(collectionCache);
+    // decks-changed-Event triggert die zentrale onExternalChange (rendert Picker
+    // + Deck-Detail + Sidebar gebuendelt).
   }
 
   function renderPicker() {
@@ -1135,7 +1171,10 @@
       el.innerHTML = `<div class="text-slate-500 text-sm col-span-full">Keine Treffer.</div>`;
       return;
     }
-    el.innerHTML = entries.map(e => renderPickerTile(e, vIdx)).join('');
+    // Map<variantKey, count> der Eintraege in der aktiven Liste.
+    const deckCounts = new Map();
+    for (const e of deck.entries) deckCounts.set(e.variant, e.count);
+    el.innerHTML = entries.map(e => renderPickerTile(e, vIdx, deckCounts.get(e.variant) || 0)).join('');
     wirePicker(el, deck);
   }
 

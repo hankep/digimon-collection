@@ -32,12 +32,19 @@
 
   // Liefert Per-Variant-Preis (Main/Alt-Art-spezifisch). Null, wenn kein
   // byVariant-Eintrag existiert. Kein Fallback auf den Top-Level-Aggregat.
+  // Errata-Suffix (z.B. "BT20-077-Errata") wird abgestreift, weil das
+  // Cardmarket-Produkt fuer Errata-Reprints identisch zur Original-Variante ist.
   function getForVariant(variantKey) {
     if (!variantKey) return null;
-    const cardId = String(variantKey).replace(/_P\d+$/, '');
+    const canonicalKey = String(variantKey).replace(/-Errata$/i, '');
+    const cardId = canonicalKey.replace(/_P\d+$/, '');
     const p = get(cardId);
     if (!p) return null;
-    return (p.byVariant && p.byVariant[variantKey]) || null;
+    if (p.byVariant) {
+      if (p.byVariant[canonicalKey]) return p.byVariant[canonicalKey];
+      if (variantKey !== canonicalKey && p.byVariant[variantKey]) return p.byVariant[variantKey];
+    }
+    return null;
   }
 
   // Liefert den Low-Preis fuer einen Deck-/Wants-Eintrag: bevorzugt den
