@@ -280,8 +280,24 @@
     const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
     const grandUnique = blocks.reduce((s, b) => s + (b.items ? b.items.length : 0), 0);
     const realSets = blocks.reduce((n, b) => n + (b.total > 0 ? 1 : 0), 0);
+    // Grand-Total ueber alle Bloecke (eigene Items + Reprints, jeweils per-Set-Preis).
+    let grandLow = 0, grandTrend = 0;
+    let grandPriced = 0, grandCount = 0;
+    for (const b of blocks) {
+      const t = blockPriceTotals(b);
+      grandLow += t.lowSum;
+      grandTrend += t.trendSum;
+      grandPriced += Math.max(t.lowCount, t.trendCount);
+      grandCount += t.totalCount;
+    }
+    const grandMissing = grandCount - grandPriced;
     const cnt = rootEl.querySelector('#wants-count');
-    if (cnt) cnt.textContent = `${realSets} Sets · ${grandTotal} Karten · ${grandUnique} unique`;
+    if (cnt) {
+      const sumPart = (grandLow > 0 || grandTrend > 0)
+        ? ` · CM ≈ ${Fmt.eur(grandLow)} / ${Fmt.eur(grandTrend)}${grandMissing > 0 ? ` (${grandMissing} ohne)` : ''}`
+        : '';
+      cnt.textContent = `${realSets} Sets · ${grandTotal} Karten · ${grandUnique} unique${sumPart}`;
+    }
 
     // Aggregat Rarity-Counts ueber alle Set-Bloecke.
     const grandPerRarity = new Map();
@@ -304,6 +320,28 @@
       ? blocks.map(renderSetBlock).join('')
       : `<div class="bg-slate-800 rounded p-4 text-slate-400">${query ? 'Keine Treffer für die Suche.' : 'Keine Karten in der Auswahl.'}</div>`;
     wireSets();
+  }
+
+  // Aggregat CM-Low + CM-Trend ueber einen Set-Block. Bezieht eigene Items
+  // ueber CM.pricesForEntry (variant-spezifisch wenn vorhanden) und Reprints
+  // ueber CM.getForSet(cardId, blockCode) — dort hat der Reprint seinen eigenen
+  // Preis im Ziel-Set.
+  function blockPriceTotals(block) {
+    let lowSum = 0, trendSum = 0, lowCount = 0, trendCount = 0, totalCount = 0;
+    if (!window.CM || !CM.hasData()) return { lowSum, trendSum, lowCount, trendCount, totalCount };
+    for (const it of (block.items || [])) {
+      totalCount += it.count;
+      const p = CM.pricesForEntry(it.cardId, it.variant);
+      if (p.low != null) { lowSum += p.low * it.count; lowCount += it.count; }
+      if (p.trend != null) { trendSum += p.trend * it.count; trendCount += it.count; }
+    }
+    for (const it of (block.reprints || [])) {
+      totalCount += it.count;
+      const ps = CM.getForSet(it.cardId, block.code);
+      if (ps && ps.low != null) { lowSum += ps.low * it.count; lowCount += it.count; }
+      if (ps && ps.trend != null) { trendSum += ps.trend * it.count; trendCount += it.count; }
+    }
+    return { lowSum, trendSum, lowCount, trendCount, totalCount };
   }
 
   function renderSetBlock(block) {
@@ -340,6 +378,12 @@
       ? `<span class="text-xs text-slate-500" title="Wants aus anderen Sets, die als Reprint aus ${escapeAttr(block.code)} gekauft werden koennten">+${reprintTotal} Reprint${reprintTotal === 1 ? '' : 's'} moeglich</span>`
       : '';
 
+    const tot = blockPriceTotals(block);
+    const missingPrice = tot.totalCount - Math.max(tot.lowCount, tot.trendCount);
+    const totalPill = (tot.lowSum > 0 || tot.trendSum > 0)
+      ? `<span class="text-xs bg-slate-900 border border-amber-500/40 rounded px-2 py-0.5 text-amber-300" title="CM low / trend Summe inkl. Reprints aus ${escapeAttr(block.code)}">CM ≈ ${Fmt.eur(tot.lowSum)} / ${Fmt.eur(tot.trendSum)}${missingPrice > 0 ? ` <span class="text-slate-500">(${missingPrice} ohne)</span>` : ''}</span>`
+      : '';
+
     return `
       <div class="bg-slate-800 rounded p-3 mb-3 break-inside-avoid" data-set-block="${escapeAttr(block.code)}">
         <div class="flex items-center gap-2 flex-wrap mb-2">
@@ -350,8 +394,10 @@
           ${hasReal
             ? `<span class="text-sm text-slate-400">${block.total} Karten <span class="text-slate-500">(${block.items.length} unique)</span></span>
                ${reprintSpan}
+               ${totalPill}
                <div class="ml-auto flex gap-2"><button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button></div>`
-            : `<span class="text-xs text-slate-500 italic">nur Reprints (${reprintTotal})</span>`}
+            : `<span class="text-xs text-slate-500 italic">nur Reprints (${reprintTotal})</span>
+               ${totalPill}`}
         </div>
         ${hasReal ? `<div class="flex flex-wrap gap-1.5 mb-1"><span class="text-xs text-slate-500 mr-1">Rarity:</span>${rarityPills}</div>
         <div class="flex flex-wrap gap-1.5 mb-3"><span class="text-xs text-slate-500 mr-1">Preis:</span>${bucketPills}</div>` : ''}

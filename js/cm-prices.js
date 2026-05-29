@@ -51,6 +51,18 @@
     return (p && p.low != null) ? p.low : null;
   }
 
+  // Wie lowForEntry, aber liefert sowohl low als auch trend (jeweils null,
+  // wenn nicht vorhanden). Sinnvoll fuer Summen, wo beide Werte gezeigt werden.
+  function pricesForEntry(cardId, variantKey) {
+    const pv = getForVariant(variantKey);
+    if (pv && (pv.low != null || pv.trend != null)) {
+      return { low: pv.low == null ? null : pv.low, trend: pv.trend == null ? null : pv.trend };
+    }
+    const p = get(cardId);
+    if (!p) return { low: null, trend: null };
+    return { low: p.low == null ? null : p.low, trend: p.trend == null ? null : p.trend };
+  }
+
   function fmt(n) {
     if (n == null || Number.isNaN(Number(n))) return '—';
     return Number(n).toFixed(2).replace('.', ',') + ' €';
@@ -76,5 +88,5 @@
     return window.CM_PRICES_UPDATED_AT || null;
   }
 
-  window.CM = { get, getForSet, getForVariant, lowForEntry, fmt, fmtLowTrend, hasData, updatedAt };
+  window.CM = { get, getForSet, getForVariant, lowForEntry, pricesForEntry, fmt, fmtLowTrend, hasData, updatedAt };
 })();

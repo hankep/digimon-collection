@@ -233,13 +233,45 @@
 
   // Rendert nur den Karten-Bereich (#trade-sets) + Zähler. Auch bei Sucheingabe,
   // ohne die Toolbar (und das Suchfeld) neu zu bauen.
+  // CM-Low + CM-Trend Summe ueber einen Trade-Set-Block.
+  function blockPriceTotals(block) {
+    let lowSum = 0, trendSum = 0, lowCount = 0, trendCount = 0;
+    let totalCount = 0;
+    if (!window.CM || !CM.hasData()) return { lowSum, trendSum, lowCount, trendCount, totalCount };
+    const seen = new Set();
+    for (const g of (block.groups instanceof Map ? Array.from(block.groups.values()) : (block.groups || []))) {
+      for (const it of (g.items || [])) {
+        totalCount += it.count;
+        const p = CM.pricesForEntry(it.cardId, it.variant);
+        if (p.low != null) { lowSum += p.low * it.count; lowCount += it.count; }
+        if (p.trend != null) { trendSum += p.trend * it.count; trendCount += it.count; }
+      }
+    }
+    return { lowSum, trendSum, lowCount, trendCount, totalCount };
+  }
+
   function renderSets() {
     const lists = candidateLists();
     const selected = selectedIds(lists);
     const blocks = collectBySet(lists, selected);
     const grandTotal = blocks.reduce((s, b) => s + b.total, 0);
+    // Grand-Total Low/Trend ueber alle Bloecke.
+    let grandLow = 0, grandTrend = 0, grandPriced = 0, grandCount = 0;
+    for (const b of blocks) {
+      const t = blockPriceTotals(b);
+      grandLow += t.lowSum;
+      grandTrend += t.trendSum;
+      grandPriced += Math.max(t.lowCount, t.trendCount);
+      grandCount += t.totalCount;
+    }
+    const grandMissing = grandCount - grandPriced;
     const cnt = rootEl.querySelector('#trade-count');
-    if (cnt) cnt.textContent = `${blocks.length} Sets · ${grandTotal} Karten`;
+    if (cnt) {
+      const sumPart = (grandLow > 0 || grandTrend > 0)
+        ? ` · CM ≈ ${Fmt.eur(grandLow)} / ${Fmt.eur(grandTrend)}${grandMissing > 0 ? ` (${grandMissing} ohne)` : ''}`
+        : '';
+      cnt.textContent = `${blocks.length} Sets · ${grandTotal} Karten${sumPart}`;
+    }
     const host = rootEl.querySelector('#trade-sets');
     if (host) host.innerHTML = blocks.length
       ? blocks.map(renderSetBlock).join('')
@@ -261,6 +293,12 @@
     const view = Prefs.get(VIEW_KEY, 'text');
     const groupsHtml = block.groups.map(g => renderGroup(g, view)).join('');
 
+    const tot = blockPriceTotals(block);
+    const missingPrice = tot.totalCount - Math.max(tot.lowCount, tot.trendCount);
+    const totalPill = (tot.lowSum > 0 || tot.trendSum > 0)
+      ? `<span class="text-xs bg-slate-900 border border-amber-500/40 rounded px-2 py-0.5 text-amber-300" title="CM low / trend Summe">CM ≈ ${Fmt.eur(tot.lowSum)} / ${Fmt.eur(tot.trendSum)}${missingPrice > 0 ? ` <span class="text-slate-500">(${missingPrice} ohne)</span>` : ''}</span>`
+      : '';
+
     return `
       <div class="bg-slate-800 rounded p-3 mb-3 break-inside-avoid" data-set-block="${escapeAttr(block.code)}">
         <div class="flex items-center gap-2 flex-wrap mb-2">
@@ -269,6 +307,7 @@
             <span class="text-slate-300 font-normal text-sm">${escapeHtml(block.name)}</span>
           </h3>
           <span class="text-sm text-slate-400">${block.total} Karten</span>
+          ${totalPill}
           <div class="ml-auto flex gap-2">
             <button data-export-list="${escapeAttr(block.code)}" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-3 py-1.5 rounded text-sm font-semibold">Als Liste</button>
           </div>

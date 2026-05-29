@@ -500,7 +500,7 @@
   function tradeTotals() {
     let cardsDeliverable = 0;
     let cardsMissing = 0;
-    let valueSum = 0;
+    let lowSum = 0, trendSum = 0;
     let noPriceCount = 0;
     for (const e of tradeState.entries) {
       const lieferbar = e.deliverableVariants.length > 0;
@@ -508,12 +508,13 @@
       const missing = e.wantsCount - (lieferbar ? e.deliverCount : 0);
       if (missing > 0) cardsMissing += missing;
       if (e.deliverCount > 0) {
-        const p = (window.CM && CM.getForVariant) ? CM.getForVariant(e.deliverVariant) : null;
-        if (p && p.low != null) valueSum += p.low * e.deliverCount;
-        else noPriceCount += e.deliverCount;
+        const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(e.cardId, e.deliverVariant) : { low: null, trend: null };
+        if (p.low != null) lowSum += p.low * e.deliverCount;
+        if (p.trend != null) trendSum += p.trend * e.deliverCount;
+        if (p.low == null && p.trend == null) noPriceCount += e.deliverCount;
       }
     }
-    return { cardsDeliverable, cardsMissing, valueSum, noPriceCount };
+    return { cardsDeliverable, cardsMissing, lowSum, trendSum, noPriceCount };
   }
 
   function renderTradePhase2() {
@@ -594,7 +595,7 @@
       <div class="flex flex-wrap gap-x-6 gap-y-1">
         <div><span class="text-slate-400">Lieferbar:</span> <b class="text-emerald-400">${t.cardsDeliverable}</b></div>
         <div><span class="text-slate-400">Nicht abgedeckt:</span> <b class="${t.cardsMissing > 0 ? 'text-red-400' : 'text-slate-500'}">${t.cardsMissing}</b></div>
-        <div class="ml-auto"><span class="text-slate-400">Gesamtwert (CM low):</span> <b class="text-amber-400">${Fmt.eur(t.valueSum)}</b>${t.noPriceCount > 0 ? ` <span class="text-slate-500 text-xs">(${t.noPriceCount} ohne CM-Preis)</span>` : ''}</div>
+        <div class="ml-auto"><span class="text-slate-400">Gesamtwert (CM low / trend):</span> <b class="text-amber-400">${Fmt.eur(t.lowSum)} / ${Fmt.eur(t.trendSum)}</b>${t.noPriceCount > 0 ? ` <span class="text-slate-500 text-xs">(${t.noPriceCount} ohne CM-Preis)</span>` : ''}</div>
       </div>
     `;
   }
@@ -733,7 +734,7 @@
       alert('Keine Karten zum Entfernen ausgewählt.');
       return;
     }
-    const msg = `${t.cardsDeliverable} Karten (CM ≈ ${Fmt.eur(t.valueSum)}) werden aus deiner Collection entfernt. Fortfahren?`;
+    const msg = `${t.cardsDeliverable} Karten (CM low ≈ ${Fmt.eur(t.lowSum)} / trend ≈ ${Fmt.eur(t.trendSum)}) werden aus deiner Collection entfernt. Fortfahren?`;
     if (!confirm(msg)) return;
 
     // Pro Variante: deliverCount freie reale Kopien loeschen.

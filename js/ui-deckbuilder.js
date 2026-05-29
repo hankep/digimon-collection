@@ -361,7 +361,7 @@
     }
     const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
     const haveCM = !!(window.CM && CM.hasData());
-    let missingCmSum = 0, missingCmCount = 0, missingNoCm = 0, missingInWants = 0;
+    let missingLow = 0, missingTrend = 0, missingPricedCount = 0, missingNoCm = 0, missingInWants = 0;
     for (const entry of deck.entries) {
       const sa = da[entry.variant];
       const need = isWants ? entry.count : Math.max(0, entry.count - (sa ? sa.real : 0));
@@ -371,16 +371,21 @@
         missingInWants += Math.min(need, want);
       }
       if (haveCM) {
-        const low = CM.lowForEntry(entry.cardId, entry.variant);
-        if (low != null) { missingCmSum += low * need; missingCmCount += need; }
-        else missingNoCm += need;
+        const p = CM.pricesForEntry(entry.cardId, entry.variant);
+        if (p.low != null || p.trend != null) {
+          if (p.low != null) missingLow += p.low * need;
+          if (p.trend != null) missingTrend += p.trend * need;
+          missingPricedCount += need;
+        } else {
+          missingNoCm += need;
+        }
       }
     }
     return `<span class="text-emerald-400 font-bold">${Fmt.eur(cost.total)}</span> <span class="text-slate-500">(bereits bezahlt)</span>`
       + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}` : '')
       + (cost.unknown ? ` · <span class="text-slate-400">${cost.unknown} ohne Preis</span>` : '')
-      + (missingCmCount > 0
-          ? ` · <span class="text-amber-400">fehlend CM: ${Fmt.eur(missingCmSum)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
+      + (missingPricedCount > 0
+          ? ` · <span class="text-amber-400" title="Cardmarket low / trend Summe der fehlenden Karten">fehlend CM: ${Fmt.eur(missingLow)} / ${Fmt.eur(missingTrend)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
           : '');
   }
 
@@ -1495,13 +1500,15 @@
         <div class="text-xs text-slate-400 mt-1">
           Merge aller Wants-Listen${state.mainWantsSetFilter ? ` · Set <span class="font-mono text-amber-400">${escapeHtml(state.mainWantsSetFilter)}</span>` : ''}. ${mw.uniqueCount} Karten · ${mw.totalCount} Kopien${(() => {
             if (!window.CM || !CM.hasData()) return '';
-            let sum = 0, noCm = 0;
+            let lowSum = 0, trendSum = 0, noCm = 0;
             for (const it of mw.items) {
-              const low = CM.lowForEntry(it.cardId, it.variant);
-              if (low != null) sum += low * it.count;
-              else noCm += it.count;
+              const p = CM.pricesForEntry(it.cardId, it.variant);
+              if (p.low != null || p.trend != null) {
+                if (p.low != null) lowSum += p.low * it.count;
+                if (p.trend != null) trendSum += p.trend * it.count;
+              } else noCm += it.count;
             }
-            return ` · <span class="text-amber-400">CM ≈ ${Fmt.eur(sum)}</span>${noCm > 0 ? ` <span class="text-slate-500">(${noCm} ohne CM-Preis)</span>` : ''}`;
+            return ` · <span class="text-amber-400" title="Cardmarket low / trend Summe">CM ≈ ${Fmt.eur(lowSum)} / ${Fmt.eur(trendSum)}</span>${noCm > 0 ? ` <span class="text-slate-500">(${noCm} ohne CM-Preis)</span>` : ''}`;
           })()}.
         </div>
       </div>
