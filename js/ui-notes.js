@@ -38,15 +38,15 @@
           <h2 class="text-lg font-bold truncate">${escapeHtml(title || 'Notiz')}</h2>
           ${subtitle ? `<div class="text-xs text-slate-400 truncate">${escapeHtml(subtitle)}</div>` : ''}
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
 
       <textarea id="notes-text" rows="8" placeholder="Notiz eingeben…"
         class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-sm">${escapeHtml(value || '')}</textarea>
 
       <div class="flex justify-end gap-2 mt-3">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-        <button id="notes-save" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-4 py-1.5 rounded text-sm font-semibold">Speichern</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="notes-save" class="btn-primary-amber">Speichern</button>
       </div>
     `;
 

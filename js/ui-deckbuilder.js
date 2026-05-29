@@ -1143,7 +1143,7 @@
     const contentHtml = `
       <div class="flex justify-between items-start mb-3">
         <h2 class="text-lg font-bold">Fehlende → Wants-Liste</h2>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
       <div class="text-sm text-slate-400 mb-3">
         Aus „${escapeHtml(deck.name)}": <b>${missingEntries.length}</b> Karten · <b>${totalCopies}</b> Kopien fehlen.
@@ -1162,7 +1162,7 @@
           class="bg-slate-900 border border-slate-600 rounded px-3 py-2 w-full text-sm" />
       </label>
       <div class="flex justify-end gap-2">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
         <button id="mtw-go" class="bg-purple-500 hover:bg-purple-400 text-white px-4 py-1.5 rounded text-sm font-semibold">Uebernehmen</button>
       </div>
     `;
@@ -1217,7 +1217,7 @@
           <h2 class="text-lg font-bold truncate">Importieren in „${escapeHtml(deck.name)}"</h2>
           <div class="text-xs text-slate-400">Mengen werden zu vorhandenen Einträgen <b>addiert</b>.</div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
 
       <label class="block mb-2">
@@ -1233,8 +1233,8 @@
       <div id="ii-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
 
       <div class="flex justify-end gap-2 mt-3">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-        <button id="ii-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Liste übernehmen</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="ii-go" class="btn-primary-emerald">In Liste übernehmen</button>
       </div>
     `;
 
@@ -1593,7 +1593,7 @@
     const contentHtml = `
       <div class="flex justify-between items-start mb-3">
         <h2 class="text-lg font-bold">Fehlende mehrerer Listen → Clipboard</h2>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
 
       <div class="text-xs text-slate-400 mb-2">
@@ -1612,8 +1612,8 @@
       <div id="bm-summary" class="text-sm text-slate-400 mb-3"></div>
 
       <div class="flex justify-end gap-2">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
-        <button id="bm-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="bm-copy" class="btn-primary-emerald">In Zwischenablage kopieren</button>
       </div>
     `;
 

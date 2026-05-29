@@ -127,7 +127,7 @@
     const contentHtml = `
       <div class="flex justify-between items-start mb-3">
         <h2 class="text-lg font-bold">Zu Listen hinzufügen</h2>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
 
       <div class="flex gap-3 mb-3">
@@ -169,7 +169,7 @@
       </div>
 
       <div class="flex justify-end gap-2">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
         <button id="cm-confirm" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-3 py-1.5 rounded text-sm font-semibold">Hinzufügen</button>
       </div>
     `;

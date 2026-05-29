@@ -59,7 +59,7 @@
           <h2 class="text-lg font-bold">Reports</h2>
           <div class="text-xs text-slate-400 mt-1">Bugs melden, Features vorschlagen, andere Reports lesen.</div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
 
       <div class="flex gap-2 mb-3 shrink-0">
@@ -103,8 +103,8 @@
           placeholder="Was ist passiert / was wuenschst du dir?">${escapeHtml(state.submitText)}</textarea>
         <div id="report-msg" class="text-sm min-h-[1.25rem] text-slate-400"></div>
         <div class="flex justify-end gap-2">
-          <button id="report-cancel" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Verwerfen</button>
-          <button id="report-submit" class="bg-amber-500 text-slate-900 hover:bg-amber-400 px-4 py-1.5 rounded text-sm font-semibold">Absenden</button>
+          <button id="report-cancel" class="btn-secondary">Verwerfen</button>
+          <button id="report-submit" class="btn-primary-amber">Absenden</button>
         </div>
       </div>
     `;

@@ -226,7 +226,7 @@
           <h2 class="text-lg font-bold">Andere Varianten in Wants gefunden</h2>
           <div class="text-xs text-slate-400 mt-1">Exakte Treffer werden ohnehin abgezogen. Hier geht's um Wants-Einträge mit derselben Card-ID, aber anderer Variante.</div>
         </div>
-        <button data-modal-cancel class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-cancel class="modal-close-x">×</button>
       </div>
 
       <div class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-2 mb-3">
@@ -239,8 +239,8 @@
       </div>
 
       <div class="flex justify-end gap-2">
-        <button data-modal-cancel class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Überspringen</button>
-        <button id="cv-go" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">Übernehmen</button>
+        <button data-modal-cancel class="btn-secondary">Überspringen</button>
+        <button id="cv-go" class="btn-primary-emerald">Übernehmen</button>
       </div>
     `;
 
@@ -512,14 +512,14 @@
           <h2 class="text-lg font-bold">Wants beantworten</h2>
           <div class="text-xs text-slate-400 mt-1">Liste des anderen Users hier einfügen — Cardmarket-Format, Plain-Text oder Compact (Format wird automatisch erkannt).</div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
       <textarea id="trade-text" rows="12"
         class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
         placeholder="4x Agumon BT5-006&#10;3x Veedramon BT11-029 (V.2)&#10;..."></textarea>
       <div id="trade-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
       <div class="flex justify-end gap-2 mt-3">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
         <button id="trade-load" class="bg-sky-500 text-slate-900 hover:bg-sky-400 px-4 py-1.5 rounded text-sm font-semibold">Liste übernehmen</button>
       </div>
     `;
@@ -600,7 +600,7 @@
           <h2 class="text-lg font-bold">Trade fulfillen</h2>
           <div class="text-xs text-slate-400 mt-1">${tradeState.entries.length} Karten in der Wants-Liste. Liefer-Variante und Menge pro Eintrag anpassbar; Cross-Variant-Substitute werden automatisch vorgeschlagen.</div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
       <div class="flex items-center gap-2 mb-3 text-sm shrink-0 flex-wrap">
         <span class="text-slate-400">Ansicht:</span>
@@ -619,7 +619,7 @@
       <div id="trade-body" class="overflow-y-auto flex-1 min-h-0 pr-1"></div>
       <div id="trade-totals" class="text-sm mt-3 shrink-0 bg-slate-900 rounded p-3"></div>
       <div class="flex justify-end gap-2 mt-3 shrink-0">
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Abbrechen</button>
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
         <button id="trade-remove" class="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 rounded text-sm font-semibold">Aus Collection entfernen</button>
       </div>
     `;
@@ -849,12 +849,12 @@
           <h2 class="text-lg font-bold text-emerald-400">✓ ${count} Karten aus Collection entfernt</h2>
           <div class="text-xs text-slate-400 mt-1">Den Text unten an den Sender geben — er kann ihn im Listen-Import einlesen (Plain-Text, automatisch erkannt).</div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+        <button data-modal-close class="modal-close-x">×</button>
       </div>
       <textarea id="trade-result-text" rows="12" readonly class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs">${escapeHtml(text)}</textarea>
       <div class="flex justify-end gap-2 mt-3">
-        <button id="trade-result-copy" class="bg-emerald-500 text-slate-900 hover:bg-emerald-400 px-4 py-1.5 rounded text-sm font-semibold">In Zwischenablage kopieren</button>
-        <button data-modal-close class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm">Schließen</button>
+        <button id="trade-result-copy" class="btn-primary-emerald">In Zwischenablage kopieren</button>
+        <button data-modal-close class="btn-secondary">Schließen</button>
       </div>
     `;
     tradeModal = window.Util.openModal({

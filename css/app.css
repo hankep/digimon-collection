@@ -300,6 +300,53 @@
 summary { list-style: none; }
 summary::-webkit-details-marker { display: none; }
 
+/* Button-Komponenten — wiederkehrende Tailwind-Strings konsolidiert. */
+.btn-secondary {
+  background: #334155;
+  color: #f1f5f9;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  transition: background-color 0.1s ease;
+}
+.btn-secondary:hover { background: #475569; }
+
+.btn-primary-amber {
+  background: #f59e0b;
+  color: #1e293b;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  transition: background-color 0.1s ease;
+}
+.btn-primary-amber:hover { background: #fbbf24; }
+
+.btn-primary-emerald {
+  background: #10b981;
+  color: #1e293b;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  transition: background-color 0.1s ease;
+}
+.btn-primary-emerald:hover { background: #34d399; }
+
+.modal-close-x {
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.modal-close-x:hover { color: #ffffff; }
+
 /* Decklisten: Karten mit zugewiesenen (geslotteten) Proxies lila umranden */
 .card-tile.tile-proxy-slotted {
   border-color: #a855f7;

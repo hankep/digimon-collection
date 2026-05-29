@@ -947,7 +947,7 @@
             ${card.cost != null ? `<span class="bg-slate-700 px-2 py-0.5 rounded">Cost ${card.cost}</span>` : ''}
           </div>
         </div>
-        <button data-modal-close class="text-slate-400 hover:text-white text-2xl leading-none shrink-0 ml-2">×</button>
+        <button data-modal-close class="modal-close-x shrink-0 ml-2">×</button>
       </div>
 
       <div class="flex-1 overflow-auto -mr-2 pr-2">
