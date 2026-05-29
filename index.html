@@ -16,6 +16,17 @@
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
+  <!-- Auth-Gate: blockiert die ganze App, bis ein Supabase-Login aktiv ist.
+       Wird per JS gesteuert (app.js + sync.js onAuthStateChange). -->
+  <div id="auth-gate" class="fixed inset-0 z-40 bg-slate-900 flex items-center justify-center px-4">
+    <div class="w-full max-w-md">
+      <h1 class="text-2xl font-bold text-amber-400 mb-1 text-center">Digimon Collection</h1>
+      <p class="text-sm text-slate-400 mb-6 text-center">Bitte einloggen, um die App zu nutzen.</p>
+      <div id="auth-gate-login" class="bg-slate-800 rounded p-4"></div>
+    </div>
+  </div>
+
+  <div id="app-shell" class="hidden">
   <header class="border-b border-slate-700 bg-slate-800 sticky top-0 z-20">
     <div class="max-w-[2400px] mx-auto px-3 md:px-4 py-3 flex items-center gap-3">
       <h1 class="text-base md:text-xl font-bold text-amber-400">Digimon Collection</h1>
@@ -55,6 +66,7 @@
     <button data-tab="io"         class="tab-btn flex-1 py-3 text-xs font-medium">Im/Export</button>
     <button data-tab="user"       class="tab-btn flex-1 py-3 text-xs font-medium">User</button>
   </nav>
+  </div>
 
   <!-- Daten zuerst -->
   <script src="data/cards.data.js"></script>

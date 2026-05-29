@@ -12,6 +12,7 @@
     deckSortBy: 'id',  // id | name | price-asc | price-desc
     deckGroupBy: 'none', // level | cost | type | none
     deckMissingOnly: false, // nur Einträge mit fehlenden echten Kopien anzeigen
+    deckView: 'tiles',  // tiles | text — Bilder-Grid oder kompakte Text-Liste
     mainWantsSort: 'id',  // id | price-desc
     mainWantsSetFilter: null  // null = alle Sets; sonst Set-Code (Sitzungsfilter, nicht persistiert)
   };
@@ -26,6 +27,7 @@
     collectionCache = Store.loadCollection();
     state.pickerShowAlts = !!Prefs.get('showAlts', false);
     state.mainWantsSort = Prefs.get('mainWantsSort', 'id');
+    state.deckView = Prefs.get('deckView', 'tiles');
     if (!state.activeDeckId) {
       state.activeDeckId = MAIN_WANTS_ID;
     }
@@ -172,7 +174,11 @@
                 ? 'bg-yellow-500/15 border border-yellow-400 hover:bg-yellow-500/25 deck-slottable'
                 : 'hover:bg-slate-800'));
       const nameCls = (hasSlottedProxy && !active) ? 'text-purple-400' : '';
+      const fav = !!d.favorite;
+      const starTitle = fav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren';
+      const starColor = fav ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300';
       return `<div class="flex items-center gap-1">
+        <button data-fav="${d.id}" class="${starColor} px-1 text-base leading-none" title="${starTitle}">${fav ? '★' : '☆'}</button>
         <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
           <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
           <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
@@ -180,6 +186,9 @@
         <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
       </div>`;
     };
+
+    // Favoriten zuerst, sonst Reihenfolge bleibt.
+    const favFirst = arr => arr.slice().sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
 
     // Gruppiert nach Art: Decks / Wants / Trades.
     const GROUPS = [
@@ -189,14 +198,14 @@
     ];
     let groupedHtml = '';
     for (const g of GROUPS) {
-      const items = state.decksState.decks.filter(d => d.kind === g.kind);
+      const items = favFirst(state.decksState.decks.filter(d => d.kind === g.kind));
       if (!items.length) continue;
       groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">${g.label} · ${items.length}</div>`
         + `<div class="space-y-1">${items.map(renderItem).join('')}</div>`;
     }
     // Unbekannte Arten (Fallback) ans Ende.
     const known = new Set(GROUPS.map(g => g.kind));
-    const rest = state.decksState.decks.filter(d => !known.has(d.kind));
+    const rest = favFirst(state.decksState.decks.filter(d => !known.has(d.kind)));
     if (rest.length) {
       groupedHtml += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">Sonstige · ${rest.length}</div>`
         + `<div class="space-y-1">${rest.map(renderItem).join('')}</div>`;
@@ -207,6 +216,17 @@
       btn.addEventListener('click', () => {
         state.activeDeckId = btn.dataset.deck;
         render();
+      });
+    });
+    el.querySelectorAll('[data-fav]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const id = btn.dataset.fav;
+        const d = state.decksState.decks.find(x => x.id === id);
+        if (!d) return;
+        d.favorite = !d.favorite;
+        Store.saveDecks(state.decksState);
+        renderDeckList();
       });
     });
     el.querySelectorAll('[data-del]').forEach(btn => {
@@ -281,6 +301,11 @@
       </div>
 
       <div class="flex items-center gap-2 mb-2 text-sm flex-wrap shrink-0">
+        <span class="text-slate-400">Ansicht:</span>
+        <select id="deck-view" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+          <option value="tiles" ${state.deckView === 'tiles' ? 'selected' : ''}>Bilder</option>
+          <option value="text"  ${state.deckView === 'text'  ? 'selected' : ''}>Text</option>
+        </select>
         <span class="text-slate-400">Gruppieren:</span>
         <select id="group-by" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
           <option value="level" ${state.deckGroupBy === 'level' ? 'selected' : ''}>Level</option>
@@ -324,6 +349,11 @@
       deck.updatedAt = new Date().toISOString();
       Store.saveDecks(state.decksState);
       renderDeckList();
+    });
+    rootEl.querySelector('#deck-view').addEventListener('change', e => {
+      state.deckView = e.target.value;
+      Prefs.set('deckView', state.deckView);
+      renderDeckDetail();
     });
     rootEl.querySelector('#group-by').addEventListener('change', e => {
       state.deckGroupBy = e.target.value;
@@ -411,14 +441,16 @@
       }
     }
     const groups = groupEntries(visibleEntries, state.deckGroupBy);
-    entriesEl.innerHTML = groups.map(g => `
-      <div>
-        ${g.label ? `<div class="text-xs uppercase text-slate-500 font-bold mb-2">${escapeHtml(g.label)} <span class="opacity-60">(${g.entries.reduce((s,e)=>s+e.count,0)})</span></div>` : ''}
-        <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3">
-          ${g.entries.map(entry => renderEntryTile(entry, ctx)).join('')}
-        </div>
-      </div>
-    `).join('');
+    const useText = state.deckView === 'text';
+    entriesEl.innerHTML = groups.map(g => {
+      const head = g.label
+        ? `<div class="text-xs uppercase text-slate-500 font-bold mb-2">${escapeHtml(g.label)} <span class="opacity-60">(${g.entries.reduce((s,e)=>s+e.count,0)})</span></div>`
+        : '';
+      if (useText) {
+        return `<div>${head}<table class="wants-table w-full"><tbody>${g.entries.map(entry => renderEntryRow(entry, ctx)).join('')}</tbody></table></div>`;
+      }
+      return `<div>${head}<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3">${g.entries.map(entry => renderEntryTile(entry, ctx)).join('')}</div></div>`;
+    }).join('');
 
     entriesEl.querySelectorAll('[data-demand-inc]').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); modifyDemand(btn.dataset.demandInc, 1); });
@@ -575,6 +607,54 @@
         <button data-slot-inc="${entry.cardId}|${entry.variant}" ${freeReal + freeProxy === 0 || assignedTotal >= entry.count ? 'disabled' : ''}>+ Slot</button>
       </div>
     </div>`;
+  }
+
+  // Kompakte Tabellen-Zeile fuer Deck-Eintraege (Text-Ansicht). Verzichtet auf
+  // Slot-Buttons im Layout zugunsten Lesbarkeit, behaelt aber +/-Demand-Buttons
+  // und Klick auf die Zeile (Detail-Modal). Wants-/Trade-Listen rendern ohne
+  // Slot-Statusspalte (eine reine Wunsch-/Tauschliste).
+  function renderEntryRow(entry, ctx) {
+    const deck = currentDeck();
+    const isWants = deck && isListKind(deck.kind);
+    const card = CardDB.byId.get(entry.cardId);
+    const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
+    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
+    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
+    const note = Store.getCardNote(collectionCache, entry.cardId);
+    const rarity = card && card.rarity ? card.rarity : '';
+
+    const sa = ctx.da[entry.variant];
+    const assignedReal = sa ? sa.real : 0;
+    const assignedProxy = sa ? sa.proxy : 0;
+    const assignedTotal = assignedReal + assignedProxy;
+    const complete = !isWants && assignedTotal >= entry.count;
+
+    const slotCell = isWants
+      ? ''
+      : (() => {
+          const cls = complete ? 'text-emerald-400' : (assignedTotal === 0 ? 'text-slate-500' : 'text-amber-400');
+          const proxy = assignedProxy > 0 ? ` <span class="text-purple-400">+${assignedProxy}P</span>` : '';
+          return `<td class="py-1 pr-4 text-xs tabular-nums whitespace-nowrap"><span class="${cls}"><b>${assignedReal}</b>/${entry.count}</span>${proxy}</td>`;
+        })();
+
+    const qty = `<span class="inline-flex items-center gap-1">
+      <button data-demand-dec="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="Soll −">−</button>
+      <span class="font-bold text-amber-400 w-6 text-center tabular-nums">${entry.count}</span>
+      <button data-demand-inc="${entry.cardId}|${entry.variant}" class="wants-qty-btn" title="Soll +">+</button>
+    </span>`;
+
+    return `<tr class="wants-row entry-row group cursor-pointer hover:bg-slate-700/60" data-entry-card-id="${escapeAttr(entry.cardId)}" data-card-id="${escapeAttr(entry.cardId)}" data-variant-key="${escapeAttr(entry.variant)}">
+        <td class="py-1 pr-3 whitespace-nowrap">${qty}</td>
+        ${slotCell}
+        <td class="py-1 pr-3 relative">
+          <span class="block truncate max-w-[22rem]" title="${escapeAttr(name)}">${escapeHtml(name)}</span>
+          <img class="wants-preview" loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="" />
+        </td>
+        <td class="py-1 pr-3 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(entry.variant)}</td>
+        <td class="py-1 pr-3 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(rarity)}</td>
+        <td class="py-1 pr-3 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${cmLow ? 'CM ' + cmLow : '—'}</td>
+        <td class="py-1 text-right whitespace-nowrap">${Notes.iconHtml(!!note)}</td>
+      </tr>`;
   }
 
   function totalOwned(cardId) {

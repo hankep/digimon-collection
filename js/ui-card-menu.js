@@ -34,6 +34,11 @@
   }
 
   function init() {
+    // Trigger (Rechtsklick / Long-Press) bewusst deaktiviert. Das Modal
+    // (openAddToListsDialog) bleibt im Export erhalten, kann also weiterhin
+    // programmatisch via window.UICardMenu.open(cardId, variantKey) geoeffnet
+    // werden. Zum Reaktivieren: die Listener unten entkommentieren.
+    /*
     document.addEventListener('contextmenu', e => {
       const ctx = findCardContext(e.target);
       if (!ctx) return;
@@ -44,13 +49,11 @@
     // Touch: contextmenu existiert auf dem Handy nicht → Long-Press (~500ms) als Ersatz.
     let pressTimer = null;
     let startXY = null;
-    const MOVE_THRESHOLD = 10; // px – darüber gilt es als Scrollen, nicht als Long-Press
-
+    const MOVE_THRESHOLD = 10;
     const cancelPress = () => {
       if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
       startXY = null;
     };
-
     document.addEventListener('touchstart', e => {
       const ctx = findCardContext(e.target);
       if (!ctx) return;
@@ -61,7 +64,6 @@
         openAddToListsDialog(ctx.cardId, ctx.variantKey);
       }, 500);
     }, { passive: true });
-
     document.addEventListener('touchmove', e => {
       if (!pressTimer || !startXY) return;
       const t = e.touches[0];
@@ -71,9 +73,9 @@
         cancelPress();
       }
     }, { passive: true });
-
     document.addEventListener('touchend', cancelPress);
     document.addEventListener('touchcancel', cancelPress);
+    */
   }
 
   function openAddToListsDialog(cardId, variantKey) {

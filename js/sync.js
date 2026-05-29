@@ -11,6 +11,7 @@
   let client = null;
   let session = null;
   let onRemoteApplied = function () {};
+  let onAuthStateChange = function () {};
   let pushTimer = null;
   let dirty = false;        // lokale Änderungen, die noch nicht (bestätigt) hochgeladen sind
   let statusEl = null;
@@ -246,10 +247,13 @@
   function init(opts) {
     opts = opts || {};
     if (typeof opts.onRemoteApplied === 'function') onRemoteApplied = opts.onRemoteApplied;
+    if (typeof opts.onAuthStateChange === 'function') onAuthStateChange = opts.onAuthStateChange;
 
-    if (!window.supabase || !window.SUPABASE_URL || !window.SUPABASE_ANON_KEY) {
+    if (!isConfigured()) {
       setStatus('off');
-      return; // inaktiv → App läuft rein lokal
+      // App-Gate trotzdem informieren: nicht eingeloggt (UI bleibt gesperrt).
+      try { onAuthStateChange(false); } catch (e) { console.warn('onAuthStateChange-Fehler:', e); }
+      return;
     }
 
     client = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
@@ -262,6 +266,7 @@
       } else if (event === 'SIGNED_OUT') {
         setStatus('idle');
       }
+      try { onAuthStateChange(isLoggedIn()); } catch (e) { console.warn('onAuthStateChange-Fehler:', e); }
     });
 
     // Auto-Login pro Gerät: bestehende Session aufgreifen.
@@ -269,10 +274,16 @@
       session = data.session;
       renderAllLoginUIs();
       if (isLoggedIn()) pull(); else setStatus('idle');
+      try { onAuthStateChange(isLoggedIn()); } catch (e) { console.warn('onAuthStateChange-Fehler:', e); }
     });
 
     document.addEventListener('collection-changed', debouncedPush);
     document.addEventListener('decks-changed', debouncedPush);
+  }
+
+  // True, wenn Supabase-SDK + URL + Anon-Key gesetzt sind.
+  function isConfigured() {
+    return !!(window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
   }
 
   window.Sync = {
@@ -283,6 +294,7 @@
     push,
     flushThenReload,
     mountLoginUI,
-    isLoggedIn: () => isLoggedIn()
+    isLoggedIn: () => isLoggedIn(),
+    isConfigured
   };
 })();
