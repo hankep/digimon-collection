@@ -100,7 +100,10 @@
     try {
       localStorage.removeItem(window.Util.LS_KEYS.collection);
       localStorage.removeItem(window.Util.LS_KEYS.decks);
-    } catch (e) {}
+    } catch (e) {
+      // localStorage kann in privaten Tabs / mit deaktivierten Cookies werfen.
+      console.warn('Konnte LocalStorage beim Logout nicht raeumen:', e);
+    }
     // Tab-State zuruecksetzen — beim naechsten Login wird frisch initialisiert.
     initialised.clear();
     dirty.clear();

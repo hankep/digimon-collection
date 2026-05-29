@@ -55,7 +55,7 @@
     if (opts.touch !== false) collection.updatedAt = new Date().toISOString();
     invalidateIndexCache();
     if (!opts.silent) {
-      try { document.dispatchEvent(new CustomEvent('collection-changed')); } catch (e) {}
+      document.dispatchEvent(new CustomEvent('collection-changed'));
     }
     collSavePending = collection;
     if (collSaveTimer) clearTimeout(collSaveTimer);
@@ -490,7 +490,7 @@
     opts = opts || {};
     if (opts.touch !== false) state.updatedAt = new Date().toISOString();
     if (!opts.silent) {
-      try { document.dispatchEvent(new CustomEvent('decks-changed')); } catch (e) {}
+      document.dispatchEvent(new CustomEvent('decks-changed'));
     }
     decksSavePending = state;
     if (decksSaveTimer) clearTimeout(decksSaveTimer);
