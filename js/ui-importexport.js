@@ -472,7 +472,33 @@
     tradeState.rawText = '';
     tradeState.entries = [];
     tradeState.view = Prefs.get('tradeView', 'tiles');
+    tradeState.sort = Prefs.get('tradeSort', 'id');
     renderTradeModal();
+  }
+
+  // Sortiert tradeState.entries in-place. Wird vor jedem Re-Render aufgerufen,
+  // damit DOM-Indizes (data-trade-inc) konsistent zum Array bleiben.
+  function applyTradeSort() {
+    const mode = tradeState.sort || 'id';
+    const priceOf = e => {
+      const p = (window.CM && CM.getForVariant) ? CM.getForVariant(e.deliverVariant) : null;
+      return p && p.low != null ? p.low : 0;
+    };
+    const availRank = e => {
+      if (e.deliverableVariants.length === 0) return 2;          // ✗
+      return e.deliverVariant === e.requestedVariant ? 0 : 1;     // ✓ vs. ⚠
+    };
+    tradeState.entries.sort((a, b) => {
+      if (mode === 'price') {
+        const d = priceOf(b) - priceOf(a);
+        if (d !== 0) return d;
+      } else if (mode === 'available') {
+        const d = availRank(a) - availRank(b);
+        if (d !== 0) return d;
+      }
+      if (a.cardId !== b.cardId) return a.cardId.localeCompare(b.cardId);
+      return a.requestedVariant.localeCompare(b.requestedVariant);
+    });
   }
 
   function tradeHost() {
@@ -599,11 +625,17 @@
             </div>
             <button id="trade-close" class="text-slate-400 hover:text-white text-2xl leading-none">×</button>
           </div>
-          <div class="flex items-center gap-2 mb-3 text-sm shrink-0">
+          <div class="flex items-center gap-2 mb-3 text-sm shrink-0 flex-wrap">
             <span class="text-slate-400">Ansicht:</span>
             <select id="trade-view" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
               <option value="tiles" ${tradeState.view === 'tiles' ? 'selected' : ''}>Bilder</option>
               <option value="text"  ${tradeState.view === 'text'  ? 'selected' : ''}>Text</option>
+            </select>
+            <span class="text-slate-400">Sortierung:</span>
+            <select id="trade-sort" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+              <option value="id"        ${tradeState.sort === 'id'        ? 'selected' : ''}>ID</option>
+              <option value="price"     ${tradeState.sort === 'price'     ? 'selected' : ''}>Preis ↓</option>
+              <option value="available" ${tradeState.sort === 'available' ? 'selected' : ''}>Verfügbarkeit</option>
             </select>
             <button id="trade-reset" class="ml-auto text-xs text-slate-400 hover:text-slate-200 underline">Liste zurücksetzen</button>
           </div>
@@ -623,6 +655,11 @@
     host.querySelector('#trade-modal').addEventListener('click', e => {
       if (e.target.id === 'trade-modal') closeTradeModal();
     });
+    host.querySelector('#trade-sort').addEventListener('change', e => {
+      tradeState.sort = e.target.value;
+      Prefs.set('tradeSort', tradeState.sort);
+      renderTradeBody();
+    });
     host.querySelector('#trade-view').addEventListener('change', e => {
       tradeState.view = e.target.value;
       Prefs.set('tradeView', tradeState.view);
@@ -638,8 +675,11 @@
   function renderTradeBody() {
     const body = document.querySelector('#trade-body');
     if (!body) return;
+    applyTradeSort();
+    const prevScroll = body.scrollTop;
     body.innerHTML = tradeState.view === 'text' ? renderTradeText() : renderTradeTiles();
     wireTradeEntries(body);
+    body.scrollTop = prevScroll;
   }
 
   function renderTradeTotals() {
@@ -672,7 +712,7 @@
         : `<span class="text-emerald-400 text-[10px] font-semibold">✓ exakt</span>`;
     const chosen = entry.deliverableVariants.find(v => v.key === entry.deliverVariant) || { free: 0, owned: 0 };
     const cm = (window.CM && CM.getForVariant) ? CM.getForVariant(entry.deliverVariant) : null;
-    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
+    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
     const max = chosen.free;
     const cls = !hasDeliverable ? 'opacity-50' : (isSubstitute ? 'ring-1 ring-amber-500/40' : '');
     const variantOptions = entry.deliverableVariants.length > 1
@@ -684,12 +724,12 @@
       <img loading="lazy" src="${CardDB.imagePath(entry.deliverVariant)}" alt="" class="w-full aspect-[5/7] object-cover rounded mb-2" />
       <div class="flex items-center justify-between gap-2 mb-1">
         ${statusBadge}
-        ${cmLow ? `<span class="text-amber-400 text-[10px] font-semibold">CM ${cmLow}</span>` : ''}
+        ${cmText ? `<span class="text-amber-400 text-[10px] font-semibold" title="Cardmarket low / trend">${cmText}</span>` : '<span class="text-slate-500 text-[10px]">CM</span>'}
       </div>
       <div class="text-sm font-semibold truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      <div class="text-[10px] text-slate-500 mt-0.5">Wants: ${entry.wantsCount}× ${escapeHtml(entry.requestedVariant)}</div>
+      <div class="text-[10px] text-slate-300 mt-0.5">Wants: ${entry.wantsCount}× ${escapeHtml(entry.requestedVariant)}</div>
       <div class="mt-1">${variantOptions}</div>
-      <div class="text-[10px] text-slate-500 mt-0.5">${chosen.free} frei / ${chosen.owned} besessen</div>
+      <div class="text-[10px] text-slate-300 mt-0.5">${chosen.free} frei / ${chosen.owned} Besitz</div>
       <div class="flex items-center justify-center gap-2 mt-2">
         <button data-trade-dec="${idx}" class="wants-qty-btn" ${entry.deliverCount === 0 ? 'disabled' : ''}>−</button>
         <span class="font-bold text-emerald-400 tabular-nums w-10 text-center">${entry.deliverCount}/${entry.wantsCount}</span>
@@ -724,7 +764,7 @@
         : `<span class="text-emerald-400 font-semibold">✓</span>`;
     const chosen = entry.deliverableVariants.find(v => v.key === entry.deliverVariant) || { free: 0, owned: 0 };
     const cm = (window.CM && CM.getForVariant) ? CM.getForVariant(entry.deliverVariant) : null;
-    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : '—';
+    const cmText = (window.CM && CM.fmtLowTrend) ? (CM.fmtLowTrend(cm) || 'CM') : '—';
     const max = chosen.free;
     const variantOptions = entry.deliverableVariants.length > 1
       ? `<select data-tradevar-idx="${idx}" class="bg-slate-900 border border-slate-600 rounded px-1 py-0.5 text-xs font-mono">
@@ -735,9 +775,9 @@
     return `<tr class="hover:bg-slate-700/40 ${rowCls}">
       <td class="py-1 pr-3">${statusHtml}</td>
       <td class="py-1 pr-3 text-sm">${escapeHtml(name)}</td>
-      <td class="py-1 pr-3 text-xs font-mono text-slate-400">${entry.wantsCount}× ${escapeHtml(entry.requestedVariant)}</td>
-      <td class="py-1 pr-3">${variantOptions} <span class="text-[10px] text-slate-500">(${chosen.free} frei)</span></td>
-      <td class="py-1 pr-3 text-amber-400 text-xs tabular-nums text-right whitespace-nowrap">${cmLow}</td>
+      <td class="py-1 pr-3 text-xs font-mono text-slate-300">${entry.wantsCount}× ${escapeHtml(entry.requestedVariant)}</td>
+      <td class="py-1 pr-3">${variantOptions} <span class="text-[10px] text-slate-300">(${chosen.free} frei / ${chosen.owned} Besitz)</span></td>
+      <td class="py-1 pr-3 text-amber-400 text-xs tabular-nums text-right whitespace-nowrap" title="Cardmarket low / trend">${cmText}</td>
       <td class="py-1 pr-3 text-center whitespace-nowrap">
         <span class="inline-flex items-center gap-1">
           <button data-trade-dec="${idx}" class="wants-qty-btn" ${entry.deliverCount === 0 ? 'disabled' : ''}>−</button>

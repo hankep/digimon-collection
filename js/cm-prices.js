@@ -45,6 +45,18 @@
     return Number(n).toFixed(2).replace('.', ',') + ' €';
   }
 
+  // Liefert eine kombinierte Anzeige aus Low + Trend ("0,35 € / 0,42 €"). Wenn
+  // beide gleich sind oder nur einer existiert: nur dieser Wert. Wenn nichts
+  // vorhanden: null.
+  function fmtLowTrend(p) {
+    if (!p) return null;
+    const hasLow = p.low != null && !Number.isNaN(Number(p.low));
+    const hasTrend = p.trend != null && !Number.isNaN(Number(p.trend));
+    if (!hasLow && !hasTrend) return null;
+    if (hasLow && hasTrend && Number(p.low) !== Number(p.trend)) return fmt(p.low) + ' / ' + fmt(p.trend);
+    return fmt(hasLow ? p.low : p.trend);
+  }
+
   function hasData() {
     return !!(window.CM_PRICES && Object.keys(window.CM_PRICES).length);
   }
@@ -53,5 +65,5 @@
     return window.CM_PRICES_UPDATED_AT || null;
   }
 
-  window.CM = { get, getForSet, getForVariant, fmt, hasData, updatedAt };
+  window.CM = { get, getForSet, getForVariant, fmt, fmtLowTrend, hasData, updatedAt };
 })();

@@ -536,7 +536,7 @@
     const card = CardDB.byId.get(entry.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
     const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
-    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
+    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
 
     if (isWants) {
@@ -546,7 +546,7 @@
         <img loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="${escapeAttr(name)}" />
         <span class="tile-note">${Notes.iconHtml(!!note)}</span>
         <div class="px-2 pt-1 text-[11px] font-mono leading-tight">
-          <span class="text-amber-400" title="Cardmarket low">${cmLow ? 'CM: ' + cmLow : ''}</span>
+          <span class="text-amber-400" title="Cardmarket low / trend">${cmText ? cmText : 'CM'}</span>
         </div>
         <div class="p-2 pt-1">
           <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(entry.variant)}${card && card.rarity ? ` <span class="text-slate-300">${escapeHtml(CardDB.rarityShort(card.rarity))}</span>` : ''}</div>
@@ -607,7 +607,7 @@
       <img loading="lazy" src="${CardDB.imagePath(entry.variant)}" alt="${escapeAttr(name)}" />
       <span class="tile-note">${Notes.iconHtml(!!note)}</span>
       <div class="px-2 pt-1 text-[11px] font-mono leading-tight flex justify-between gap-2">
-        <span class="text-amber-400 truncate" title="Cardmarket low">${cmLow ? 'CM: ' + cmLow : ''}</span>
+        <span class="text-amber-400 truncate" title="Cardmarket low / trend">${cmText ? cmText : 'CM'}</span>
         <span class="${ownedClass}"${needTitle ? ` title="${escapeAttr(needTitle)}"` : ''}>${needText}</span>
       </div>
       <div class="p-2 pt-1 flex items-center gap-2">
@@ -703,7 +703,7 @@
     const card = CardDB.byId.get(entry.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
     const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
-    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
+    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
     const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
 
@@ -787,7 +787,7 @@
         </td>
         <td class="py-1 pr-3 font-mono text-slate-400 text-xs whitespace-nowrap">${escapeHtml(entry.variant)}</td>
         <td class="py-1 pr-3 text-slate-500 text-xs whitespace-nowrap">${escapeHtml(rarity)}</td>
-        <td class="py-1 pr-3 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap">${cmLow ? 'CM ' + cmLow : '—'}</td>
+        <td class="py-1 pr-3 text-slate-400 text-xs tabular-nums text-right whitespace-nowrap" title="Cardmarket low / trend">${cmText || 'CM'}</td>
         <td class="py-1 text-right whitespace-nowrap">${Notes.iconHtml(!!note)}</td>
       </tr>`;
   }
@@ -1487,7 +1487,7 @@
     const card = CardDB.byId.get(item.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : item.cardId;
     const cm = (window.CM && CM.hasData()) ? CM.getForVariant(item.variant) : null;
-    const cmLow = (cm && cm.low != null) ? CM.fmt(cm.low) : null;
+    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
     const note = Store.getCardNote(collectionCache, item.cardId);
     const tooltip = item.sources.map(s => `${s.name}: ${s.n}`).join('\n');
     const reprintPills = card ? CardDB.reprintPillsHtml(card) : '';
@@ -1496,7 +1496,7 @@
       <img loading="lazy" src="${CardDB.imagePath(item.variant)}" alt="${escapeAttr(name)}" />
       <span class="tile-note">${Notes.iconHtml(!!note)}</span>
       <div class="px-2 pt-1 text-[11px] font-mono leading-tight flex justify-between gap-2">
-        <span class="text-amber-400 truncate" title="Cardmarket low">${cmLow ? 'CM: ' + cmLow : ''}</span>
+        <span class="text-amber-400 truncate" title="Cardmarket low / trend">${cmText ? cmText : 'CM'}</span>
         <span class="text-rose-400" title="${escapeAttr(tooltip)}">fehlt <b>${item.count}</b></span>
       </div>
       <div class="p-2 pt-1">

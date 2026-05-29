@@ -305,9 +305,10 @@
   }
 
   function renderImageTile(it, group) {
-    const priceRow = it.price != null
-      ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low">CM: ${window.CM ? CM.fmt(it.price) : it.price + ' €'}</div>`
-      : '';
+    const pText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(CM.getForVariant(it.variant)) : null;
+    const priceRow = pText
+      ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low / trend">${pText}</div>`
+      : `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-slate-500" title="Kein Cardmarket-Preis">CM</div>`;
     const key = `${group.listId}|${it.cardId}|${it.variant}`;
     const controls = group.editable
       ? `<div class="qty-controls"><div class="qty-group">
@@ -331,7 +332,7 @@
   }
 
   function renderTextRow(it, group, bracketColor) {
-    const priceTxt = it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—';
+    const priceTxt = (window.CM && CM.fmtLowTrend) ? (CM.fmtLowTrend(CM.getForVariant(it.variant)) || 'CM') : (it.price != null ? CM.fmt(it.price) : '—');
     const key = `${group.listId}|${it.cardId}|${it.variant}`;
     const qty = group.editable
       ? `<span class="inline-flex items-center gap-1">

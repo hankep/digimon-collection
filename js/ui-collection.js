@@ -791,14 +791,14 @@
   // 3 Zeilen, damit Variant-Key + Set-Badge nicht abgeschnitten werden.
   function variantHeaderHtml(card, v, hero) {
     const vPrice = (window.CM && CM.hasData()) ? CM.getForVariant(v.key) : null;
-    const vPriceLow = (vPrice && vPrice.low != null) ? CM.fmt(vPrice.low) : null;
+    const vPriceText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(vPrice) : null;
     const vSet = vPrice && vPrice.set ? vPrice.set : null;
     const rarityTxt = card.rarity ? rarityLabel(card.rarity) : '';
     const cmUrl = CardDB.cardmarketUrl(card, v.key);
-    const priceHtml = vPriceLow
+    const priceHtml = vPriceText
       ? (cmUrl
-          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Auf Cardmarket öffnen">CM ${vPriceLow} ↗</a>`
-          : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low für diese Variante">CM ${vPriceLow}</span>`)
+          ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap" title="Cardmarket low / trend">${vPriceText} ↗</a>`
+          : `<span class="text-amber-400 font-semibold whitespace-nowrap" title="Cardmarket low / trend">${vPriceText}</span>`)
       : (cmUrl
           ? `<a href="${escapeAttr(cmUrl)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 whitespace-nowrap" title="Auf Cardmarket öffnen">CM ↗</a>`
           : '');
@@ -806,14 +806,27 @@
       ? `<span class="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded ${vSet === card.set ? 'bg-slate-700 text-slate-300' : 'bg-amber-500/20 text-amber-300'}" title="${escapeAttr(CardDB.setNameByCode(vSet))}">${escapeHtml(vSet)}</span>`
       : '';
 
-    // A.v: Aggregat ueber andere Varianten der selben Card-ID — wieviele
-    // sind frei verfuegbar / insgesamt besessen. Nur anzeigen, wenn frei > 0.
+    // A.v: x/y. Im Hero-Block ist es das Aggregat ueber ANDERE Varianten der
+    // selben Card-ID (welche Alternativen habe ich noch); im kompakten Tile
+    // einer Alt-Variante zeigt es x/y dieser EXAKTEN Variante (wie viele habe
+    // ich davon frei / insgesamt). Nur anzeigen, wenn frei > 0.
     const vIdx = state.variantIdx || (state.collection ? Store.buildVariantIndex(state.collection) : null);
     let avHtml = '';
     if (vIdx) {
-      const av = otherVariantsAvLocal(card, v.key, vIdx);
-      if (av.freeOther > 0) {
-        avHtml = `<span class="text-amber-300 text-[10px] whitespace-nowrap" title="${escapeAttr(av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}">A.v: ${av.freeOther}/${av.totalOther}</span>`;
+      if (hero) {
+        const av = otherVariantsAvLocal(card, v.key, vIdx);
+        if (av.freeOther > 0) {
+          avHtml = `<span class="text-amber-300 text-[10px] whitespace-nowrap" title="${escapeAttr(av.freeOther + ' frei / ' + av.totalOther + ' besessen in anderen Varianten: ' + av.breakdown.join(', '))}">A.v: ${av.freeOther}/${av.totalOther}</span>`;
+        }
+      } else {
+        const ov = vIdx[v.key];
+        if (ov) {
+          const free = (ov.freeReal || 0) + (ov.freeProxy || 0);
+          const owned = (ov.real || 0) + (ov.proxy || 0);
+          if (free > 0) {
+            avHtml = `<span class="text-amber-300 text-[10px] whitespace-nowrap" title="${free} frei / ${owned} besessen dieser Variante">A.v: ${free}/${owned}</span>`;
+          }
+        }
       }
     }
 

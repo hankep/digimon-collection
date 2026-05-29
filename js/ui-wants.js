@@ -367,14 +367,14 @@
   function renderReprintBody(items, view, blockCode) {
     const priceForBlock = it => {
       if (!window.CM || !CM.hasData()) return null;
-      const p = CM.getForSet(it.cardId, blockCode);
-      return (p && p.low != null) ? p.low : null;
+      return CM.getForSet(it.cardId, blockCode);
     };
     if (view === 'images') {
       return `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-2">${items.map(it => {
-        const price = priceForBlock(it);
-        const priceRow = price != null
-          ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low (${escapeHtml(blockCode || '')})">CM: ${CM.fmt(price)}</div>`
+        const pObj = priceForBlock(it);
+        const pText = pObj && CM.fmtLowTrend ? CM.fmtLowTrend(pObj) : null;
+        const priceRow = pText
+          ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low / trend (${escapeHtml(blockCode || '')})">${pText}</div>`
           : '';
         return `
         <div class="card-tile cursor-pointer opacity-60" data-card-id="${escapeAttr(it.cardId)}" data-variant-key="${escapeAttr(it.variant)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
@@ -391,8 +391,8 @@
     // .wants-preview die Transparenz mit. Stattdessen jede Textzelle in ein
     // span.reprint-fade einwickeln, das die Bild-Preview NICHT umschließt.
     return `<table class="wants-table"><tbody>${items.map(it => {
-      const price = priceForBlock(it);
-      const priceTxt = price != null ? CM.fmt(price) : (it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—');
+      const pObj = priceForBlock(it);
+      const priceTxt = (pObj && CM.fmtLowTrend && CM.fmtLowTrend(pObj)) || (it.price != null ? CM.fmt(it.price) : 'CM');
       return `
       <tr class="wants-row wants-reprint-row group cursor-pointer hover:bg-slate-700/60" data-card-id="${escapeAttr(it.cardId)}" title="Reprint – kommt aus ${escapeAttr(it.originSet)}, nicht gezählt">
         <td class="py-1 pr-4 whitespace-nowrap"><span class="reprint-fade font-bold text-slate-400 tabular-nums">${it.count}×</span></td>
@@ -459,9 +459,10 @@
   // Bilder-Ansicht im Collection-Stil: Bild, Preis, ID/Rarity, Name, Count-Badge
   // und (bei editierbaren Listen) −/+ zum Anpassen der Wants-Anzahl.
   function renderImageTile(it, group) {
-    const priceRow = it.price != null
-      ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low">CM: ${window.CM ? CM.fmt(it.price) : it.price + ' €'}</div>`
-      : '';
+    const pText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(CM.getForVariant(it.variant)) : null;
+    const priceRow = pText
+      ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low / trend">${pText}</div>`
+      : `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-slate-500" title="Kein Cardmarket-Preis">CM</div>`;
     const key = `${group.listId}|${it.cardId}|${it.variant}`;
     const controls = group.editable
       ? `<div class="qty-controls"><div class="qty-group">
@@ -490,7 +491,7 @@
   // Text-Ansicht: Tabellenzeile (gleiche Spalten-Einrückung über alle Zeilen),
   // Hover-Bild; bei editierbaren Listen −/+.
   function renderTextRow(it, group, bracketColor) {
-    const priceTxt = it.price != null ? (window.CM ? CM.fmt(it.price) : it.price + ' €') : '—';
+    const priceTxt = (window.CM && CM.fmtLowTrend) ? (CM.fmtLowTrend(CM.getForVariant(it.variant)) || 'CM') : (it.price != null ? CM.fmt(it.price) : '—');
     const key = `${group.listId}|${it.cardId}|${it.variant}`;
     const qty = group.editable
       ? `<span class="inline-flex items-center gap-1">

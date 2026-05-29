@@ -469,7 +469,7 @@
   function setPillHtml(card, code, _titlePrefix) {
     const rarity = card.rarity || '';
     const p = (window.CM && CM.hasData()) ? CM.getForSet(card.id, code) : null;
-    const priceTxt = (p && p.low != null) ? CM.fmt(p.low) : null;
+    const priceTxt = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(p) : null;
     const parts = [code];
     if (rarity) parts.push(rarity);
     if (priceTxt) parts.push(priceTxt);
