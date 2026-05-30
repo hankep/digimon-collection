@@ -13,9 +13,12 @@
     sortDir: 'asc',
     missingOnly: false,
     ownedOnly: true,
+    traitOwn: null,           // Trait der Karte selbst (digi_type1-4)
+    traitInEffect: null,      // Trait, der im Effekttext der Karte als [TRAIT] referenziert wird
     ownedRealOnly: false,    // besessen UND mind. eine echte Kopie (keine Proxy-only-Karten)
     proxyOnly: false,
     availableOnly: false,     // besessen, aber mind. eine freie (keinem Deck zugewiesene) Kopie
+    altOnly: false,           // nur Alt-Art-Eintraege (zwingt showAlts an)
     showAlts: false,
     setGroups: { BT: true, EX: true, ST: true, Andere: true }
   };
@@ -52,16 +55,19 @@
     rootEl.innerHTML = `
       <div class="flex flex-col md:flex-row gap-4">
         <aside class="w-full md:w-64 md:shrink-0">
-          <h2 class="text-sm font-bold uppercase text-slate-400 mb-2">Sets</h2>
-          <div class="mb-2 flex flex-wrap gap-2 text-xs">
-            ${['BT','EX','ST','Andere'].map(k => `
-              <label class="flex items-center gap-1">
-                <input type="checkbox" data-set-group="${k}" ${state.setGroups[k] ? 'checked' : ''} />
-                ${k}
-              </label>
-            `).join('')}
-          </div>
-          <div id="set-list" class="space-y-1 max-h-[40vh] md:max-h-[78vh] overflow-y-auto pr-2"></div>
+          <details class="md:!block" open>
+            <summary class="md:hidden cursor-pointer text-sm font-bold uppercase text-slate-400 mb-2 select-none">Sets <span class="text-xs text-slate-500 normal-case">(tippen zum Ein-/Ausklappen)</span></summary>
+            <h2 class="hidden md:block text-sm font-bold uppercase text-slate-400 mb-2">Sets</h2>
+            <div class="mb-2 flex flex-wrap gap-2 text-xs">
+              ${['BT','EX','ST','Andere'].map(k => `
+                <label class="flex items-center gap-1">
+                  <input type="checkbox" data-set-group="${k}" ${state.setGroups[k] ? 'checked' : ''} />
+                  ${k}
+                </label>
+              `).join('')}
+            </div>
+            <div id="set-list" class="space-y-1 max-h-[40vh] md:max-h-[78vh] overflow-y-auto pr-2"></div>
+          </details>
         </aside>
         <div class="flex-1 min-w-0">
           <div id="stats-bar" class="mb-3"></div>
@@ -83,6 +89,14 @@
               ${RARITY_FILTER_ORDER
                 .filter(r => r === ALT_RARITY || CardDB.rarities.includes(r))
                 .map(r => `<option value="${escapeAttr(r)}" ${state.rarity === r ? 'selected' : ''}>${escapeHtml(rarityLabel(r))}</option>`).join('')}
+            </select>
+            <select id="filter-trait-own" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]" title="Filtert Karten, deren eigener Trait (digi_type) dem Wert entspricht.">
+              <option value="">Trait: alle</option>
+              ${(CardDB.traits || []).map(t => `<option value="${escapeAttr(t)}" ${state.traitOwn === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+            </select>
+            <select id="filter-trait-effect" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]" title="Filtert Karten, in deren Effekttext [Trait] referenziert wird.">
+              <option value="">Trait im Effekt: alle</option>
+              ${(CardDB.traits || []).map(t => `<option value="${escapeAttr(t)}" ${state.traitInEffect === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
             </select>
 
             <div class="flex items-center gap-1">
@@ -130,6 +144,10 @@
                 <input id="show-alts" type="checkbox" ${state.showAlts ? 'checked' : ''} />
                 Alt-Arts einzeln
               </label>
+              <label class="flex items-center gap-2 text-sm" title="Nur Alt-Art-Varianten anzeigen (impliziert 'Alt-Arts einzeln')">
+                <input id="alt-only" type="checkbox" ${state.altOnly ? 'checked' : ''} />
+                Nur Alt-Arts
+              </label>
 
               <button id="proxies-export" class="bg-purple-500 hover:bg-purple-400 text-white px-3 py-1.5 rounded text-sm font-semibold ml-auto">Proxies → Clipboard</button>
               <span id="proxies-msg" class="text-xs"></span>
@@ -160,6 +178,12 @@
     }, 200));
     rootEl.querySelector('#filter-type').addEventListener('change', e => {
       state.type = e.target.value || null; renderGrid(); renderStats();
+    });
+    rootEl.querySelector('#filter-trait-own').addEventListener('change', e => {
+      state.traitOwn = e.target.value || null; state.filteredCardsCache = null; renderGrid(); renderStats();
+    });
+    rootEl.querySelector('#filter-trait-effect').addEventListener('change', e => {
+      state.traitInEffect = e.target.value || null; state.filteredCardsCache = null; renderGrid(); renderStats();
     });
     rootEl.querySelector('#filter-rarity').addEventListener('change', e => {
       state.rarity = e.target.value || null;
@@ -201,6 +225,22 @@
     rootEl.querySelector('#show-alts').addEventListener('change', e => {
       state.showAlts = e.target.checked;
       Prefs.set('showAlts', state.showAlts);
+      // 'Nur Alt-Arts' braucht zwingend Alt-Anzeige; wenn user den Auto-Trigger aushebelt: Alt-Only mit ausschalten.
+      if (!state.showAlts && state.altOnly) {
+        state.altOnly = false;
+        const ao = rootEl.querySelector('#alt-only');
+        if (ao) ao.checked = false;
+      }
+      renderGrid(); renderStats();
+    });
+    rootEl.querySelector('#alt-only').addEventListener('change', e => {
+      state.altOnly = e.target.checked;
+      if (state.altOnly && !state.showAlts) {
+        state.showAlts = true;
+        Prefs.set('showAlts', true);
+        const sa = rootEl.querySelector('#show-alts');
+        if (sa) sa.checked = true;
+      }
       renderGrid(); renderStats();
     });
     rootEl.querySelector('#proxies-export').addEventListener('click', exportProxies);
@@ -210,11 +250,14 @@
       state.type = null;
       state.rarity = null;
       state.levels = [];
+      state.traitOwn = null;
+      state.traitInEffect = null;
       state.missingOnly = false;
       state.ownedOnly = false;
       state.ownedRealOnly = false;
       state.proxyOnly = false;
       state.availableOnly = false;
+      state.altOnly = false;
       render();
     });
   }
@@ -379,18 +422,36 @@
     // den seltenen Fall, dass renderStats allein läuft.
     const cards = state.filteredCardsCache || filteredCards();
     const idx = Store.getVariantIndex(state.collection);
+    const haveCM = !!(window.CM && CM.hasData());
     let ownedUnique = 0, totalCopies = 0, totalProxies = 0;
+    let lowSum = 0, trendSum = 0, pricedCount = 0, missingPrice = 0;
     for (const c of cards) {
       let realCopies = 0, proxyCopies = 0;
       for (const v of CardDB.variantsOf(c)) {
         const s = idx[v.key];
-        if (s) { realCopies += s.real; proxyCopies += s.proxy; }
+        if (!s) continue;
+        realCopies += s.real;
+        proxyCopies += s.proxy;
+        // Nur ECHTE Kopien zaehlen fuer die Preissumme (Proxies = kein Besitz).
+        if (haveCM && s.real > 0) {
+          const p = CM.pricesForEntry(c.id, v.key);
+          if (p.low != null || p.trend != null) {
+            if (p.low != null) lowSum += p.low * s.real;
+            if (p.trend != null) trendSum += p.trend * s.real;
+            pricedCount += s.real;
+          } else {
+            missingPrice += s.real;
+          }
+        }
       }
       if (realCopies + proxyCopies > 0) ownedUnique++;
       totalCopies += realCopies;
       totalProxies += proxyCopies;
     }
     const setLabel = state.selectedSet || 'Alle Karten';
+    const pricePill = haveCM && (lowSum > 0 || trendSum > 0)
+      ? `<div title="CM low / trend Summe ueber echte Kopien (ohne Proxies)"><span class="text-slate-400">Wert (CM):</span> <span class="font-semibold text-amber-300">${Fmt.eur(lowSum)} / ${Fmt.eur(trendSum)}</span>${missingPrice > 0 ? ` <span class="text-slate-500 text-xs">(${missingPrice} ohne)</span>` : ''}</div>`
+      : '';
     el.innerHTML = `
       <div class="bg-slate-800 rounded p-3 flex flex-wrap gap-4 text-sm">
         <div><span class="text-slate-400">Set:</span> <span class="font-semibold">${escapeHtml(setLabel)}</span></div>
@@ -398,6 +459,7 @@
         <div><span class="text-slate-400">Davon besessen:</span> <span class="font-semibold text-amber-400">${ownedUnique}</span> <span class="text-slate-500">(${cards.length ? Math.round(ownedUnique / cards.length * 100) : 0}%)</span></div>
         <div><span class="text-slate-400">Kopien gesamt:</span> <span class="font-semibold">${totalCopies}</span></div>
         ${totalProxies > 0 ? `<div><span class="text-slate-400">Davon Proxy:</span> <span class="font-semibold text-purple-400">${totalProxies}</span></div>` : ''}
+        ${pricePill}
       </div>
     `;
   }
@@ -443,6 +505,8 @@
       colors: state.colors,
       type: state.type,
       levels: state.levels,
+      traitOwn: state.traitOwn,
+      traitInEffect: state.traitInEffect,
       sortBy: state.sortBy,
       sortDir: state.sortDir
     });
@@ -499,6 +563,10 @@
       list = state.showAlts
         ? list.filter(e => variantProxy(e.variantKey) > 0)
         : list.filter(e => CardDB.variantsOf(e.card).some(v => variantProxy(v.key) > 0));
+    }
+    if (state.altOnly) {
+      // Nur Alt-Variant-Eintraege (impliziert showAlts auf entry-Ebene).
+      list = list.filter(e => e.isAlt);
     }
     return list;
   }
@@ -702,10 +770,17 @@
     const note = Store.getCardNote(state.collection, card.id);
     const freeReal = s.freeReal;
     const inUseReal = Math.max(0, count - freeReal);
+    // Reprint-Marker: wir filtern aktuell nach einem Set, und diese Karte
+    // hat einen ANDEREN Origin-Set → ist also ein Reprint, der im aktuellen
+    // Set erhaeltlich ist.
+    const reprintBadge = state.selectedSet && card.set !== state.selectedSet
+      ? `<div class="absolute top-1 right-1 bg-amber-500/80 text-slate-900 text-[10px] font-bold rounded px-1.5 py-0.5" title="Reprint aus Origin-Set ${escapeAttr(card.set)} — hier in ${escapeAttr(state.selectedSet)} erhaeltlich">⟳ ${escapeHtml(card.set)}</div>`
+      : '';
     return `
       <div class="card-tile ${missing ? 'missing' : ''} ${playset ? 'playset' : ''} ${proxy > 0 ? 'tile-proxy-slotted' : ''}" data-card-id="${escapeAttr(card.id)}" data-variant-key="${escapeAttr(variant)}">
         <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(CardDB.cleanDisplayName(card))}" />
         ${badge}
+        ${reprintBadge}
         <span class="tile-note">${Notes.iconHtml(!!note)}</span>
         ${renderPriceRow(card.id, variant)}
         <div class="p-2 pt-1 flex items-center gap-2">
