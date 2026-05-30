@@ -152,7 +152,7 @@
       const card = CardDB.byId.get(e.cardId);
       const name = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
-      return `<div class="bg-slate-900 rounded p-1.5">
+      return `<div class="bg-slate-900 hover:bg-slate-800 rounded p-1.5 cursor-pointer" data-card-id="${escapeAttr(e.cardId)}" data-variant-key="${escapeAttr(e.variant)}" title="Detail-Ansicht oeffnen">
         <img loading="lazy" src="${CardDB.imagePath(e.variant)}" alt="${escapeAttr(name)}" class="w-full aspect-[5/7] object-cover rounded mb-1" />
         <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(e.variant)}">${escapeHtml(e.variant)}${rarity ? ` <span class="text-slate-500">${escapeHtml(rarity)}</span>` : ''}</div>
         <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
@@ -188,6 +188,11 @@
         content.querySelector('#shared-copy-to-own').addEventListener('click', () => {
           copySharedDeck(d, ownerName);
           close();
+        });
+        content.querySelectorAll('[data-card-id][data-variant-key]').forEach(tile => {
+          tile.addEventListener('click', () => {
+            window.Util.bus.emit('open-card-modal', { cardId: tile.dataset.cardId, variantKey: tile.dataset.variantKey });
+          });
         });
       }
     });
