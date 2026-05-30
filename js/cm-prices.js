@@ -30,6 +30,38 @@
     return { low: p.low, avg: p.avg, trend: p.trend };
   }
 
+  // Manuelle Heuristik-Korrekturen aus data/variant-overrides.data.js. Format:
+  //   { variantKey: 'New Set Label' }  -> bySet wird umbenannt
+  //   { variantKey: null }              -> byVariant-Eintrag wird ignoriert
+  // Cached: das Original-byVariant-Objekt wird nicht mutiert; wir liefern eine
+  // flache Kopie mit korrigierter bySet/set-Belegung.
+  function applyOverride(variantKey, pv) {
+    if (!window.VARIANT_OVERRIDES || !pv) return pv;
+    if (!(variantKey in window.VARIANT_OVERRIDES)) return pv;
+    const o = window.VARIANT_OVERRIDES[variantKey];
+    if (o == null) return null;
+    if (typeof o !== 'string') return pv;
+    // Re-Label: alle bySet-Keys auf o setzen (Preise unveraendert).
+    const newBySet = {};
+    if (pv.bySet) {
+      // Wenn schon ein Eintrag mit dem Override-Label existiert, vorne behalten;
+      // sonst nur den ersten (deterministisch via Object.keys-Reihenfolge).
+      const keys = Object.keys(pv.bySet);
+      if (keys.length === 1) {
+        newBySet[o] = pv.bySet[keys[0]];
+      } else {
+        for (const k of keys) newBySet[o] = pv.bySet[k];
+      }
+    }
+    return {
+      bySet: newBySet,
+      low: pv.low == null ? null : pv.low,
+      avg: pv.avg == null ? null : pv.avg,
+      trend: pv.trend == null ? null : pv.trend,
+      set: o
+    };
+  }
+
   // Liefert Per-Variant-Preis (Main/Alt-Art-spezifisch). Null, wenn kein
   // byVariant-Eintrag existiert. Kein Fallback auf den Top-Level-Aggregat.
   // Errata-Suffix (z.B. "BT20-077-Errata") wird abgestreift, weil das
@@ -40,11 +72,12 @@
     const cardId = canonicalKey.replace(/_P\d+$/, '');
     const p = get(cardId);
     if (!p) return null;
+    let raw = null;
     if (p.byVariant) {
-      if (p.byVariant[canonicalKey]) return p.byVariant[canonicalKey];
-      if (variantKey !== canonicalKey && p.byVariant[variantKey]) return p.byVariant[variantKey];
+      if (p.byVariant[canonicalKey]) raw = p.byVariant[canonicalKey];
+      else if (variantKey !== canonicalKey && p.byVariant[variantKey]) raw = p.byVariant[variantKey];
     }
-    return null;
+    return raw ? applyOverride(variantKey, raw) : null;
   }
 
   // Liefert die GUENSTIGSTEN Preise fuer einen Deck-/Wants-Eintrag:
