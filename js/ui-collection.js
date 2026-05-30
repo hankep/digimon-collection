@@ -568,6 +568,24 @@
       // Nur Alt-Variant-Eintraege (impliziert showAlts auf entry-Ebene).
       list = list.filter(e => e.isAlt);
     }
+    // Bei Preis-Sortierung: variantenspezifische CM-low (Alt-Arts haben oft
+    // ganz andere Preise als die Main). Card-level sortValue nimmt nur den
+    // Top-Level-Aggregat — das ist hier in der Entry-Ansicht falsch.
+    if (state.sortBy === 'price' && (window.CM && CM.hasData())) {
+      const dir = state.sortDir === 'desc' ? -1 : 1;
+      const lowOf = e => {
+        const v = (window.CM && CM.lowForEntry) ? CM.lowForEntry(e.card.id, e.variantKey) : null;
+        return v == null ? null : v;
+      };
+      list.sort((a, b) => {
+        const av = lowOf(a), bv = lowOf(b);
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;     // ohne Preis ans Ende
+        if (bv == null) return -1;
+        if (av === bv) return 0;
+        return (av - bv) * dir;
+      });
+    }
     return list;
   }
 
