@@ -47,27 +47,51 @@
     return null;
   }
 
-  // Liefert den Low-Preis fuer einen Deck-/Wants-Eintrag: bevorzugt den
-  // variantenspezifischen (Alt-Arts sind oft DEUTLICH teurer als die Main!),
-  // faellt nur dann auf den Top-Level-Aggregat zurueck, wenn fuer die Variante
-  // keine Daten existieren. Liefert null, wenn ueberhaupt kein Preis bekannt.
+  // Liefert die GUENSTIGSTEN Preise fuer einen Deck-/Wants-Eintrag:
+  // - Wenn die Variante in mehreren Sets erhaeltlich ist (Reprint, gleiche
+  //   Card-ID), wird der bySet-Eintrag mit dem niedrigsten Low gewaehlt;
+  //   trend kommt aus demselben Set, damit beide Werte zur selben Produktseite
+  //   gehoeren.
+  // - Wenn kein byVariant existiert: Top-Level (min ueber alle Varianten und
+  //   Sets) als Fallback.
+  // - Alt-Arts werden NICHT mit der Main vermischt, weil getForVariant
+  //   variant-spezifisch lookt.
+  function _cheapestSetEntry(pv) {
+    if (!pv || !pv.bySet) return null;
+    let best = null;
+    for (const code of Object.keys(pv.bySet)) {
+      const e = pv.bySet[code];
+      if (!e || e.low == null) continue;
+      if (!best || e.low < best.low) best = e;
+    }
+    return best;
+  }
+
   function lowForEntry(cardId, variantKey) {
     const pv = getForVariant(variantKey);
+    const best = _cheapestSetEntry(pv);
+    if (best) return best.low;
     if (pv && pv.low != null) return pv.low;
     const p = get(cardId);
     return (p && p.low != null) ? p.low : null;
   }
 
-  // Wie lowForEntry, aber liefert sowohl low als auch trend (jeweils null,
-  // wenn nicht vorhanden). Sinnvoll fuer Summen, wo beide Werte gezeigt werden.
   function pricesForEntry(cardId, variantKey) {
     const pv = getForVariant(variantKey);
+    const best = _cheapestSetEntry(pv);
+    if (best) return { low: best.low, trend: best.trend == null ? null : best.trend };
     if (pv && (pv.low != null || pv.trend != null)) {
       return { low: pv.low == null ? null : pv.low, trend: pv.trend == null ? null : pv.trend };
     }
     const p = get(cardId);
     if (!p) return { low: null, trend: null };
     return { low: p.low == null ? null : p.low, trend: p.trend == null ? null : p.trend };
+  }
+
+  // Kurzform: liefert direkt das formattierte 'low / trend' fuer die GUENSTIGSTE
+  // Variante-im-Set Kombination. Null, wenn kein Preis vorhanden.
+  function fmtCheapest(cardId, variantKey) {
+    return fmtLowTrend(pricesForEntry(cardId, variantKey));
   }
 
   function fmt(n) {
@@ -95,5 +119,5 @@
     return window.CM_PRICES_UPDATED_AT || null;
   }
 
-  window.CM = { get, getForSet, getForVariant, lowForEntry, pricesForEntry, fmt, fmtLowTrend, hasData, updatedAt };
+  window.CM = { get, getForSet, getForVariant, lowForEntry, pricesForEntry, fmt, fmtLowTrend, fmtCheapest, hasData, updatedAt };
 })();

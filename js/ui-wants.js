@@ -504,7 +504,7 @@
   // Bilder-Ansicht im Collection-Stil: Bild, Preis, ID/Rarity, Name, Count-Badge
   // und (bei editierbaren Listen) −/+ zum Anpassen der Wants-Anzahl.
   function renderImageTile(it, group) {
-    const pText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(CM.getForVariant(it.variant)) : null;
+    const pText = (window.CM && CM.fmtCheapest) ? CM.fmtCheapest(it.cardId, it.variant) : null;
     const priceRow = pText
       ? `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low / trend">${pText}</div>`
       : `<div class="px-2 pt-1 text-[11px] font-mono leading-tight text-slate-500" title="Kein Cardmarket-Preis">CM</div>`;
@@ -536,7 +536,7 @@
   // Text-Ansicht: Tabellenzeile (gleiche Spalten-Einrückung über alle Zeilen),
   // Hover-Bild; bei editierbaren Listen −/+.
   function renderTextRow(it, group, bracketColor) {
-    const priceTxt = (window.CM && CM.fmtLowTrend) ? (CM.fmtLowTrend(CM.getForVariant(it.variant)) || 'CM') : (it.price != null ? CM.fmt(it.price) : '—');
+    const priceTxt = (window.CM && CM.fmtCheapest) ? (CM.fmtCheapest(it.cardId, it.variant) || 'CM') : (it.price != null ? CM.fmt(it.price) : '—');
     const key = `${group.listId}|${it.cardId}|${it.variant}`;
     const qty = group.editable
       ? `<span class="inline-flex items-center gap-1">

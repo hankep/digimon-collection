@@ -658,13 +658,13 @@
     return s;
   }
 
-  function renderPriceRow(cardId) {
+  function renderPriceRow(cardId, variantKey) {
     if (!window.CM || !CM.hasData()) return '';
-    const p = CM.get(cardId);
-    if (!p || p.low == null) return '';
+    const txt = CM.fmtCheapest(cardId, variantKey);
+    if (!txt) return '';
     return `
-      <div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low">
-        CM: ${CM.fmt(p.low)}
+      <div class="px-2 pt-1 text-[11px] font-mono leading-tight text-amber-400" title="Cardmarket low / trend (guenstigstes Reprint-Set)">
+        CM: ${txt}
       </div>
     `;
   }
@@ -707,7 +707,7 @@
         <img loading="lazy" src="${CardDB.imagePath(variant)}" alt="${escapeAttr(CardDB.cleanDisplayName(card))}" />
         ${badge}
         <span class="tile-note">${Notes.iconHtml(!!note)}</span>
-        ${renderPriceRow(card.id)}
+        ${renderPriceRow(card.id, variant)}
         <div class="p-2 pt-1 flex items-center gap-2">
           <div class="min-w-0 flex-1">
             <div class="text-xs font-mono text-slate-400 truncate">${escapeHtml(card.id)}${entryRarity(entry) ? ` <span class="text-slate-300">${escapeHtml(rarityLabel(entryRarity(entry)))}</span>` : ''}${state.showAlts && entry.isAlt ? ` <span class="text-amber-400">·${entry.altIdx}</span>` : ''}</div>

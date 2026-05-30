@@ -390,8 +390,8 @@
   function applyTradeSort() {
     const mode = tradeState.sort || 'id';
     const priceOf = e => {
-      const p = (window.CM && CM.getForVariant) ? CM.getForVariant(e.deliverVariant) : null;
-      return p && p.low != null ? p.low : 0;
+      const low = (window.CM && CM.lowForEntry) ? CM.lowForEntry(e.cardId, e.deliverVariant) : null;
+      return low != null ? low : 0;
     };
     const availRank = e => {
       if (e.deliverableVariants.length === 0) return 2;          // ✗
@@ -616,8 +616,7 @@
         ? `<span class="text-amber-300 text-[10px] font-semibold" title="Andere Variante als Sender wollte">⚠ Substitut</span>`
         : `<span class="text-emerald-400 text-[10px] font-semibold">✓ exakt</span>`;
     const chosen = entry.deliverableVariants.find(v => v.key === entry.deliverVariant) || { free: 0, owned: 0 };
-    const cm = (window.CM && CM.getForVariant) ? CM.getForVariant(entry.deliverVariant) : null;
-    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
+    const cmText = (window.CM && CM.fmtCheapest) ? CM.fmtCheapest(entry.cardId, entry.deliverVariant) : null;
     const max = chosen.free;
     const cls = !hasDeliverable ? 'opacity-50' : (isSubstitute ? 'ring-1 ring-amber-500/40' : '');
     const variantOptions = entry.deliverableVariants.length > 1
@@ -668,8 +667,7 @@
         ? `<span class="text-amber-300 font-semibold" title="Substitut-Variante">⚠</span>`
         : `<span class="text-emerald-400 font-semibold">✓</span>`;
     const chosen = entry.deliverableVariants.find(v => v.key === entry.deliverVariant) || { free: 0, owned: 0 };
-    const cm = (window.CM && CM.getForVariant) ? CM.getForVariant(entry.deliverVariant) : null;
-    const cmText = (window.CM && CM.fmtLowTrend) ? (CM.fmtLowTrend(cm) || 'CM') : '—';
+    const cmText = (window.CM && CM.fmtCheapest) ? (CM.fmtCheapest(entry.cardId, entry.deliverVariant) || 'CM') : '—';
     const max = chosen.free;
     const variantOptions = entry.deliverableVariants.length > 1
       ? `<select data-tradevar-idx="${idx}" class="bg-slate-900 border border-slate-600 rounded px-1 py-0.5 text-xs font-mono">

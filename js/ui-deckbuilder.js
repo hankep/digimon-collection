@@ -630,8 +630,7 @@
     const isWants = deck && isListKind(deck.kind);
     const card = CardDB.byId.get(entry.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
-    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
-    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
+    const cmText = (window.CM && CM.hasData()) ? CM.fmtCheapest(entry.cardId, entry.variant) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
 
     if (isWants) {
@@ -804,8 +803,7 @@
     const isWants = deck && isListKind(deck.kind);
     const card = CardDB.byId.get(entry.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : entry.cardId;
-    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(entry.variant) : null;
-    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
+    const cmText = (window.CM && CM.hasData()) ? CM.fmtCheapest(entry.cardId, entry.variant) : null;
     const note = Store.getCardNote(collectionCache, entry.cardId);
     const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
 
@@ -1611,8 +1609,7 @@
   function renderMainWantsTile(item) {
     const card = CardDB.byId.get(item.cardId);
     const name = card ? CardDB.cleanDisplayName(card) : item.cardId;
-    const cm = (window.CM && CM.hasData()) ? CM.getForVariant(item.variant) : null;
-    const cmText = (window.CM && CM.fmtLowTrend) ? CM.fmtLowTrend(cm) : null;
+    const cmText = (window.CM && CM.hasData()) ? CM.fmtCheapest(item.cardId, item.variant) : null;
     const note = Store.getCardNote(collectionCache, item.cardId);
     const tooltip = item.sources.map(s => `${s.name}: ${s.n}`).join('\n');
     const reprintPills = card ? CardDB.reprintPillsHtml(card) : '';
