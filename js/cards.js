@@ -11,6 +11,10 @@
   const colors = new Set();
   const types = new Set();
   const rarities = new Set();
+  // Trait-Index: alle eindeutigen Traits ueber alle Karten. Case-erhalten,
+  // aber Lookup case-insensitive via traitsLower (Set lowercase).
+  const traitsSet = new Set();
+  const traitsLower = new Set();
 
   function variantKeyFromImage(imgFilename) {
     // 'AD1-001.webp' -> 'AD1-001'; 'AD1-001_P1.webp' -> 'AD1-001_P1'
@@ -57,6 +61,17 @@
     if (Array.isArray(card.color)) for (const c of card.color) colors.add(c);
     if (card.type) types.add(card.type);
     if (card.rarity) rarities.add(card.rarity);
+    if (Array.isArray(card.traits)) {
+      for (const t of card.traits) {
+        const s = String(t || '').trim();
+        if (!s) continue;
+        const l = s.toLowerCase();
+        if (!traitsLower.has(l)) {
+          traitsLower.add(l);
+          traitsSet.add(s);
+        }
+      }
+    }
   }
 
   // Bekannte Release-Daten der europäischen Sets (jeweils erste Veröffentlichung).
@@ -171,6 +186,24 @@
     return 'https://world.digimoncard.com/images/cardlist/card/' + key + '.png';
   }
 
+  // Trait-Lookups (case-insensitive). Bei den Daten aus digimoncard.io
+  // ist die Trait-Bezeichnung in verschiedenen Schreibweisen unterwegs
+  // (z.B. 'ADVENTURE' vs 'Adventure'), daher konsistent ueber lowercase.
+  function cardHasTrait(card, trait) {
+    if (!card || !trait || !Array.isArray(card.traits)) return false;
+    const target = String(trait).toLowerCase();
+    for (const t of card.traits) {
+      if (String(t).toLowerCase() === target) return true;
+    }
+    return false;
+  }
+
+  function cardReferencesTraitInEffect(card, trait) {
+    if (!card || !trait || !card.effect) return false;
+    const re = new RegExp('\\[' + String(trait).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\]', 'i');
+    return re.test(card.effect);
+  }
+
   function search(query, options) {
     const opts = options || {};
     const q = (query || '').trim().toLowerCase();
@@ -213,6 +246,8 @@
       if (typeFilter && card.type !== typeFilter) continue;
       if (rarityFilter && card.rarity !== rarityFilter) continue;
       if (levelsFilter && (card.level == null || !levelsFilter.includes(card.level))) continue;
+      if (opts.traitOwn && !cardHasTrait(card, opts.traitOwn)) continue;
+      if (opts.traitInEffect && !cardReferencesTraitInEffect(card, opts.traitInEffect)) continue;
       results.push(card);
     }
 
@@ -543,6 +578,9 @@
     allVariants,
     colors: Array.from(colors),
     types: Array.from(types),
+    traits: Array.from(traitsSet).sort((a, b) => a.localeCompare(b)),
+    cardHasTrait,
+    cardReferencesTraitInEffect,
     rarities: Array.from(rarities),
     mainVariantKey,
     variantsOf,

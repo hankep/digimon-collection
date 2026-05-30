@@ -7,6 +7,8 @@
     pickerQuery: '',
     pickerColor: null,
     pickerType: null,
+    pickerTraitOwn: null,
+    pickerTraitInEffect: null,
     pickerOwnedOnly: false,
     pickerShowAlts: false,
     pickerOpen: false,  // Mobile-Collapse fuer Picker; auf Desktop irrelevant (Summary versteckt, details immer open)
@@ -85,6 +87,14 @@
                 <option value="">Typ: alle</option>
                 ${CardDB.types.map(t => `<option value="${t}" ${state.pickerType === t ? 'selected' : ''}>${t}</option>`).join('')}
               </select>
+              <select id="picker-trait-own" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]" title="Filtert Karten mit diesem Trait (digi_type).">
+                <option value="">Trait: alle</option>
+                ${(CardDB.traits || []).map(t => `<option value="${escapeAttr(t)}" ${state.pickerTraitOwn === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+              </select>
+              <select id="picker-trait-effect" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]" title="Filtert Karten, deren Effekt [TRAIT] referenziert.">
+                <option value="">Trait im Effekt: alle</option>
+                ${(CardDB.traits || []).map(t => `<option value="${escapeAttr(t)}" ${state.pickerTraitInEffect === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+              </select>
               <label class="flex items-center gap-1 text-xs">
                 <input id="picker-owned" type="checkbox" ${state.pickerOwnedOnly ? 'checked' : ''} />
                 Im Besitz
@@ -126,6 +136,12 @@
     });
     rootEl.querySelector('#picker-type').addEventListener('change', e => {
       state.pickerType = e.target.value || null; renderPicker();
+    });
+    rootEl.querySelector('#picker-trait-own').addEventListener('change', e => {
+      state.pickerTraitOwn = e.target.value || null; renderPicker();
+    });
+    rootEl.querySelector('#picker-trait-effect').addEventListener('change', e => {
+      state.pickerTraitInEffect = e.target.value || null; renderPicker();
     });
     rootEl.querySelector('#picker-owned').addEventListener('change', e => {
       state.pickerOwnedOnly = e.target.checked; renderPicker();
@@ -1034,10 +1050,12 @@
   // die beiden Empty-States. Kein DOM-Zugriff — laesst sich isoliert testen.
   function buildPickerCandidates(vIdx) {
     const q = state.pickerQuery.trim();
-    const hasFilter = !!(q || state.pickerColor || state.pickerType || state.pickerOwnedOnly);
+    const hasFilter = !!(q || state.pickerColor || state.pickerType || state.pickerTraitOwn || state.pickerTraitInEffect || state.pickerOwnedOnly);
     let results = CardDB.search(q, {
       color: state.pickerColor,
       type: state.pickerType,
+      traitOwn: state.pickerTraitOwn,
+      traitInEffect: state.pickerTraitInEffect,
       sortBy: 'name'
     });
     if (state.pickerOwnedOnly) {

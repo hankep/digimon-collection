@@ -177,6 +177,26 @@ def slim_raw(raw):
     return out
 
 
+def extract_traits(raw):
+    """Sammelt digi_type/digi_type2/digi_type3/digi_type4 in eine deduplizierte
+    Reihenfolge. Leerstrings und None werden uebersprungen."""
+    seen = set()
+    out = []
+    for k in ('digi_type', 'digi_type2', 'digi_type3', 'digi_type4'):
+        v = raw.get(k)
+        if not v:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
 def map_card(raw):
     cid = raw.get('id') or ''
     return {
@@ -192,6 +212,7 @@ def map_card(raw):
         'level': raw.get('level'),
         'cost': raw.get('play_cost'),
         'effect': combine_effects(raw.get('main_effect'), raw.get('source_effect'), raw.get('alt_effect')),
+        'traits': extract_traits(raw),
     }
 
 
