@@ -268,6 +268,7 @@
   function statusFilterPills() {
     const opts = [
       { v: 'open',     l: 'Offen' },
+      { v: 'wip',      l: 'In Arbeit' },
       { v: 'done',     l: 'Erledigt' },
       { v: 'rejected', l: 'Abgelehnt' },
       { v: 'all',      l: 'Alle' }

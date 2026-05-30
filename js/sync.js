@@ -306,6 +306,10 @@
     if (error) { console.warn('loadProfile:', error); return null; }
     const name = data ? data.display_name : null;
     profileCache.set(userId, name);
+    if (session && session.user && session.user.id === userId) {
+      ownDisplayName = name;
+      document.dispatchEvent(new CustomEvent('profile-changed'));
+    }
     return name;
   }
 
@@ -336,6 +340,7 @@
     if (!error) {
       profileCache.set(session.user.id, payload.display_name);
       ownDisplayName = payload.display_name;
+      document.dispatchEvent(new CustomEvent('profile-changed'));
     }
     return { error };
   }

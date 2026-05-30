@@ -12,9 +12,22 @@
   function init() {
     if (wired) return;
     const btn = document.getElementById('user-btn');
-    if (!btn) return;
-    btn.addEventListener('click', openUserModal);
+    if (btn) btn.addEventListener('click', openUserModal);
+    const hint = document.getElementById('display-name-hint');
+    if (hint) hint.addEventListener('click', openUserModal);
+    document.addEventListener('profile-changed', refreshDisplayNameHint);
+    refreshDisplayNameHint();
     wired = true;
+  }
+
+  // Zeigt den Header-Hinweis, wenn der User keinen Anzeigenamen gesetzt hat.
+  function refreshDisplayNameHint() {
+    const hint = document.getElementById('display-name-hint');
+    if (!hint) return;
+    const loggedIn = !!(window.Sync && Sync.isLoggedIn && Sync.isLoggedIn());
+    const name = (window.Sync && Sync.getOwnDisplayName) ? Sync.getOwnDisplayName() : null;
+    const needsName = loggedIn && !(name && name.trim());
+    hint.classList.toggle('hidden', !needsName);
   }
 
   function openUserModal() {
