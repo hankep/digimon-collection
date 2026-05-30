@@ -8,7 +8,7 @@
     trade:      { panel: 'tab-trade',      initFn: () => UITrade.init(document.getElementById('tab-trade')) },
     stats:      { panel: 'tab-stats',      initFn: () => UIStats.init(document.getElementById('tab-stats')) },
     io:         { panel: 'tab-io',         initFn: () => UIImportExport.init(document.getElementById('tab-io')) },
-    user:       { panel: 'tab-user',       initFn: () => UIUser.init(document.getElementById('tab-user')) }
+    shared:     { panel: 'tab-shared',     initFn: () => UIShared.init(document.getElementById('tab-shared')) }
   };
 
   const initialised = new Set();
@@ -88,6 +88,9 @@
     activateTab(activeTab || 'collection');
     if (window.UIReports && typeof window.UIReports.init === 'function') {
       window.UIReports.init();
+    }
+    if (window.UIUser && typeof window.UIUser.init === 'function') {
+      window.UIUser.init();
     }
   }
 

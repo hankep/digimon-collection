@@ -1,21 +1,33 @@
-// User-Tab: Cloud-Sync/Login, Collection Export/Import, Backup & Restore.
-// (Aus dem früheren Import/Export-Tab herausgelöst.)
+// User-Bereich: Cloud-Sync/Login, Collection Export/Import, Backup & Restore.
+// Wird nicht mehr als Tab angezeigt — Header-Button 👤 oeffnet ein Modal mit
+// diesen Sektionen. init() wired einmalig den Button.
 
 (function () {
+  // rootEl wird beim Oeffnen des Modals auf das Modal-Content-Element gesetzt,
+  // damit die existierenden Funktionen (showCollMsg, backupRestore etc.) ihre
+  // Query-Selektoren weiterhin gegen den richtigen Scope laufen lassen.
   let rootEl = null;
+  let wired = false;
 
-  function init(el) {
-    rootEl = el;
-    render();
+  function init() {
+    if (wired) return;
+    const btn = document.getElementById('user-btn');
+    if (!btn) return;
+    btn.addEventListener('click', openUserModal);
+    wired = true;
   }
 
-  function render() {
-    rootEl.innerHTML = `
-      <div class="max-w-3xl mx-auto">
-        <h2 class="text-lg font-bold mb-2">Login &amp; Cloud-Sync</h2>
+  function openUserModal() {
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <h2 class="text-lg font-bold">Account &amp; Daten</h2>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
+      <div class="overflow-y-auto flex-1 min-h-0 pr-1">
+        <h3 class="text-sm font-bold uppercase text-slate-400 mb-2">Login &amp; Cloud-Sync</h3>
         <div id="sync-ui" class="mb-6"></div>
 
-        <h2 class="text-lg font-bold mb-2">Collection Export / Import</h2>
+        <h3 class="text-sm font-bold uppercase text-slate-400 mb-2">Collection Export / Import</h3>
         <p class="text-sm text-slate-400 mb-3">
           Exportiert die Sammlung (ohne Decks). CSV: <code class="text-amber-400">copyId,variant,price,isProxy,deckId,addedAt</code> pro Zeile.
         </p>
@@ -30,7 +42,7 @@
         </div>
         <div id="coll-msg" class="text-sm mb-6"></div>
 
-        <h2 class="text-lg font-bold mb-2">Backup &amp; Restore</h2>
+        <h3 class="text-sm font-bold uppercase text-slate-400 mb-2">Backup &amp; Restore</h3>
         <p class="text-sm text-slate-400 mb-3">
           Sichert alle deine Daten (Collection + alle Listen) als JSON-Datei. Restore überschreibt vorhandene Daten.
         </p>
@@ -46,16 +58,27 @@
       </div>
     `;
 
-    rootEl.querySelector('#coll-export-csv').addEventListener('click', () => collectionExport('csv'));
-    rootEl.querySelector('#coll-export-json').addEventListener('click', () => collectionExport('json'));
-    rootEl.querySelector('#coll-import').addEventListener('change', collectionImport);
-    rootEl.querySelector('#backup-download').addEventListener('click', backupDownload);
-    rootEl.querySelector('#backup-restore').addEventListener('change', backupRestore);
-    rootEl.querySelector('#backup-clear-all').addEventListener('click', clearAll);
-
-    if (window.Sync && typeof Sync.mountLoginUI === 'function') {
-      Sync.mountLoginUI(rootEl.querySelector('#sync-ui'));
-    }
+    window.Util.openModal({
+      host: 'user-modal-root',
+      id: 'user-modal',
+      sizeClass: 'w-[720px] max-w-[95vw] max-h-[90vh]',
+      flex: true,
+      contentHtml,
+      onClose: () => { rootEl = null; },
+      onMount: (content, close) => {
+        rootEl = content;
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#coll-export-csv').addEventListener('click', () => collectionExport('csv'));
+        content.querySelector('#coll-export-json').addEventListener('click', () => collectionExport('json'));
+        content.querySelector('#coll-import').addEventListener('change', collectionImport);
+        content.querySelector('#backup-download').addEventListener('click', backupDownload);
+        content.querySelector('#backup-restore').addEventListener('change', backupRestore);
+        content.querySelector('#backup-clear-all').addEventListener('click', clearAll);
+        if (window.Sync && typeof Sync.mountLoginUI === 'function') {
+          Sync.mountLoginUI(content.querySelector('#sync-ui'));
+        }
+      }
+    });
   }
 
   // --- Collection Export / Import ------------------------------------------

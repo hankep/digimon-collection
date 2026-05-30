@@ -36,12 +36,14 @@
         <button data-tab="trade" class="tab-btn px-4 py-2 rounded font-medium">Trade</button>
         <button data-tab="stats" class="tab-btn px-4 py-2 rounded font-medium">Statistik</button>
         <button data-tab="io" class="tab-btn px-4 py-2 rounded font-medium">Import / Export</button>
-        <button data-tab="user" class="tab-btn px-4 py-2 rounded font-medium">User</button>
+        <button data-tab="shared" class="tab-btn px-4 py-2 rounded font-medium">Shared Space</button>
       </nav>
       <div class="ml-auto text-sm text-slate-400 hidden sm:block" id="status-line">Lade Karten…</div>
       <span id="sync-status" class="text-sm hidden sm:ml-2"></span>
       <button id="report-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded ml-auto sm:ml-2"
               title="Bug oder Feature melden">📣</button>
+      <button id="user-btn" class="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded ml-2"
+              title="Account, Backup &amp; Sync">👤</button>
     </div>
   </header>
 
@@ -52,7 +54,7 @@
     <section id="tab-trade" class="tab-panel hidden"></section>
     <section id="tab-stats" class="tab-panel hidden"></section>
     <section id="tab-io" class="tab-panel hidden"></section>
-    <section id="tab-user" class="tab-panel hidden"></section>
+    <section id="tab-shared" class="tab-panel hidden"></section>
   </main>
 
   <div id="modal-root"></div>
@@ -65,7 +67,7 @@
     <button data-tab="trade"      class="tab-btn flex-1 py-3 text-xs font-medium">Trade</button>
     <button data-tab="stats"      class="tab-btn flex-1 py-3 text-xs font-medium">Statistik</button>
     <button data-tab="io"         class="tab-btn flex-1 py-3 text-xs font-medium">Im/Export</button>
-    <button data-tab="user"       class="tab-btn flex-1 py-3 text-xs font-medium">User</button>
+    <button data-tab="shared"     class="tab-btn flex-1 py-3 text-xs font-medium">Shared</button>
   </nav>
   </div>
 
@@ -91,6 +93,7 @@
   <script src="js/ui-deckbuilder.js"></script>
   <script src="js/ui-importexport.js"></script>
   <script src="js/ui-user.js"></script>
+  <script src="js/ui-shared.js"></script>
   <script src="js/ui-stats.js"></script>
   <script src="js/ui-wants.js"></script>
   <script src="js/ui-trade.js"></script>
