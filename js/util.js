@@ -44,7 +44,9 @@
     showAlts:          'showAlts',          // bool, Picker Alt-Arts einzeln
     mainWantsSort:     'mainWantsSort',     // 'id' | 'price-desc'
     setGroups:         'setGroups',         // {BT,EX,ST,Andere: bool}
-    deckPickerSplit:   'deckPickerSplit'    // 0..1 — Anteil Picker an Detail+Picker im Decks-Tab (Desktop)
+    deckPickerSplit:   'deckPickerSplit',   // 0..1 — Anteil Picker an Detail+Picker im Decks-Tab (Desktop)
+    wantsTradeSubTab:  'wantsTradeSubTab',  // 'wants' | 'trade' — Sub-Tab im Header-Tab 'Wants & Trade'
+    sharedSubTab:      'sharedSubTab'       // 'deck' | 'wants' | 'trade' — Sub-Tab im Shared Space
   });
 
   // ── Event-Bus ─────────────────────────────────────────────────────────────

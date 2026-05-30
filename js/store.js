@@ -498,6 +498,8 @@
       kind: src.kind,
       notes: src.notes || '',
       favorite: !!src.favorite,
+      // Kopie startet immer privat — kein versehentliches Mit-Sharen.
+      shared: false,
       createdAt: now,
       updatedAt: now,
       // Entries flach kopieren (count + cardId + variant — keine Slot-Refs)

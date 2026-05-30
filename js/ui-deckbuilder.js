@@ -250,10 +250,11 @@
     const fav = !!d.favorite;
     const starTitle = fav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren';
     const starColor = fav ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300';
+    const sharedIcon = d.shared ? `<span class="text-emerald-400 text-xs" title="Im Shared Space sichtbar">🌐</span>` : '';
     return `<div class="flex items-center gap-1">
       <button data-fav="${d.id}" class="${starColor} px-1 text-base leading-none" title="${starTitle}">${fav ? '★' : '☆'}</button>
       <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
-        <div class="font-semibold text-sm ${nameCls}">${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
+        <div class="font-semibold text-sm ${nameCls}">${sharedIcon}${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
         <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
       </button>
       <button data-dup="${d.id}" class="text-slate-500 hover:text-sky-400 px-1" title="Liste duplizieren">⎘</button>
@@ -437,7 +438,9 @@
           <input id="deck-missing-only" type="checkbox" ${state.deckMissingOnly ? 'checked' : ''} />
           Nur fehlende
         </label>` : ''}
-        <button id="import-into" class="ml-auto bg-sky-500 hover:bg-sky-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
+        <button id="share-toggle" class="ml-auto text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold ${deck.shared ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-100'}"
+          title="Diese Liste im Shared Space sichtbar machen (live-synced)">${deck.shared ? '✓ Geteilt' : '🌐 Teilen'}</button>
+        <button id="import-into" class="bg-sky-500 hover:bg-sky-400 text-slate-900 text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Karten direkt in diese Liste einfügen (mengen werden addiert)">Importieren</button>
         ${showListKindControls ? `<button id="missing-to-wants" class="bg-purple-500 hover:bg-purple-400 text-white text-xs sm:text-sm px-2 sm:px-3 py-1.5 rounded font-semibold"
           title="Fehlende Karten direkt in eine Wants-Liste übernehmen (Alt-Arts bleiben erhalten)">Fehlende → Wants</button>` : ''}
@@ -484,6 +487,14 @@
     scopeEl.querySelector('#export-missing').addEventListener('click', () => exportMissing(deck));
     scopeEl.querySelector('#export-full').addEventListener('click', () => exportFull(deck));
     scopeEl.querySelector('#import-into').addEventListener('click', () => openImportIntoDeck(deck));
+    scopeEl.querySelector('#share-toggle').addEventListener('click', () => {
+      deck.shared = !deck.shared;
+      deck.updatedAt = new Date().toISOString();
+      Store.saveDecks(state.decksState);
+      if (window.Util && Util.toast) {
+        Util.toast(deck.shared ? `„${deck.name}" wird im Shared Space sichtbar` : `„${deck.name}" ist nicht mehr im Shared Space`, 'info', 2200);
+      }
+    });
     const mtwBtn = scopeEl.querySelector('#missing-to-wants');
     if (mtwBtn) mtwBtn.addEventListener('click', () => openMissingToWantsDialog(deck));
     scopeEl.querySelector('#deck-note-host [data-note-trigger]').addEventListener('click', () => {

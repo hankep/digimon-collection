@@ -18,12 +18,23 @@
   }
 
   function openUserModal() {
+    const email = (window.Sync && Sync.getSessionEmail) ? Sync.getSessionEmail() : '';
+    const ownName = (window.Sync && Sync.getOwnDisplayName) ? Sync.getOwnDisplayName() : null;
+    const emailLocal = (email || '').split('@')[0] || '';
     const contentHtml = `
       <div class="flex justify-between items-start mb-3 shrink-0">
         <h2 class="text-lg font-bold">Account &amp; Daten</h2>
         <button data-modal-close class="modal-close-x">×</button>
       </div>
       <div class="overflow-y-auto flex-1 min-h-0 pr-1">
+        <h3 class="text-sm font-bold uppercase text-slate-400 mb-2">Anzeigename</h3>
+        <p class="text-xs text-slate-400 mb-2">Wird im Shared Space neben deinen geteilten Listen gezeigt. Leer lassen ⇒ Lokalteil deiner E-Mail (<span class="font-mono">${escapeHtml(emailLocal)}</span>).</p>
+        <div class="flex gap-2 mb-6">
+          <input id="display-name" type="text" maxlength="40" placeholder="${escapeHtml(emailLocal)}" value="${escapeHtml(ownName || '')}"
+            class="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm flex-1" />
+          <button id="display-name-save" class="btn-primary-amber">Speichern</button>
+        </div>
+
         <h3 class="text-sm font-bold uppercase text-slate-400 mb-2">Login &amp; Cloud-Sync</h3>
         <div id="sync-ui" class="mb-6"></div>
 
@@ -68,6 +79,13 @@
       onMount: (content, close) => {
         rootEl = content;
         content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        const nameInput = content.querySelector('#display-name');
+        content.querySelector('#display-name-save').addEventListener('click', async () => {
+          if (!window.Sync || !Sync.saveProfile) { window.Util.toast('Sync nicht verfügbar.', 'error'); return; }
+          const { error } = await Sync.saveProfile(nameInput.value);
+          if (error) window.Util.toast('Fehler: ' + (error.message || 'unbekannt'), 'error');
+          else window.Util.toast('Anzeigename gespeichert.', 'success', 2200);
+        });
         content.querySelector('#coll-export-csv').addEventListener('click', () => collectionExport('csv'));
         content.querySelector('#coll-export-json').addEventListener('click', () => collectionExport('json'));
         content.querySelector('#coll-import').addEventListener('change', collectionImport);

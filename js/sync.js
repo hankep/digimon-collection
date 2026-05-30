@@ -262,7 +262,12 @@
       session = sess;
       renderAllLoginUIs();
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (isLoggedIn()) pull(); else setStatus('idle');
+        if (isLoggedIn()) {
+          pull();
+          // Eigenes Profile + Initial-Sync der shared_decks (Cleanup).
+          loadProfile(session.user.id).then(name => { ownDisplayName = name; });
+          debouncedSyncShared();
+        } else setStatus('idle');
       } else if (event === 'SIGNED_OUT') {
         setStatus('idle');
       }
@@ -273,12 +278,121 @@
     client.auth.getSession().then(({ data }) => {
       session = data.session;
       renderAllLoginUIs();
-      if (isLoggedIn()) pull(); else setStatus('idle');
+      if (isLoggedIn()) {
+        pull();
+        loadProfile(session.user.id).then(name => { ownDisplayName = name; });
+        debouncedSyncShared();
+      } else setStatus('idle');
       try { onAuthStateChange(isLoggedIn()); } catch (e) { console.warn('onAuthStateChange-Fehler:', e); }
     });
 
     document.addEventListener('collection-changed', debouncedPush);
     document.addEventListener('decks-changed', debouncedPush);
+    // Shared-Decks separat — die brauchen kein app_state, sondern eigene Tabelle.
+    document.addEventListener('decks-changed', debouncedSyncShared);
+  }
+
+  // ── Profile (Anzeigename) ───────────────────────────────────────────────────
+
+  // In-Memory-Cache: userId → display_name (oder null). Pro Session.
+  const profileCache = new Map();
+  let ownDisplayName = null;
+
+  async function loadProfile(userId) {
+    if (!client || !userId) return null;
+    if (profileCache.has(userId)) return profileCache.get(userId);
+    const { data, error } = await client.from('profiles')
+      .select('display_name').eq('user_id', userId).maybeSingle();
+    if (error) { console.warn('loadProfile:', error); return null; }
+    const name = data ? data.display_name : null;
+    profileCache.set(userId, name);
+    return name;
+  }
+
+  async function loadProfilesFor(userIds) {
+    if (!client || !userIds || !userIds.length) return new Map();
+    const unknown = userIds.filter(id => !profileCache.has(id));
+    if (unknown.length) {
+      const { data, error } = await client.from('profiles')
+        .select('user_id,display_name').in('user_id', unknown);
+      if (error) console.warn('loadProfilesFor:', error);
+      if (data) for (const row of data) profileCache.set(row.user_id, row.display_name || null);
+      // Auch unbekannte als 'null' markieren, damit wir sie nicht erneut anfragen.
+      for (const id of unknown) if (!profileCache.has(id)) profileCache.set(id, null);
+    }
+    const out = new Map();
+    for (const id of userIds) out.set(id, profileCache.get(id) || null);
+    return out;
+  }
+
+  async function saveProfile(displayName) {
+    if (!client || !isLoggedIn()) return { error: { message: 'Nicht eingeloggt' } };
+    const payload = {
+      user_id: session.user.id,
+      display_name: (displayName || '').trim() || null,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await client.from('profiles').upsert(payload, { onConflict: 'user_id' });
+    if (!error) {
+      profileCache.set(session.user.id, payload.display_name);
+      ownDisplayName = payload.display_name;
+    }
+    return { error };
+  }
+
+  function getOwnDisplayName() { return ownDisplayName; }
+
+  // ── Shared Decks ────────────────────────────────────────────────────────────
+
+  const SHARED_DEBOUNCE_MS = 800;
+  let sharedTimer = null;
+  function debouncedSyncShared() {
+    if (!client || !isLoggedIn()) return;
+    clearTimeout(sharedTimer);
+    sharedTimer = setTimeout(syncSharedDecks, SHARED_DEBOUNCE_MS);
+  }
+
+  async function syncSharedDecks() {
+    if (!client || !isLoggedIn()) return;
+    const userId = session.user.id;
+    const decks = (Store.loadDecks().decks || []);
+    const shared = decks.filter(d => d.shared === true);
+    const rowId = d => `${userId}:${d.id}`;
+    const desiredIds = new Set(shared.map(rowId));
+    if (shared.length) {
+      const ownerEmail = session.user.email || null;
+      const payload = shared.map(d => ({
+        id: rowId(d),
+        owner_id: userId,
+        owner_email: ownerEmail,
+        deck_id: d.id,
+        name: d.name || 'Untitled',
+        kind: d.kind || 'deck',
+        notes: d.notes || '',
+        entries: (d.entries || []).map(e => ({ cardId: e.cardId, variant: e.variant, count: e.count })),
+        updated_at: d.updatedAt || new Date().toISOString()
+      }));
+      const { error } = await client.from('shared_decks').upsert(payload, { onConflict: 'id' });
+      if (error) console.warn('syncSharedDecks upsert:', error);
+    }
+    // Aufraeumen: alle eigenen Zeilen pruefen + wegputzen, was nicht mehr shared ist.
+    const { data: existing, error: selErr } = await client.from('shared_decks')
+      .select('id').eq('owner_id', userId);
+    if (selErr) { console.warn('syncSharedDecks select:', selErr); return; }
+    const toDelete = (existing || []).map(r => r.id).filter(id => !desiredIds.has(id));
+    if (toDelete.length) {
+      const { error } = await client.from('shared_decks').delete().in('id', toDelete);
+      if (error) console.warn('syncSharedDecks delete:', error);
+    }
+  }
+
+  async function loadSharedDecks(kind) {
+    if (!client) return { decks: [], error: 'Sync nicht verfügbar' };
+    let q = client.from('shared_decks').select('id,owner_id,owner_email,deck_id,name,kind,notes,entries,updated_at');
+    if (kind) q = q.eq('kind', kind);
+    const { data, error } = await q.order('updated_at', { ascending: false });
+    if (error) return { decks: [], error: error.message || String(error) };
+    return { decks: data || [], error: null };
   }
 
   // True, wenn Supabase-SDK + URL + Anon-Key gesetzt sind.
@@ -298,6 +412,12 @@
     isConfigured,
     getClient: () => client,
     getSessionEmail: () => (session && session.user) ? session.user.email : null,
-    getUserId: () => (session && session.user) ? session.user.id : null
+    getUserId: () => (session && session.user) ? session.user.id : null,
+    loadProfile,
+    loadProfilesFor,
+    saveProfile,
+    getOwnDisplayName,
+    syncSharedDecks,
+    loadSharedDecks
   };
 })();

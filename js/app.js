@@ -4,12 +4,38 @@
   const tabs = {
     collection: { panel: 'tab-collection', initFn: () => UICollection.init(document.getElementById('tab-collection')) },
     decks:      { panel: 'tab-decks',      initFn: () => UIDeckbuilder.init(document.getElementById('tab-decks')) },
-    wants:      { panel: 'tab-wants',      initFn: () => UIWants.init(document.getElementById('tab-wants')) },
-    trade:      { panel: 'tab-trade',      initFn: () => UITrade.init(document.getElementById('tab-trade')) },
+    wants:      { panel: 'tab-wants',      initFn: () => initWantsTradeTab() },
     stats:      { panel: 'tab-stats',      initFn: () => UIStats.init(document.getElementById('tab-stats')) },
     io:         { panel: 'tab-io',         initFn: () => UIImportExport.init(document.getElementById('tab-io')) },
     shared:     { panel: 'tab-shared',     initFn: () => UIShared.init(document.getElementById('tab-shared')) }
   };
+
+  // Wants & Trade haben gemeinsamen Top-Tab mit Sub-Tabs. Beide Module rendern
+  // in ihre Sub-Panels; der aktive Sub-Tab wird per Prefs persistiert.
+  function initWantsTradeTab() {
+    const wantsPanel = document.getElementById('tab-wants-sub-wants');
+    const tradePanel = document.getElementById('tab-wants-sub-trade');
+    if (!wantsPanel || !tradePanel) return;
+    UIWants.init(wantsPanel);
+    UITrade.init(tradePanel);
+    const subBtns = document.querySelectorAll('#wants-subtabs [data-subtab]');
+    const stored = (window.Util && Util.PREF_KEYS) ? Prefs.get(Util.PREF_KEYS.wantsTradeSubTab, 'wants') : 'wants';
+    function showSub(name) {
+      wantsPanel.classList.toggle('hidden', name !== 'wants');
+      tradePanel.classList.toggle('hidden', name !== 'trade');
+      subBtns.forEach(b => {
+        const on = b.dataset.subtab === name;
+        b.classList.toggle('bg-amber-500', on);
+        b.classList.toggle('text-slate-900', on);
+        b.classList.toggle('bg-slate-700', !on);
+        b.classList.toggle('hover:bg-slate-600', !on);
+        b.classList.toggle('text-slate-100', !on);
+      });
+      Prefs.set(Util.PREF_KEYS.wantsTradeSubTab, name);
+    }
+    subBtns.forEach(b => b.addEventListener('click', () => showSub(b.dataset.subtab)));
+    showSub(stored === 'trade' ? 'trade' : 'wants');
+  }
 
   const initialised = new Set();
   const dirty = new Set();
