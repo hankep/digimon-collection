@@ -78,6 +78,11 @@
       host = document.createElement('div');
       host.id = hostId;
       document.body.appendChild(host);
+    } else {
+      // Beim Re-Open / verschachtelten Modal: Host ans Ende des Bodys verschieben,
+      // damit das neue Modal bei gleicher z-index ueber bereits offenen Modals
+      // anderer Hosts liegt (DOM-Reihenfolge entscheidet bei gleichem z-index).
+      document.body.appendChild(host);
     }
 
     // Falls schon ein Modal mit gleicher ID offen ist: dessen close() aufrufen,
