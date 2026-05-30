@@ -148,17 +148,41 @@
     const ownerName = state.profiles.get(d.owner_id) || (d.owner_email || '').split('@')[0] || '— ohne Anzeigename —';
     const total = (d.entries || []).reduce((s, e) => s + (e.count || 0), 0);
     const notes = (d.notes || '').trim();
-    const tiles = (d.entries || []).map(e => {
+    // Such-Eingabe nur fuer Wants & Trade (groessere Listen) — Decks sind kompakt.
+    const showSearch = d.kind === 'wants' || d.kind === 'trade';
+
+    // Pre-build pro-Entry-Metadaten fuer Suche + Render. Vermeidet wiederholte
+    // Card-Lookups bei jedem Tastendruck.
+    const meta = (d.entries || []).map(e => {
       const card = CardDB.byId.get(e.cardId);
       const name = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
+      return {
+        entry: e,
+        name,
+        rarity,
+        haystack: (name + ' ' + e.cardId + ' ' + e.variant).toLowerCase()
+      };
+    });
+
+    function tileHtml(m) {
+      const e = m.entry;
       return `<div class="bg-slate-900 hover:bg-slate-800 rounded p-1.5 cursor-pointer" data-card-id="${escapeAttr(e.cardId)}" data-variant-key="${escapeAttr(e.variant)}" title="Detail-Ansicht oeffnen">
-        <img loading="lazy" src="${CardDB.imagePath(e.variant)}" alt="${escapeAttr(name)}" class="w-full aspect-[5/7] object-cover rounded mb-1" />
-        <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(e.variant)}">${escapeHtml(e.variant)}${rarity ? ` <span class="text-slate-500">${escapeHtml(rarity)}</span>` : ''}</div>
-        <div class="text-sm font-semibold truncate" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
-        <div class="text-xs text-amber-400 font-bold">${e.count}×</div>
+        <img loading="lazy" src="${CardDB.imagePath(e.variant)}" alt="${escapeAttr(m.name)}" class="w-full aspect-[5/7] object-cover rounded mb-1" />
+        <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(e.variant)}">${escapeHtml(e.variant)}${m.rarity ? ` <span class="text-slate-500">${escapeHtml(m.rarity)}</span>` : ''}</div>
+        <div class="text-sm font-semibold truncate" title="${escapeAttr(m.name)}">${escapeHtml(m.name)}</div>
+        <div class="text-xs text-amber-400 font-bold">${e.entry ? '' : ''}${e.count}×</div>
       </div>`;
-    }).join('');
+    }
+
+    const initialTiles = meta.map(tileHtml).join('');
+    const searchBar = showSearch
+      ? `<div class="mb-2 shrink-0 flex items-center gap-2">
+          <input id="shared-deck-search" type="text" placeholder="Suche Name / ID / Variant…"
+            class="bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm flex-1" />
+          <span id="shared-deck-search-count" class="text-xs text-slate-500"></span>
+        </div>`
+      : '';
 
     const contentHtml = `
       <div class="flex justify-between items-start mb-3 shrink-0">
@@ -169,8 +193,9 @@
         <button data-modal-close class="modal-close-x">×</button>
       </div>
       ${notes ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap mb-3 shrink-0">${escapeHtml(notes)}</div>` : ''}
+      ${searchBar}
       <div class="overflow-y-auto flex-1 min-h-0 pr-1">
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">${tiles}</div>
+        <div id="shared-deck-tiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">${initialTiles}</div>
       </div>
       <div class="flex justify-end gap-2 mt-3 shrink-0">
         <button data-modal-close class="btn-secondary">Schliessen</button>
@@ -189,11 +214,29 @@
           copySharedDeck(d, ownerName);
           close();
         });
-        content.querySelectorAll('[data-card-id][data-variant-key]').forEach(tile => {
-          tile.addEventListener('click', () => {
-            window.Util.bus.emit('open-card-modal', { cardId: tile.dataset.cardId, variantKey: tile.dataset.variantKey });
+
+        const tilesEl = content.querySelector('#shared-deck-tiles');
+        function wireTileClicks() {
+          tilesEl.querySelectorAll('[data-card-id][data-variant-key]').forEach(tile => {
+            tile.addEventListener('click', () => {
+              window.Util.bus.emit('open-card-modal', { cardId: tile.dataset.cardId, variantKey: tile.dataset.variantKey });
+            });
           });
-        });
+        }
+        wireTileClicks();
+
+        const search = content.querySelector('#shared-deck-search');
+        if (search) {
+          const cntEl = content.querySelector('#shared-deck-search-count');
+          const applyFilter = () => {
+            const q = search.value.trim().toLowerCase();
+            const filtered = q ? meta.filter(m => m.haystack.includes(q)) : meta;
+            tilesEl.innerHTML = filtered.map(tileHtml).join('');
+            wireTileClicks();
+            if (cntEl) cntEl.textContent = q ? `${filtered.length} / ${meta.length}` : '';
+          };
+          search.addEventListener('input', applyFilter);
+        }
       }
     });
   }
