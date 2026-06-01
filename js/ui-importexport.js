@@ -362,7 +362,11 @@
   const tradeState = {
     phase: 'input',
     rawText: '',
+    source: 'own',    // 'own' | 'others' — gegen welche Pool-Quelle gecheckt wird
     entries: [],  // pro Eintrag: {cardId, requestedVariant, wantsCount, deliverVariant, deliverCount, deliverableVariants}
+    othersGroups: [], // [{ownerId, displayName, email, deliverable: [{cardId, variant, requestedVariant, requestedCount, deliverCount, isExact}], totals}]
+    othersLoading: false,
+    othersError: null,
     view: 'tiles', // 'tiles' | 'text'
     sort: 'id',
     resultText: '',
@@ -372,7 +376,12 @@
   function openTradeDialog() {
     tradeState.phase = 'input';
     tradeState.rawText = '';
+    tradeState.source = Prefs.get('tradeSource', 'own');
+    if (tradeState.source !== 'others') tradeState.source = 'own';
     tradeState.entries = [];
+    tradeState.othersGroups = [];
+    tradeState.othersLoading = false;
+    tradeState.othersError = null;
     tradeState.view = Prefs.get('tradeView', 'tiles');
     tradeState.sort = Prefs.get('tradeSort', 'id');
     tradeState.resultText = '';
@@ -423,6 +432,8 @@
       renderTradePhaseResult();
     } else if (tradeState.phase === 'review') {
       renderTradePhase2();
+    } else if (tradeState.phase === 'review-others') {
+      renderTradePhaseOthers();
     } else {
       renderTradePhase1();
     }
@@ -436,6 +447,17 @@
           <div class="text-xs text-slate-400 mt-1">Liste des anderen Users hier einfügen — Cardmarket-Format, Plain-Text oder Compact (Format wird automatisch erkannt).</div>
         </div>
         <button data-modal-close class="modal-close-x">×</button>
+      </div>
+      <div class="flex items-center gap-2 mb-3 text-sm flex-wrap">
+        <span class="text-slate-400">Pool:</span>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="trade-source" value="own" ${tradeState.source === 'own' ? 'checked' : ''} class="accent-sky-500" />
+          <span>Eigene Collection</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="trade-source" value="others" ${tradeState.source === 'others' ? 'checked' : ''} class="accent-sky-500" />
+          <span>Andere User (Shared-Space-Trade-Listen)</span>
+        </label>
       </div>
       <textarea id="trade-text" rows="12"
         class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs"
@@ -454,23 +476,47 @@
       onClose: () => { tradeModal = null; },
       onMount: (content, close) => {
         content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
-        content.querySelector('#trade-load').addEventListener('click', () => {
+        content.querySelectorAll('input[name="trade-source"]').forEach(r => {
+          r.addEventListener('change', e => {
+            tradeState.source = e.target.value;
+            Prefs.set('tradeSource', tradeState.source);
+          });
+        });
+        content.querySelector('#trade-load').addEventListener('click', async () => {
           const text = content.querySelector('#trade-text').value;
-          if (!text.trim()) { content.querySelector('#trade-msg').textContent = 'Textfeld ist leer.'; return; }
+          const msg = content.querySelector('#trade-msg');
+          if (!text.trim()) { msg.textContent = 'Textfeld ist leer.'; return; }
           const auto = autoDetectFormat(text);
           if (!auto || auto.valid === 0) {
-            content.querySelector('#trade-msg').textContent = 'Format nicht erkannt — keine gültigen Einträge.';
+            msg.textContent = 'Format nicht erkannt — keine gültigen Einträge.';
             return;
           }
           tradeState.rawText = text;
-          tradeState.entries = buildTradeEntries(auto.result.entries);
-          setTradePhase('review');
+          if (tradeState.source === 'others') {
+            if (!window.Sync || !Sync.isConfigured || !Sync.isConfigured() || !Sync.isLoggedIn()) {
+              msg.textContent = 'Shared-Space-Sync nicht verfügbar (nicht eingeloggt).';
+              return;
+            }
+            msg.textContent = 'Lade Trade-Listen der anderen User…';
+            try {
+              tradeState.othersGroups = await buildOthersTradeGroups(auto.result.entries);
+              setTradePhase('review-others');
+            } catch (err) {
+              console.warn('trade others load failed:', err);
+              msg.textContent = 'Fehler beim Laden der Shared-Trade-Listen.';
+            }
+          } else {
+            tradeState.entries = buildTradeEntries(auto.result.entries);
+            setTradePhase('review');
+          }
         });
       }
     });
   }
 
   // Baut den vollständigen Trade-State aus Sender-Einträgen.
+  // Proxies zaehlen hier bewusst NICHT als verfuegbar — beim Trade gibt man
+  // physische Karten weg, Proxies passen dafuer nicht.
   function buildTradeEntries(entries) {
     const coll = Store.loadCollection();
     const vIdx = Store.getVariantIndex(coll);
@@ -481,7 +527,7 @@
       const deliverable = variants
         .map(v => {
           const ov = vIdx[v.key] || {};
-          return { key: v.key, free: (ov.freeReal || 0) + (ov.freeProxy || 0), owned: (ov.real || 0) + (ov.proxy || 0), isExact: v.key === e.variant };
+          return { key: v.key, free: (ov.freeReal || 0), owned: (ov.real || 0), isExact: v.key === e.variant };
         })
         .filter(d => d.free > 0)
         .sort((a, b) => (a.isExact ? -1 : 1) - (b.isExact ? -1 : 1) || b.free - a.free);
@@ -495,6 +541,103 @@
         deliverableVariants: deliverable
       };
     });
+  }
+
+  // Laedt alle 'trade'-Listen aus Shared Space (ausser eigene), aggregiert pro
+  // Owner einen Variant-Pool, und matched die Wants-Einträge dagegen. Liefert
+  // ein Array von Gruppen — eine pro User, der mind. eine Karte liefern kann.
+  // Pool-Logik: pro User wird der Variant-Counter geteilt zwischen Wants-
+  // Eintraegen aus der gleichen Card (kein Doppel-Counting); innerhalb einer
+  // Card werden zuerst exakte Treffer, dann Substitute angerechnet.
+  async function buildOthersTradeGroups(wantsEntries) {
+    const me = Sync.getUserId();
+    const { decks } = await Sync.loadSharedDecks('trade');
+    const byOwner = new Map();
+    for (const d of (decks || [])) {
+      if (!d || d.owner_id === me) continue;
+      if (!byOwner.has(d.owner_id)) {
+        byOwner.set(d.owner_id, {
+          ownerId: d.owner_id,
+          email: d.owner_email || '',
+          variantPool: new Map()  // variantKey → count
+        });
+      }
+      const rec = byOwner.get(d.owner_id);
+      for (const e of (d.entries || [])) {
+        if (!e || !e.variant) continue;
+        const c = Math.max(0, parseInt(e.count, 10) || 0);
+        if (!c) continue;
+        rec.variantPool.set(e.variant, (rec.variantPool.get(e.variant) || 0) + c);
+      }
+    }
+    if (!byOwner.size) return [];
+
+    // Profile fuer Anzeigenamen.
+    let profiles = new Map();
+    try { profiles = await Sync.loadProfilesFor(Array.from(byOwner.keys())); }
+    catch (err) { console.warn('loadProfilesFor failed:', err); }
+
+    const groups = [];
+    for (const rec of byOwner.values()) {
+      const pool = new Map(rec.variantPool);  // wird beim Matching dekrementiert
+      const deliverable = [];
+      let totalCount = 0;
+      let totalLow = 0, totalTrend = 0;
+
+      for (const w of wantsEntries) {
+        const need = Math.max(1, w.count || 1);
+        let remaining = need;
+        // 1) Exakter Variant-Treffer.
+        const exactAvail = pool.get(w.variant) || 0;
+        const exactTake = Math.min(remaining, exactAvail);
+        if (exactTake > 0) {
+          pool.set(w.variant, exactAvail - exactTake);
+          remaining -= exactTake;
+          const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(w.cardId, w.variant) : { low: null, trend: null };
+          if (p.low != null) totalLow += p.low * exactTake;
+          if (p.trend != null) totalTrend += p.trend * exactTake;
+          totalCount += exactTake;
+          deliverable.push({
+            cardId: w.cardId, variant: w.variant, requestedVariant: w.variant,
+            requestedCount: need, deliverCount: exactTake, isExact: true
+          });
+        }
+        if (remaining <= 0) continue;
+        // 2) Substitute: andere Varianten derselben Card.
+        const card = CardDB.byId.get(w.cardId);
+        const otherVariants = card ? CardDB.variantsOf(card).map(v => v.key).filter(k => k !== w.variant) : [];
+        for (const vk of otherVariants) {
+          if (remaining <= 0) break;
+          const avail = pool.get(vk) || 0;
+          if (avail <= 0) continue;
+          const take = Math.min(remaining, avail);
+          pool.set(vk, avail - take);
+          remaining -= take;
+          const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(w.cardId, vk) : { low: null, trend: null };
+          if (p.low != null) totalLow += p.low * take;
+          if (p.trend != null) totalTrend += p.trend * take;
+          totalCount += take;
+          deliverable.push({
+            cardId: w.cardId, variant: vk, requestedVariant: w.variant,
+            requestedCount: need, deliverCount: take, isExact: false
+          });
+        }
+      }
+
+      if (!deliverable.length) continue;
+      const profileName = profiles.get(rec.ownerId);
+      const fallback = (rec.email || '').split('@')[0] || '— ohne Anzeigename —';
+      groups.push({
+        ownerId: rec.ownerId,
+        displayName: profileName || fallback,
+        email: rec.email,
+        deliverable,
+        totals: { count: totalCount, low: totalLow, trend: totalTrend }
+      });
+    }
+    // Sortiere groups nach Anzahl gelieferter Karten (desc).
+    groups.sort((a, b) => b.totals.count - a.totals.count);
+    return groups;
   }
 
   function tradeTotals() {
@@ -689,6 +832,101 @@
         </span>
       </td>
     </tr>`;
+  }
+
+  // Render: Andere-User-Pool (read-only, gruppiert pro User). Keine
+  // Collection-Mutation moeglich — die Karten gehoeren ja anderen Usern.
+  function renderTradePhaseOthers() {
+    const groups = tradeState.othersGroups || [];
+    const totalGroups = groups.length;
+    const totalCards = groups.reduce((s, g) => s + g.totals.count, 0);
+    const body = totalGroups === 0
+      ? `<div class="text-sm text-slate-400 bg-slate-900 rounded p-4">Keine der geteilten Trade-Listen anderer User enthaelt eine der gesuchten Karten.</div>`
+      : groups.map((g, gi) => renderOthersGroup(g, gi)).join('');
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <div>
+          <h2 class="text-lg font-bold">Andere User — Trade-Pool</h2>
+          <div class="text-xs text-slate-400 mt-1">${totalGroups} User mit Treffern, insgesamt ${totalCards} lieferbare Karten. Quelle: Shared-Space-Trade-Listen.</div>
+        </div>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
+      <div class="overflow-y-auto flex-1 min-h-0 pr-1 space-y-4">${body}</div>
+      <div class="flex justify-end gap-2 mt-3 shrink-0">
+        <button id="trade-others-back" class="btn-secondary">Zurueck</button>
+        <button data-modal-close class="btn-secondary">Schliessen</button>
+      </div>
+    `;
+    tradeModal = window.Util.openModal({
+      host: 'trade-modal-root',
+      id: 'trade-modal',
+      sizeClass: 'w-[960px] max-w-[95vw]',
+      flex: true,
+      contentHtml,
+      onClose: () => { tradeModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#trade-others-back').addEventListener('click', () => setTradePhase('input'));
+        content.querySelectorAll('[data-others-copy]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const gi = parseInt(btn.dataset.othersCopy, 10);
+            const g = tradeState.othersGroups[gi];
+            if (!g) return;
+            const txt = othersGroupAsText(g);
+            const orig = btn.textContent;
+            const finish = ok => { btn.textContent = ok ? '✓ Kopiert' : 'Fehler'; setTimeout(() => { btn.textContent = orig; }, 1500); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(txt).then(() => finish(true), () => finish(false));
+            } else finish(false);
+          });
+        });
+      }
+    });
+  }
+
+  function renderOthersGroup(g, gi) {
+    const tiles = g.deliverable.map(d => renderOthersTile(d)).join('');
+    const lowFmt = Fmt.eur(g.totals.low);
+    const trendFmt = Fmt.eur(g.totals.trend);
+    return `<div class="bg-slate-800/60 border border-slate-700 rounded p-3">
+      <div class="flex items-center gap-3 mb-3 flex-wrap">
+        <div class="font-semibold text-slate-100">${escapeHtml(g.displayName)}</div>
+        <div class="text-xs text-slate-400">${g.totals.count} Karten · CM low/trend: <span class="text-amber-400">${lowFmt} / ${trendFmt}</span></div>
+        <button data-others-copy="${gi}" class="ml-auto text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded">Text kopieren</button>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">${tiles}</div>
+    </div>`;
+  }
+
+  function renderOthersTile(d) {
+    const card = CardDB.byId.get(d.cardId);
+    const name = card ? CardDB.cleanDisplayName(card) : d.cardId;
+    const cmText = (window.CM && CM.fmtCheapest) ? (CM.fmtCheapest(d.cardId, d.variant) || '') : '';
+    const status = d.isExact
+      ? `<span class="text-emerald-400 text-[10px] font-semibold">✓ exakt</span>`
+      : `<span class="text-amber-300 text-[10px] font-semibold" title="Andere Variante als gewollt">⚠ Substitut</span>`;
+    const cls = d.isExact ? '' : 'ring-1 ring-amber-500/40';
+    return `<div class="bg-slate-900 rounded p-2 ${cls}">
+      <img loading="lazy" src="${CardDB.imagePath(d.variant)}" alt="" class="w-full aspect-[5/7] object-cover rounded mb-2" />
+      <div class="flex items-center justify-between gap-2 mb-1">
+        ${status}
+        ${cmText ? `<span class="text-amber-400 text-[10px] font-semibold" title="Cardmarket low / trend">${cmText}</span>` : '<span class="text-slate-500 text-[10px]">CM</span>'}
+      </div>
+      <div class="text-sm font-semibold truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+      <div class="text-[10px] text-slate-300 mt-0.5 font-mono truncate" title="${escapeHtml(d.variant)}">${escapeHtml(d.variant)}</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Wants: ${d.requestedCount}× ${escapeHtml(d.requestedVariant)}</div>
+      <div class="text-center mt-1 font-bold text-emerald-400 tabular-nums">${d.deliverCount}× lieferbar</div>
+    </div>`;
+  }
+
+  function othersGroupAsText(g) {
+    const lines = [];
+    for (const d of g.deliverable) {
+      const card = CardDB.byId.get(d.cardId);
+      const name = card ? CardDB.cleanDisplayName(card) : d.cardId;
+      lines.push(`${d.deliverCount} ${name} ${d.variant}`);
+    }
+    return lines.join('\n') + '\n';
   }
 
   function wireTradeEntries(scope) {
