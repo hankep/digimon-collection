@@ -366,17 +366,34 @@
     const desiredIds = new Set(shared.map(rowId));
     if (shared.length) {
       const ownerEmail = session.user.email || null;
-      const payload = shared.map(d => ({
-        id: rowId(d),
-        owner_id: userId,
-        owner_email: ownerEmail,
-        deck_id: d.id,
-        name: d.name || 'Untitled',
-        kind: d.kind || 'deck',
-        notes: d.notes || '',
-        entries: (d.entries || []).map(e => ({ cardId: e.cardId, variant: e.variant, count: e.count })),
-        updated_at: d.updatedAt || new Date().toISOString()
-      }));
+      // Slotted-Counts pro Deck-Variante ermitteln, damit Andere im Shared-Tab
+      // sehen koennen, was der Owner schon zusammen hat. Nur fuer kind='deck'
+      // sinnvoll — Wants/Trade haben das Konzept 'slotted' nicht.
+      const coll = Store.loadCollection();
+      const deckIdx = Store.buildDeckAssignedIndex(coll);
+      const payload = shared.map(d => {
+        const isDeck = (d.kind || 'deck') === 'deck';
+        const entries = (d.entries || []).map(e => {
+          const out = { cardId: e.cardId, variant: e.variant, count: e.count };
+          if (isDeck) {
+            const a = Store.deckAssignedStats(deckIdx, d.id, e.variant);
+            out.slottedReal = a.real || 0;
+            out.slottedProxy = a.proxy || 0;
+          }
+          return out;
+        });
+        return {
+          id: rowId(d),
+          owner_id: userId,
+          owner_email: ownerEmail,
+          deck_id: d.id,
+          name: d.name || 'Untitled',
+          kind: d.kind || 'deck',
+          notes: d.notes || '',
+          entries,
+          updated_at: d.updatedAt || new Date().toISOString()
+        };
+      });
       const { error } = await client.from('shared_decks').upsert(payload, { onConflict: 'id' });
       if (error) console.warn('syncSharedDecks upsert:', error);
     }

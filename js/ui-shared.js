@@ -151,27 +151,58 @@
     // Such-Eingabe nur fuer Wants & Trade (groessere Listen) — Decks sind kompakt.
     const showSearch = d.kind === 'wants' || d.kind === 'trade';
 
+    const isDeckKind = (d.kind || 'deck') === 'deck';
+
     // Pre-build pro-Entry-Metadaten fuer Suche + Render. Vermeidet wiederholte
     // Card-Lookups bei jedem Tastendruck.
     const meta = (d.entries || []).map(e => {
       const card = CardDB.byId.get(e.cardId);
       const name = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const rarity = card && card.rarity ? CardDB.rarityShort(card.rarity) : '';
+      const slottedReal = Math.max(0, parseInt(e.slottedReal, 10) || 0);
+      const slottedProxy = Math.max(0, parseInt(e.slottedProxy, 10) || 0);
+      const slottedTotal = slottedReal + slottedProxy;
+      const missing = isDeckKind ? Math.max(0, (e.count || 0) - slottedTotal) : 0;
       return {
         entry: e,
         name,
         rarity,
+        slottedReal,
+        slottedProxy,
+        slottedTotal,
+        missing,
+        hasSlottedInfo: isDeckKind && ('slottedReal' in e || 'slottedProxy' in e),
         haystack: (name + ' ' + e.cardId + ' ' + e.variant).toLowerCase()
       };
     });
 
+    // Default-Sort fuer Decks: unvollstaendige zuerst (groesster Fehlbestand zuerst),
+    // dann nach Name. Fuer Wants/Trade: ID-Reihenfolge (entries-Reihenfolge).
+    if (isDeckKind) {
+      meta.sort((a, b) => {
+        if (b.missing !== a.missing) return b.missing - a.missing;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    const anySlottedInfo = isDeckKind && meta.some(m => m.hasSlottedInfo);
+    const totalMissing = isDeckKind ? meta.reduce((s, m) => s + m.missing, 0) : 0;
+
     function tileHtml(m) {
       const e = m.entry;
+      let slotInfo = '';
+      if (isDeckKind && m.hasSlottedInfo) {
+        const full = m.slottedTotal >= (e.count || 0);
+        const cls = full ? 'text-emerald-400' : (m.slottedTotal === 0 ? 'text-rose-400' : 'text-amber-300');
+        const proxyHint = m.slottedProxy > 0 ? ` <span class="text-slate-500" title="davon Proxies">(${m.slottedProxy}p)</span>` : '';
+        slotInfo = `<div class="text-[10px] ${cls} font-semibold" title="Owner hat ${m.slottedReal} real + ${m.slottedProxy} Proxy geslottet">geslottet: ${m.slottedTotal}/${e.count || 0}${proxyHint}</div>`;
+      }
       return `<div class="bg-slate-900 hover:bg-slate-800 rounded p-1.5 cursor-pointer" data-card-id="${escapeAttr(e.cardId)}" data-variant-key="${escapeAttr(e.variant)}" title="Detail-Ansicht oeffnen">
         <img loading="lazy" src="${CardDB.imagePath(e.variant)}" alt="${escapeAttr(m.name)}" class="w-full aspect-[5/7] object-cover rounded mb-1" />
         <div class="text-xs font-mono text-slate-400 truncate" title="${escapeAttr(e.variant)}">${escapeHtml(e.variant)}${m.rarity ? ` <span class="text-slate-500">${escapeHtml(m.rarity)}</span>` : ''}</div>
         <div class="text-sm font-semibold truncate" title="${escapeAttr(m.name)}">${escapeHtml(m.name)}</div>
-        <div class="text-xs text-amber-400 font-bold">${e.entry ? '' : ''}${e.count}×</div>
+        <div class="text-xs text-amber-400 font-bold">${e.count}×</div>
+        ${slotInfo}
       </div>`;
     }
 
@@ -184,11 +215,18 @@
         </div>`
       : '';
 
+    const missingBadge = (anySlottedInfo && totalMissing > 0)
+      ? ` · <span class="text-rose-300">${totalMissing} fehlen</span>`
+      : (anySlottedInfo ? ` · <span class="text-emerald-400">komplett</span>` : '');
+    const exportMissingBtn = (anySlottedInfo && totalMissing > 0)
+      ? `<button id="shared-export-missing" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-1.5 rounded text-sm" title="Fehlende Karten als Plain-Text-Liste kopieren">Fehlende exportieren</button>`
+      : '';
+
     const contentHtml = `
       <div class="flex justify-between items-start mb-3 shrink-0">
         <div class="min-w-0">
           <h2 class="text-lg font-bold truncate">${escapeHtml(d.name)}</h2>
-          <div class="text-xs text-slate-400 mt-1">von <b>${escapeHtml(ownerName)}</b> · ${escapeHtml(d.kind)} · ${total} Karten · ${(d.entries || []).length} Eintraege</div>
+          <div class="text-xs text-slate-400 mt-1">von <b>${escapeHtml(ownerName)}</b> · ${escapeHtml(d.kind)} · ${total} Karten · ${(d.entries || []).length} Eintraege${missingBadge}</div>
         </div>
         <button data-modal-close class="modal-close-x">×</button>
       </div>
@@ -197,8 +235,9 @@
       <div class="overflow-y-auto flex-1 min-h-0 pr-1">
         <div id="shared-deck-tiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">${initialTiles}</div>
       </div>
-      <div class="flex justify-end gap-2 mt-3 shrink-0">
+      <div class="flex justify-end gap-2 mt-3 shrink-0 flex-wrap">
         <button data-modal-close class="btn-secondary">Schliessen</button>
+        ${exportMissingBtn}
         <button id="shared-copy-to-own" class="btn-primary-emerald">Als meine Liste kopieren</button>
       </div>
     `;
@@ -214,6 +253,22 @@
           copySharedDeck(d, ownerName);
           close();
         });
+        const exportBtn = content.querySelector('#shared-export-missing');
+        if (exportBtn) {
+          exportBtn.addEventListener('click', () => {
+            const lines = [];
+            for (const m of meta) {
+              if (m.missing <= 0) continue;
+              lines.push(`${m.missing} ${m.name} ${m.entry.cardId}`);
+            }
+            const text = lines.join('\n') + '\n';
+            const orig = exportBtn.textContent;
+            const finish = ok => { exportBtn.textContent = ok ? `✓ ${lines.length} Zeilen kopiert` : 'Kopieren fehlgeschlagen'; setTimeout(() => { exportBtn.textContent = orig; }, 1800); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(() => finish(true), () => finish(false));
+            } else finish(false);
+          });
+        }
 
         const tilesEl = content.querySelector('#shared-deck-tiles');
         function wireTileClicks() {
