@@ -456,7 +456,7 @@
         </label>
         <label class="inline-flex items-center gap-1.5 cursor-pointer">
           <input type="radio" name="trade-source" value="others" ${tradeState.source === 'others' ? 'checked' : ''} class="accent-sky-500" />
-          <span>Andere User (Shared-Space-Trade-Listen)</span>
+          <span>Andere User (Collections)</span>
         </label>
       </div>
       <textarea id="trade-text" rows="12"
@@ -497,13 +497,13 @@
               msg.textContent = 'Shared-Space-Sync nicht verfügbar (nicht eingeloggt).';
               return;
             }
-            msg.textContent = 'Lade Trade-Listen der anderen User…';
+            msg.textContent = 'Lade Collections der anderen User…';
             try {
               tradeState.othersGroups = await buildOthersTradeGroups(auto.result.entries);
               setTradePhase('review-others');
             } catch (err) {
               console.warn('trade others load failed:', err);
-              msg.textContent = 'Fehler beim Laden der Shared-Trade-Listen.';
+              msg.textContent = 'Fehler beim Laden der geteilten Collections.';
             }
           } else {
             tradeState.entries = buildTradeEntries(auto.result.entries);
@@ -543,15 +543,19 @@
     });
   }
 
-  // Laedt alle 'trade'-Listen aus Shared Space (ausser eigene), aggregiert pro
-  // Owner einen Variant-Pool, und matched die Wants-Einträge dagegen. Liefert
-  // ein Array von Gruppen — eine pro User, der mind. eine Karte liefern kann.
-  // Pool-Logik: pro User wird der Variant-Counter geteilt zwischen Wants-
-  // Eintraegen aus der gleichen Card (kein Doppel-Counting); innerhalb einer
-  // Card werden zuerst exakte Treffer, dann Substitute angerechnet.
+  // Laedt die geteilten Collection-Rows (kind='collection') aller anderen User
+  // und matched die Wants-Einträge dagegen. Liefert ein Array von Gruppen —
+  // eine pro User, der mind. eine matching-Variante besitzt.
+  //
+  // Unterschied zur Trade-Listen-Logik:
+  // - Keine Pool-Dekrementierung: gezeigt wird, was der User insgesamt besitzt.
+  //   (Wenn er 1 Kopie hat und die Wants-Liste sie 3x will, bedeutet das nicht,
+  //    dass er die 3 nicht liefern kann — er hat halt 1.)
+  // - Frei und geslotted werden getrennt ausgewiesen: 'frei: X, geslotted: Y'.
+  // - Auch nicht-exakte Varianten werden gezeigt, mit Substitut-Markierung.
   async function buildOthersTradeGroups(wantsEntries) {
     const me = Sync.getUserId();
-    const { decks } = await Sync.loadSharedDecks('trade');
+    const { decks } = await Sync.loadSharedDecks('collection');
     const byOwner = new Map();
     for (const d of (decks || [])) {
       if (!d || d.owner_id === me) continue;
@@ -559,15 +563,18 @@
         byOwner.set(d.owner_id, {
           ownerId: d.owner_id,
           email: d.owner_email || '',
-          variantPool: new Map()  // variantKey → count
+          variantInfo: new Map()  // variantKey → { freeReal, freeProxy, slottedReal, slottedProxy }
         });
       }
       const rec = byOwner.get(d.owner_id);
       for (const e of (d.entries || [])) {
         if (!e || !e.variant) continue;
-        const c = Math.max(0, parseInt(e.count, 10) || 0);
-        if (!c) continue;
-        rec.variantPool.set(e.variant, (rec.variantPool.get(e.variant) || 0) + c);
+        rec.variantInfo.set(e.variant, {
+          freeReal: Math.max(0, parseInt(e.freeReal, 10) || 0),
+          freeProxy: Math.max(0, parseInt(e.freeProxy, 10) || 0),
+          slottedReal: Math.max(0, parseInt(e.slottedReal, 10) || 0),
+          slottedProxy: Math.max(0, parseInt(e.slottedProxy, 10) || 0)
+        });
       }
     }
     if (!byOwner.size) return [];
@@ -579,64 +586,57 @@
 
     const groups = [];
     for (const rec of byOwner.values()) {
-      const pool = new Map(rec.variantPool);  // wird beim Matching dekrementiert
-      const deliverable = [];
-      let totalCount = 0;
+      const matches = [];
+      let totalFree = 0, totalSlotted = 0;
       let totalLow = 0, totalTrend = 0;
 
       for (const w of wantsEntries) {
         const need = Math.max(1, w.count || 1);
-        let remaining = need;
-        // 1) Exakter Variant-Treffer.
-        const exactAvail = pool.get(w.variant) || 0;
-        const exactTake = Math.min(remaining, exactAvail);
-        if (exactTake > 0) {
-          pool.set(w.variant, exactAvail - exactTake);
-          remaining -= exactTake;
-          const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(w.cardId, w.variant) : { low: null, trend: null };
-          if (p.low != null) totalLow += p.low * exactTake;
-          if (p.trend != null) totalTrend += p.trend * exactTake;
-          totalCount += exactTake;
-          deliverable.push({
-            cardId: w.cardId, variant: w.variant, requestedVariant: w.variant,
-            requestedCount: need, deliverCount: exactTake, isExact: true
-          });
-        }
-        if (remaining <= 0) continue;
-        // 2) Substitute: andere Varianten derselben Card.
         const card = CardDB.byId.get(w.cardId);
-        const otherVariants = card ? CardDB.variantsOf(card).map(v => v.key).filter(k => k !== w.variant) : [];
-        for (const vk of otherVariants) {
-          if (remaining <= 0) break;
-          const avail = pool.get(vk) || 0;
-          if (avail <= 0) continue;
-          const take = Math.min(remaining, avail);
-          pool.set(vk, avail - take);
-          remaining -= take;
+        const variantKeys = card ? CardDB.variantsOf(card).map(v => v.key) : [w.variant];
+        // Exakte Variante zuerst pruefen, dann andere — fuer Sortierung im Tile.
+        const ordered = [w.variant, ...variantKeys.filter(k => k !== w.variant)];
+        for (const vk of ordered) {
+          const info = rec.variantInfo.get(vk);
+          if (!info) continue;
+          const freeTotal = info.freeReal + info.freeProxy;
+          const slottedTotal = info.slottedReal + info.slottedProxy;
+          if (freeTotal + slottedTotal === 0) continue;
+          const isExact = vk === w.variant;
           const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(w.cardId, vk) : { low: null, trend: null };
-          if (p.low != null) totalLow += p.low * take;
-          if (p.trend != null) totalTrend += p.trend * take;
-          totalCount += take;
-          deliverable.push({
-            cardId: w.cardId, variant: vk, requestedVariant: w.variant,
-            requestedCount: need, deliverCount: take, isExact: false
+          // Wertbeitrag: gewichtet mit min(need, free+slotted) — fuer Anzeigesumme.
+          const weight = Math.min(need, freeTotal + slottedTotal);
+          if (p.low != null) totalLow += p.low * weight;
+          if (p.trend != null) totalTrend += p.trend * weight;
+          totalFree += freeTotal;
+          totalSlotted += slottedTotal;
+          matches.push({
+            cardId: w.cardId,
+            variant: vk,
+            requestedVariant: w.variant,
+            requestedCount: need,
+            freeReal: info.freeReal,
+            freeProxy: info.freeProxy,
+            slottedReal: info.slottedReal,
+            slottedProxy: info.slottedProxy,
+            isExact
           });
         }
       }
 
-      if (!deliverable.length) continue;
+      if (!matches.length) continue;
       const profileName = profiles.get(rec.ownerId);
       const fallback = (rec.email || '').split('@')[0] || '— ohne Anzeigename —';
       groups.push({
         ownerId: rec.ownerId,
         displayName: profileName || fallback,
         email: rec.email,
-        deliverable,
-        totals: { count: totalCount, low: totalLow, trend: totalTrend }
+        matches,
+        totals: { free: totalFree, slotted: totalSlotted, low: totalLow, trend: totalTrend }
       });
     }
-    // Sortiere groups nach Anzahl gelieferter Karten (desc).
-    groups.sort((a, b) => b.totals.count - a.totals.count);
+    // Sortiere groups: User mit den meisten freien Treffern zuerst.
+    groups.sort((a, b) => (b.totals.free - a.totals.free) || (b.totals.slotted - a.totals.slotted));
     return groups;
   }
 
@@ -834,20 +834,22 @@
     </tr>`;
   }
 
-  // Render: Andere-User-Pool (read-only, gruppiert pro User). Keine
-  // Collection-Mutation moeglich — die Karten gehoeren ja anderen Usern.
+  // Render: Andere-User-Collections (read-only, gruppiert pro User). Zeigt
+  // ALLE Treffer (frei + geslotted) — geslottete sind aktuell in Decks
+  // gebunden, koennten aber nach Release verfuegbar sein.
   function renderTradePhaseOthers() {
     const groups = tradeState.othersGroups || [];
     const totalGroups = groups.length;
-    const totalCards = groups.reduce((s, g) => s + g.totals.count, 0);
+    const totalFree = groups.reduce((s, g) => s + g.totals.free, 0);
+    const totalSlotted = groups.reduce((s, g) => s + g.totals.slotted, 0);
     const body = totalGroups === 0
-      ? `<div class="text-sm text-slate-400 bg-slate-900 rounded p-4">Keine der geteilten Trade-Listen anderer User enthaelt eine der gesuchten Karten.</div>`
+      ? `<div class="text-sm text-slate-400 bg-slate-900 rounded p-4">Keine andere User-Collection enthaelt eine der gesuchten Karten.</div>`
       : groups.map((g, gi) => renderOthersGroup(g, gi)).join('');
     const contentHtml = `
       <div class="flex justify-between items-start mb-3 shrink-0">
         <div>
-          <h2 class="text-lg font-bold">Andere User — Trade-Pool</h2>
-          <div class="text-xs text-slate-400 mt-1">${totalGroups} User mit Treffern, insgesamt ${totalCards} lieferbare Karten. Quelle: Shared-Space-Trade-Listen.</div>
+          <h2 class="text-lg font-bold">Andere User — Collections</h2>
+          <div class="text-xs text-slate-400 mt-1">${totalGroups} User mit Treffern · <span class="text-emerald-400">${totalFree} frei</span> · <span class="text-amber-300">${totalSlotted} geslottet</span>. Quelle: geteilte Collections.</div>
         </div>
         <button data-modal-close class="modal-close-x">×</button>
       </div>
@@ -885,46 +887,69 @@
   }
 
   function renderOthersGroup(g, gi) {
-    const tiles = g.deliverable.map(d => renderOthersTile(d)).join('');
+    const tiles = g.matches.map(m => renderOthersTile(m)).join('');
     const lowFmt = Fmt.eur(g.totals.low);
     const trendFmt = Fmt.eur(g.totals.trend);
     return `<div class="bg-slate-800/60 border border-slate-700 rounded p-3">
       <div class="flex items-center gap-3 mb-3 flex-wrap">
         <div class="font-semibold text-slate-100">${escapeHtml(g.displayName)}</div>
-        <div class="text-xs text-slate-400">${g.totals.count} Karten · CM low/trend: <span class="text-amber-400">${lowFmt} / ${trendFmt}</span></div>
+        <div class="text-xs text-slate-400">
+          <span class="text-emerald-400">${g.totals.free} frei</span> ·
+          <span class="text-amber-300">${g.totals.slotted} geslottet</span> ·
+          CM low/trend: <span class="text-amber-400">${lowFmt} / ${trendFmt}</span>
+        </div>
         <button data-others-copy="${gi}" class="ml-auto text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded">Text kopieren</button>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">${tiles}</div>
     </div>`;
   }
 
-  function renderOthersTile(d) {
-    const card = CardDB.byId.get(d.cardId);
-    const name = card ? CardDB.cleanDisplayName(card) : d.cardId;
-    const cmText = (window.CM && CM.fmtCheapest) ? (CM.fmtCheapest(d.cardId, d.variant) || '') : '';
-    const status = d.isExact
+  function renderOthersTile(m) {
+    const card = CardDB.byId.get(m.cardId);
+    const name = card ? CardDB.cleanDisplayName(card) : m.cardId;
+    const cmText = (window.CM && CM.fmtCheapest) ? (CM.fmtCheapest(m.cardId, m.variant) || '') : '';
+    const status = m.isExact
       ? `<span class="text-emerald-400 text-[10px] font-semibold">✓ exakt</span>`
       : `<span class="text-amber-300 text-[10px] font-semibold" title="Andere Variante als gewollt">⚠ Substitut</span>`;
-    const cls = d.isExact ? '' : 'ring-1 ring-amber-500/40';
-    return `<div class="bg-slate-900 rounded p-2 ${cls}">
-      <img loading="lazy" src="${CardDB.imagePath(d.variant)}" alt="" class="w-full aspect-[5/7] object-cover rounded mb-2" />
+    const freeTotal = m.freeReal + m.freeProxy;
+    const slottedTotal = m.slottedReal + m.slottedProxy;
+    const totalOwned = freeTotal + slottedTotal;
+    // Ring-Farbe: gruen wenn frei vorhanden, gelb wenn nur slottet, neutral sonst.
+    let ringCls = '';
+    if (freeTotal === 0 && slottedTotal > 0) ringCls = 'ring-1 ring-amber-500/40';
+    else if (!m.isExact) ringCls = 'ring-1 ring-amber-500/30';
+    const proxyFreeHint = m.freeProxy > 0 ? ` <span class="text-slate-500">(${m.freeProxy}p)</span>` : '';
+    const proxySlotHint = m.slottedProxy > 0 ? ` <span class="text-slate-500">(${m.slottedProxy}p)</span>` : '';
+    const slotNote = slottedTotal > 0
+      ? `<div class="text-[10px] text-amber-300/90 mt-0.5" title="Aktuell in Decks gebunden">⚠ ${slottedTotal} geslottet${proxySlotHint}</div>`
+      : '';
+    const freeNote = freeTotal > 0
+      ? `<div class="text-[10px] text-emerald-400 font-semibold mt-0.5">✓ ${freeTotal} frei${proxyFreeHint}</div>`
+      : `<div class="text-[10px] text-slate-500 mt-0.5">0 frei</div>`;
+    return `<div class="bg-slate-900 rounded p-2 ${ringCls}">
+      <img loading="lazy" src="${CardDB.imagePath(m.variant)}" alt="" class="w-full aspect-[5/7] object-cover rounded mb-2" />
       <div class="flex items-center justify-between gap-2 mb-1">
         ${status}
         ${cmText ? `<span class="text-amber-400 text-[10px] font-semibold" title="Cardmarket low / trend">${cmText}</span>` : '<span class="text-slate-500 text-[10px]">CM</span>'}
       </div>
       <div class="text-sm font-semibold truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-      <div class="text-[10px] text-slate-300 mt-0.5 font-mono truncate" title="${escapeHtml(d.variant)}">${escapeHtml(d.variant)}</div>
-      <div class="text-[10px] text-slate-400 mt-0.5">Wants: ${d.requestedCount}× ${escapeHtml(d.requestedVariant)}</div>
-      <div class="text-center mt-1 font-bold text-emerald-400 tabular-nums">${d.deliverCount}× lieferbar</div>
+      <div class="text-[10px] text-slate-300 mt-0.5 font-mono truncate" title="${escapeHtml(m.variant)}">${escapeHtml(m.variant)}</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Wants: ${m.requestedCount}× ${escapeHtml(m.requestedVariant)}</div>
+      <div class="text-center mt-1 font-bold text-slate-200 tabular-nums">${totalOwned}× Besitz</div>
+      ${freeNote}
+      ${slotNote}
     </div>`;
   }
 
   function othersGroupAsText(g) {
     const lines = [];
-    for (const d of g.deliverable) {
-      const card = CardDB.byId.get(d.cardId);
-      const name = card ? CardDB.cleanDisplayName(card) : d.cardId;
-      lines.push(`${d.deliverCount} ${name} ${d.variant}`);
+    for (const m of g.matches) {
+      const card = CardDB.byId.get(m.cardId);
+      const name = card ? CardDB.cleanDisplayName(card) : m.cardId;
+      const totalOwned = m.freeReal + m.freeProxy + m.slottedReal + m.slottedProxy;
+      const slottedTotal = m.slottedReal + m.slottedProxy;
+      const note = slottedTotal > 0 ? `  # davon ${slottedTotal} geslottet` : '';
+      lines.push(`${totalOwned} ${name} ${m.variant}${note}`);
     }
     return lines.join('\n') + '\n';
   }

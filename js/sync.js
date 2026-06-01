@@ -290,6 +290,8 @@
     document.addEventListener('decks-changed', debouncedPush);
     // Shared-Decks separat — die brauchen kein app_state, sondern eigene Tabelle.
     document.addEventListener('decks-changed', debouncedSyncShared);
+    // Collection-Aenderungen pushen die geteilte Collection-Row mit slotted/free-Counts.
+    document.addEventListener('collection-changed', debouncedSyncShared);
   }
 
   // ── Profile (Anzeigename) ───────────────────────────────────────────────────
@@ -360,17 +362,56 @@
   async function syncSharedDecks() {
     if (!client || !isLoggedIn()) return;
     const userId = session.user.id;
+    const ownerEmail = session.user.email || null;
     const decks = (Store.loadDecks().decks || []);
     const shared = decks.filter(d => d.shared === true);
     const rowId = d => `${userId}:${d.id}`;
+    const COLLECTION_ROW_ID = `${userId}:__collection__`;
     const desiredIds = new Set(shared.map(rowId));
+    desiredIds.add(COLLECTION_ROW_ID);
+
+    const coll = Store.loadCollection();
+    const deckIdx = Store.buildDeckAssignedIndex(coll);
+
+    // 1) Collection-Row immer hochladen (read-only fuer alle anderen via RLS).
+    //    Damit kann das Trade-Modal Wants gegen die Collections anderer User
+    //    matchen. Pro Variante: freeReal/freeProxy + slottedReal/slottedProxy.
+    {
+      const variantIdx = Store.getVariantIndex(coll);
+      const collectionEntries = [];
+      for (const variantKey of Object.keys(variantIdx)) {
+        const v = variantIdx[variantKey];
+        const freeReal = v.freeReal || 0;
+        const freeProxy = v.freeProxy || 0;
+        const slottedReal = v.assignedReal || 0;
+        const slottedProxy = v.assignedProxy || 0;
+        const total = freeReal + freeProxy + slottedReal + slottedProxy;
+        if (total === 0) continue;
+        const info = CardDB.allVariants && CardDB.allVariants.get
+          ? CardDB.allVariants.get(variantKey)
+          : null;
+        const cardId = info ? info.cardId : variantKey.replace(/_P\d+$/, '').replace(/-Errata$/i, '');
+        collectionEntries.push({
+          cardId, variant: variantKey,
+          freeReal, freeProxy, slottedReal, slottedProxy
+        });
+      }
+      const collectionPayload = [{
+        id: COLLECTION_ROW_ID,
+        owner_id: userId,
+        owner_email: ownerEmail,
+        deck_id: '__collection__',
+        name: 'Collection',
+        kind: 'collection',
+        notes: '',
+        entries: collectionEntries,
+        updated_at: new Date().toISOString()
+      }];
+      const { error: collErr } = await client.from('shared_decks').upsert(collectionPayload, { onConflict: 'id' });
+      if (collErr) console.warn('syncSharedDecks collection upsert:', collErr);
+    }
+
     if (shared.length) {
-      const ownerEmail = session.user.email || null;
-      // Slotted-Counts pro Deck-Variante ermitteln, damit Andere im Shared-Tab
-      // sehen koennen, was der Owner schon zusammen hat. Nur fuer kind='deck'
-      // sinnvoll — Wants/Trade haben das Konzept 'slotted' nicht.
-      const coll = Store.loadCollection();
-      const deckIdx = Store.buildDeckAssignedIndex(coll);
       const payload = shared.map(d => {
         const isDeck = (d.kind || 'deck') === 'deck';
         const entries = (d.entries || []).map(e => {
@@ -382,6 +423,7 @@
           }
           return out;
         });
+        // ownerEmail kommt jetzt aus dem outer-Scope.
         return {
           id: rowId(d),
           owner_id: userId,
