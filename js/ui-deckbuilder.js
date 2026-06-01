@@ -974,15 +974,17 @@
     };
     if (mode === 'price-asc' || mode === 'price-desc') {
       const dir = mode === 'price-asc' ? 1 : -1;
-      return entries.slice().sort((a, b) => {
-        const av = cmLow(a.cardId, a.variant);
-        const bv = cmLow(b.cardId, b.variant);
-        if (av == null && bv == null) return byId(a, b);
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        if (av !== bv) return (av - bv) * dir;
-        return byId(a, b);
+      // Pre-compute lowForEntry pro Entry — sonst O(n log n) teure CM-Lookups
+      // im Comparator (Regex + bySet-Iteration).
+      const work = entries.map(e => ({ e, v: cmLow(e.cardId, e.variant) }));
+      work.sort((a, b) => {
+        if (a.v == null && b.v == null) return byId(a.e, b.e);
+        if (a.v == null) return 1;
+        if (b.v == null) return -1;
+        if (a.v !== b.v) return (a.v - b.v) * dir;
+        return byId(a.e, b.e);
       });
+      return work.map(w => w.e);
     }
     if (mode === 'status') {
       const deck = currentDeck();
@@ -1481,15 +1483,17 @@
       return CM.lowForEntry(cardId, variant);
     };
     if (mode === 'price-desc') {
-      items.sort((a, b) => {
-        const av = cmLow(a.cardId, a.variant);
-        const bv = cmLow(b.cardId, b.variant);
-        if (av == null && bv == null) return a.variant.localeCompare(b.variant);
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        if (av !== bv) return bv - av;
-        return a.variant.localeCompare(b.variant);
+      // Pre-compute lowForEntry: vermeidet O(n log n) teure CM-Lookups im Comparator.
+      const work = items.map(it => ({ it, v: cmLow(it.cardId, it.variant) }));
+      work.sort((a, b) => {
+        if (a.v == null && b.v == null) return a.it.variant.localeCompare(b.it.variant);
+        if (a.v == null) return 1;
+        if (b.v == null) return -1;
+        if (a.v !== b.v) return b.v - a.v;
+        return a.it.variant.localeCompare(b.it.variant);
       });
+      items.length = 0;
+      for (const w of work) items.push(w.it);
     } else {
       items.sort((a, b) => a.variant.localeCompare(b.variant));
     }

@@ -571,14 +571,27 @@
     // Bei Preis-Sortierung: variantenspezifische CM-low (Alt-Arts haben oft
     // ganz andere Preise als die Main). Card-level sortValue nimmt nur den
     // Top-Level-Aggregat — das ist hier in der Entry-Ansicht falsch.
+    //
+    // Wichtig: lowForEntry ist nicht trivial (Regex auf variantKey + bySet-
+    // Iteration + Object.keys-Allocation). Frueher wurde es im Comparator
+    // aufgerufen → O(n log n) teure Calls. Bei ~6000 Entries hat das die UI
+    // fuer Sekunden blockiert. Jetzt: einmal pro Entry vor-berechnen, dann
+    // reine Zahl-Vergleiche.
     if (state.sortBy === 'price' && (window.CM && CM.hasData())) {
       const dir = state.sortDir === 'desc' ? -1 : 1;
-      const lowOf = e => {
-        const v = (window.CM && CM.lowForEntry) ? CM.lowForEntry(e.card.id, e.variantKey) : null;
-        return v == null ? null : v;
-      };
+      const cache = new Map();  // variantKey → low (oder null), erspart wieder-holte Lookups bei identischen Varianten
+      for (const e of list) {
+        let v;
+        if (cache.has(e.variantKey)) v = cache.get(e.variantKey);
+        else {
+          v = (CM.lowForEntry ? CM.lowForEntry(e.card.id, e.variantKey) : null);
+          if (v != null && Number.isNaN(Number(v))) v = null;
+          cache.set(e.variantKey, v);
+        }
+        e._sortLow = v;
+      }
       list.sort((a, b) => {
-        const av = lowOf(a), bv = lowOf(b);
+        const av = a._sortLow, bv = b._sortLow;
         if (av == null && bv == null) return 0;
         if (av == null) return 1;     // ohne Preis ans Ende
         if (bv == null) return -1;
