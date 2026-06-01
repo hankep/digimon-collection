@@ -916,18 +916,14 @@
     const freeTotal = m.freeReal + m.freeProxy;
     const slottedTotal = m.slottedReal + m.slottedProxy;
     const totalOwned = freeTotal + slottedTotal;
-    // Ring-Farbe: gruen wenn frei vorhanden, gelb wenn nur slottet, neutral sonst.
+    // Ring-Farbe: gruen wenn frei vorhanden, gelb wenn nur slotted, neutral sonst.
     let ringCls = '';
     if (freeTotal === 0 && slottedTotal > 0) ringCls = 'ring-1 ring-amber-500/40';
     else if (!m.isExact) ringCls = 'ring-1 ring-amber-500/30';
-    const proxyFreeHint = m.freeProxy > 0 ? ` <span class="text-slate-500">(${m.freeProxy}p)</span>` : '';
-    const proxySlotHint = m.slottedProxy > 0 ? ` <span class="text-slate-500">(${m.slottedProxy}p)</span>` : '';
-    const slotNote = slottedTotal > 0
-      ? `<div class="text-[10px] text-amber-300/90 mt-0.5" title="Aktuell in Decks gebunden">⚠ ${slottedTotal} geslottet${proxySlotHint}</div>`
-      : '';
-    const freeNote = freeTotal > 0
-      ? `<div class="text-[10px] text-emerald-400 font-semibold mt-0.5">✓ ${freeTotal} frei${proxyFreeHint}</div>`
-      : `<div class="text-[10px] text-slate-500 mt-0.5">0 frei</div>`;
+    // x/y: frei / angefragt. Farbe: gruen wenn frei >= angefragt, gelb wenn 0<frei<angefragt, rot wenn 0 frei.
+    let freeCls = 'text-emerald-400';
+    if (freeTotal === 0) freeCls = 'text-rose-400';
+    else if (freeTotal < m.requestedCount) freeCls = 'text-amber-300';
     return `<div class="bg-slate-900 rounded p-2 ${ringCls}">
       <img loading="lazy" src="${CardDB.imagePath(m.variant)}" alt="" class="w-full aspect-[5/7] object-cover rounded mb-2" />
       <div class="flex items-center justify-between gap-2 mb-1">
@@ -936,10 +932,8 @@
       </div>
       <div class="text-sm font-semibold truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
       <div class="text-[10px] text-slate-300 mt-0.5 font-mono truncate" title="${escapeHtml(m.variant)}">${escapeHtml(m.variant)}</div>
-      <div class="text-[10px] text-slate-400 mt-0.5">Wants: ${m.requestedCount}× ${escapeHtml(m.requestedVariant)}</div>
-      <div class="text-center mt-1 font-bold text-slate-200 tabular-nums">${totalOwned}× Besitz</div>
-      ${freeNote}
-      ${slotNote}
+      <div class="text-center mt-1 font-bold tabular-nums ${freeCls}" title="frei / angefragt">${freeTotal}/${m.requestedCount}</div>
+      <div class="text-center text-[11px] text-slate-300 tabular-nums" title="insgesamt im Besitz (frei + geslottet)">${totalOwned} im Besitz</div>
     </div>`;
   }
 
