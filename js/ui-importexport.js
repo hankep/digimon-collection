@@ -465,7 +465,7 @@
       <div id="trade-msg" class="text-sm mt-2 min-h-[1.25rem] text-slate-400"></div>
       <div class="flex justify-end gap-2 mt-3">
         <button data-modal-close class="btn-secondary">Abbrechen</button>
-        <button id="trade-load" class="bg-sky-500 text-slate-900 hover:bg-sky-400 px-4 py-1.5 rounded text-sm font-semibold">Liste übernehmen</button>
+        <button id="trade-load" class="bg-sky-500 text-slate-900 hover:bg-sky-400 px-4 py-1.5 rounded text-sm font-semibold">${tradeState.source === 'others' ? 'Pruefen (read-only)' : 'Liste übernehmen'}</button>
       </div>
     `;
     tradeModal = window.Util.openModal({
@@ -480,6 +480,8 @@
           r.addEventListener('change', e => {
             tradeState.source = e.target.value;
             Prefs.set('tradeSource', tradeState.source);
+            const loadBtn = content.querySelector('#trade-load');
+            if (loadBtn) loadBtn.textContent = tradeState.source === 'others' ? 'Pruefen (read-only)' : 'Liste übernehmen';
           });
         });
         content.querySelector('#trade-load').addEventListener('click', async () => {
