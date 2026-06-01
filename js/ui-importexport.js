@@ -669,8 +669,10 @@
         for (const vk of ordered) {
           const info = rec.variantInfo.get(vk);
           if (!info) continue;
-          const freeTotal = info.freeReal + info.freeProxy;
-          const slottedTotal = info.slottedReal + info.slottedProxy;
+          // Proxies zaehlen NICHT — beim Trade gibt man echte Karten weg. Nur
+          // reale Kopien gelten (frei = verfuegbar, geslotted = real, aber gebunden).
+          const freeTotal = info.freeReal;
+          const slottedTotal = info.slottedReal;
           if (freeTotal + slottedTotal === 0) continue;
           const isExact = vk === w.variant;
           const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(w.cardId, vk) : { low: null, trend: null };
@@ -981,8 +983,9 @@
     const status = m.isExact
       ? `<span class="text-emerald-400 text-[10px] font-semibold">✓ exakt</span>`
       : `<span class="text-amber-300 text-[10px] font-semibold" title="Andere Variante als gewollt">⚠ Substitut</span>`;
-    const freeTotal = m.freeReal + m.freeProxy;
-    const slottedTotal = m.slottedReal + m.slottedProxy;
+    // Proxies zaehlen nicht — nur reale Kopien.
+    const freeTotal = m.freeReal;
+    const slottedTotal = m.slottedReal;
     const totalOwned = freeTotal + slottedTotal;
     // Ring-Farbe: gruen wenn frei vorhanden, gelb wenn nur slotted, neutral sonst.
     let ringCls = '';
@@ -1010,8 +1013,9 @@
     for (const m of g.matches) {
       const card = CardDB.byId.get(m.cardId);
       const name = card ? CardDB.cleanDisplayName(card) : m.cardId;
-      const totalOwned = m.freeReal + m.freeProxy + m.slottedReal + m.slottedProxy;
-      const slottedTotal = m.slottedReal + m.slottedProxy;
+      // Proxies zaehlen nicht — nur reale Kopien.
+      const totalOwned = m.freeReal + m.slottedReal;
+      const slottedTotal = m.slottedReal;
       const note = slottedTotal > 0 ? `  # davon ${slottedTotal} geslottet` : '';
       lines.push(`${totalOwned} ${name} ${m.variant}${note}`);
     }
