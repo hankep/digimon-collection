@@ -80,6 +80,38 @@
     return { items, unknown };
   }
 
+  // Standard-Import: simple Liste ("4x Agumon BT26-02", "3 BT1-001", optional
+  // "(V.N)") wird über den erprobten plain-text-Parser aufgelöst und auf dieselbe
+  // items-Struktur wie parse() gemappt — nur mit Pauschalpreis statt CM-Preisen
+  // und ohne originSet. So bleibt der gesamte Downstream-Code (summarize, apply,
+  // analyzeWantsImpact, Vorschau, Cross-Variant-Modal) unverändert nutzbar.
+  function parseStandard(text, priceEur) {
+    const price = (priceEur == null || Number.isNaN(Number(priceEur))) ? null : Number(priceEur);
+    const fmt = (window.IO_FORMATS || []).find(f => f.id === 'plain-text');
+    if (!fmt) return { items: [], unknown: [] };
+
+    const result = fmt.importDeck(String(text || ''));
+    const items = [];
+    for (const e of (result.entries || [])) {
+      if (!e || e.count <= 0) continue;
+      const card = CardDB.byId.get(e.cardId);
+      const info = CardDB.allVariants.get(e.variant);
+      items.push({
+        rawId: e.cardId,
+        cardId: e.cardId,
+        cardName: card ? CardDB.cleanDisplayName(card) : e.cardId,
+        variant: e.variant,
+        isAlt: info ? !!info.isAlt : false,
+        version: 1,
+        qty: e.count,
+        unitPrice: price,
+        originSet: null
+      });
+    }
+    const unknown = (result.unknownIds || []).map(id => ({ rawId: id, version: 1, qty: 1, price: null }));
+    return { items, unknown };
+  }
+
   function mapVariant(rawId, version) {
     const card = CardDB.byId.get(rawId);
     if (!card) return null;
@@ -286,5 +318,5 @@
     return { totalQty, totalValue, unpriced };
   }
 
-  window.Cardmarket = { parse, apply, summarize, analyzeWantsImpact };
+  window.Cardmarket = { parse, parseStandard, apply, summarize, analyzeWantsImpact };
 })();

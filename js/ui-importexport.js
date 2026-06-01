@@ -5,12 +5,15 @@
   // Export laeuft direkt aus der Deckliste (Toolbar "Exportieren"); dieser Tab
   // ist nur noch fuer Import von Listen-Text und Cardmarket-Daten.
   const state = {
-    textValue: ''
+    textValue: '',
+    cardImportMode: 'cardmarket' // 'cardmarket' | 'standard'
   };
   let rootEl = null;
 
   function init(el) {
     rootEl = el;
+    const stored = Prefs.get(window.Util.PREF_KEYS.cardImportMode, 'cardmarket');
+    state.cardImportMode = stored === 'standard' ? 'standard' : 'cardmarket';
     render();
   }
 
@@ -36,20 +39,27 @@
 
         <hr class="border-slate-700 my-6" />
 
-        <h2 class="text-lg font-bold mb-2">Cardmarket-Import</h2>
-        <p class="text-sm text-slate-400 mb-3">
-          Fügt Karten <b>inkl. Preis</b> zur Sammlung hinzu. Paste die Bestelldetails (Name + ID + V.X + Preis) aus Cardmarket.
-        </p>
-        <div class="flex flex-wrap gap-2 mb-2">
+        <h2 class="text-lg font-bold mb-2">Karten-Import</h2>
+        <div class="flex gap-2 mb-3" id="cm-mode-tabs">
+          <button data-cm-mode="cardmarket" class="px-3 py-1.5 rounded text-sm font-semibold cm-mode-btn">Cardmarket</button>
+          <button data-cm-mode="standard" class="px-3 py-1.5 rounded text-sm font-semibold cm-mode-btn">Standard</button>
+        </div>
+        <p id="cm-desc" class="text-sm text-slate-400 mb-3"></p>
+        <div class="flex flex-wrap gap-2 mb-2 items-center">
           <label class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded cursor-pointer text-sm">
             Datei laden…
             <input id="cm-file" type="file" accept=".txt,text/plain" class="hidden" />
           </label>
+          <label id="cm-price-wrap" class="hidden items-center gap-2 text-sm">
+            <span class="text-slate-400">Preis je Karte:</span>
+            <input id="cm-price" type="number" step="0.01" min="0" value="0.05"
+              class="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm w-24" />
+            <span class="text-slate-400">€</span>
+          </label>
           <button id="cm-clear" class="text-slate-400 hover:text-slate-200 px-4 py-2 text-sm">Leeren</button>
         </div>
         <textarea id="cm-text" rows="10"
-          class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs mb-2"
-          placeholder="1x  Taiki, Kiriha, &amp; Nene (BT11-095) (V.1)&#10;#BT11-095&#10;AD-01&#10;NM&#10;0,20 €&#10;&#10;..."></textarea>
+          class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs mb-2"></textarea>
         <div class="flex flex-wrap gap-2 mb-3">
           <button id="cm-preview" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded font-semibold">Vorschau</button>
           <button id="cm-apply"   class="bg-emerald-500 text-slate-900 px-4 py-2 rounded font-semibold">In Sammlung übernehmen</button>
@@ -84,9 +94,67 @@
     rootEl.querySelector('#cm-preview').addEventListener('click', cmPreview);
     rootEl.querySelector('#cm-apply').addEventListener('click', cmApply);
     rootEl.querySelector('#trade-open').addEventListener('click', openTradeDialog);
+
+    rootEl.querySelectorAll('#cm-mode-tabs [data-cm-mode]').forEach(btn => {
+      btn.addEventListener('click', () => setCardImportMode(btn.dataset.cmMode));
+    });
+    applyCardImportModeUI();
   }
 
-  // --- Cardmarket-Import ---------------------------------------------------
+  // --- Karten-Import (Cardmarket / Standard) -------------------------------
+
+  // Modus persistieren, UI (Tabs, Beschreibung, Placeholder, Preisfeld) neu
+  // synchronisieren und alte Vorschau verwerfen.
+  function setCardImportMode(mode) {
+    state.cardImportMode = mode === 'standard' ? 'standard' : 'cardmarket';
+    Prefs.set(window.Util.PREF_KEYS.cardImportMode, state.cardImportMode);
+    rootEl.querySelector('#cm-preview-out').innerHTML = '';
+    showCmMsg('', '');
+    applyCardImportModeUI();
+  }
+
+  function applyCardImportModeUI() {
+    const standard = state.cardImportMode === 'standard';
+    rootEl.querySelectorAll('#cm-mode-tabs [data-cm-mode]').forEach(b => {
+      const on = b.dataset.cmMode === state.cardImportMode;
+      b.classList.toggle('bg-amber-500', on);
+      b.classList.toggle('text-slate-900', on);
+      b.classList.toggle('bg-slate-700', !on);
+      b.classList.toggle('hover:bg-slate-600', !on);
+      b.classList.toggle('text-slate-100', !on);
+    });
+    const desc = rootEl.querySelector('#cm-desc');
+    if (desc) {
+      desc.innerHTML = standard
+        ? 'Fügt Karten mit <b>Pauschalpreis</b> zur Sammlung hinzu. Eine Karte pro Zeile, z.B. <span class="font-mono">4x Agumon BT26-02</span> oder <span class="font-mono">3 BT1-001</span>.'
+        : 'Fügt Karten <b>inkl. Preis</b> zur Sammlung hinzu. Paste die Bestelldetails (Name + ID + V.X + Preis) aus Cardmarket.';
+    }
+    const priceWrap = rootEl.querySelector('#cm-price-wrap');
+    if (priceWrap) {
+      priceWrap.classList.toggle('hidden', !standard);
+      priceWrap.classList.toggle('flex', standard);
+    }
+    const ta = rootEl.querySelector('#cm-text');
+    if (ta) {
+      ta.placeholder = standard
+        ? '4x Agumon BT26-02\n3 BT1-001\n2x ST1-007'
+        : '1x  Taiki, Kiriha, & Nene (BT11-095) (V.1)\n#BT11-095\nAD-01\nNM\n0,20 €\n\n...';
+    }
+  }
+
+  // Liest das Pauschalpreis-Feld; leer/ungültig → Fallback 0,05 €.
+  function cmStandardPrice() {
+    const el = rootEl.querySelector('#cm-price');
+    const v = el ? Number(el.value) : NaN;
+    return (el && el.value.trim() !== '' && !Number.isNaN(v) && v >= 0) ? v : 0.05;
+  }
+
+  // Parst den Eingabetext gemäß aktivem Modus → { items, unknown }.
+  function cmParseCurrent(text) {
+    return state.cardImportMode === 'standard'
+      ? Cardmarket.parseStandard(text, cmStandardPrice())
+      : Cardmarket.parse(text);
+  }
 
   function cmLoadFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -104,7 +172,7 @@
     const text = rootEl.querySelector('#cm-text').value;
     const out = rootEl.querySelector('#cm-preview-out');
     if (!text.trim()) { out.innerHTML = '<div class="text-slate-500 text-sm">Textfeld ist leer.</div>'; return; }
-    const { items, unknown } = Cardmarket.parse(text);
+    const { items, unknown } = cmParseCurrent(text);
     const sum = Cardmarket.summarize(items);
 
     const rows = items.map(it => `
@@ -146,7 +214,7 @@
   function cmApply() {
     const text = rootEl.querySelector('#cm-text').value;
     if (!text.trim()) { showCmMsg('Textfeld ist leer.', 'err'); return; }
-    const { items, unknown } = Cardmarket.parse(text);
+    const { items, unknown } = cmParseCurrent(text);
     if (!items.length) { showCmMsg('Keine erkennbaren Einträge.', 'err'); return; }
     const sum = Cardmarket.summarize(items);
     const msg = `${sum.totalQty} Karten (${Fmt.eur(sum.totalValue)}) zur Sammlung hinzufügen?`
