@@ -118,6 +118,13 @@
       Store.saveDecks(row.decks, { touch: false, silent: true });
     }
     setStatus('synced');
+    // Geteilte Listen + Collection-Row mit AKTUELLEM Code neu publishen, sobald
+    // die Remote-Decks lokal angekommen sind. Wichtig: applyRemote speichert
+    // 'silent' (kein decks-changed), und der Login-Sync rennt gegen pull() — bei
+    // frischem Login (leerer localStorage) lief syncSharedDecks sonst zu frueh,
+    // mit leeren Decks, und nie wieder. Folge: Slot-Counts (slottedReal/Proxy)
+    // fehlten in den shared_decks-Zeilen, bis der User zufaellig etwas aenderte.
+    debouncedSyncShared();
     try { onRemoteApplied(); } catch (e) { console.warn('onRemoteApplied-Fehler:', e); }
   }
 
