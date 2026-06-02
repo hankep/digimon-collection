@@ -364,7 +364,6 @@
     const total = deck.entries.reduce((s, e) => s + e.count, 0);
     if (!total) return '';
     const isWants = isListKind(deck.kind);
-    const cost = Store.computeDeckCost(deck, collectionCache);
     // Wants-Coverage: wie viele der fehlenden Slots stehen schon in einer
     // Wants-Liste? Aggregat pro variant ueber alle kind='wants'-Listen.
     const wantsByVariant = new Map();
@@ -378,11 +377,45 @@
     }
     const da = Store.getDeckAssignedIndex(collectionCache)[deck.id] || {};
     const haveCM = !!(window.CM && CM.hasData());
-    let missingLow = 0, missingTrend = 0, missingPricedCount = 0, missingNoCm = 0, missingInWants = 0;
+
+    // ── Summen ueber die GESLOTTETEN echten Kopien dieses Decks ──────────────
+    // Nur Karten, die diesem Deck zugewiesen sind UND kein Proxy sind, zaehlen.
+    // Ein Pass ueber alle Kopien, gruppiert pro Variante (sum/missing/count).
+    const slottedByVariant = Object.create(null);
+    let slottedCount = 0;
+    for (const id in (collectionCache.copies || {})) {
+      const cp = collectionCache.copies[id];
+      if (cp.isProxy || cp.deckId !== deck.id) continue;
+      let slot = slottedByVariant[cp.variant];
+      if (!slot) { slot = { sum: 0, missing: 0, count: 0 }; slottedByVariant[cp.variant] = slot; }
+      slot.count++;
+      slottedCount++;
+      if (cp.price == null) slot.missing++;
+      else slot.sum += cp.price;
+    }
+    let ownTotal = 0, ownUnknown = 0;          // (1) eigene Preise der geslotteten Kopien
+    let cmLowOwned = 0, cmTrendOwned = 0;      // (2) CM low/trend ueber geslottete Kopien
+    let hybridTotal = 0, hybridMissing = 0;    // (3) eigene + CM-low-Fallback
+    for (const variant in slottedByVariant) {
+      const slot = slottedByVariant[variant];
+      const cardId = (CardDB.allVariants.get(variant) || {}).cardId || variant.replace(/_P\d+$/, '');
+      ownTotal += slot.sum;
+      ownUnknown += slot.missing;
+      const p = haveCM ? CM.pricesForEntry(cardId, variant) : { low: null, trend: null };
+      if (p.low != null) cmLowOwned += p.low * slot.count;
+      if (p.trend != null) cmTrendOwned += p.trend * slot.count;
+      hybridTotal += slot.sum;
+      if (p.low != null) hybridTotal += p.low * slot.missing;
+      else hybridMissing += slot.missing;
+    }
+
+    // ── Fehlende Karten (noch nicht geslottet) ───────────────────────────────
+    let missingLow = 0, missingTrend = 0, missingPricedCount = 0, missingNoCm = 0, missingInWants = 0, missingTotal = 0;
     for (const entry of deck.entries) {
       const sa = da[entry.variant];
       const need = isWants ? entry.count : Math.max(0, entry.count - (sa ? sa.real : 0));
       if (!need) continue;
+      missingTotal += need;
       if (!isWants) {
         const want = wantsByVariant.get(entry.variant) || 0;
         missingInWants += Math.min(need, want);
@@ -398,12 +431,22 @@
         }
       }
     }
-    return `<span class="text-emerald-400 font-bold">${Fmt.eur(cost.total)}</span> <span class="text-slate-500">(bereits bezahlt)</span>`
-      + (cost.missing ? ` · <span class="text-red-400">${cost.missing} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}` : '')
-      + (cost.unknown ? ` · <span class="text-slate-400">${cost.unknown} ohne Preis</span>` : '')
+
+    // Owned-Summen nur zeigen, wenn ueberhaupt etwas geslottet ist
+    // (Wants/Trade-Listen slotten nicht → dort entfaellt der Block).
+    const ownPart = slottedCount > 0
+      ? `<span class="text-emerald-400 font-bold">${Fmt.eur(ownTotal)}</span> <span class="text-slate-500">(bereits bezahlt${ownUnknown ? `, ${ownUnknown} ohne Preis` : ''})</span>`
+        + (haveCM ? ` · <span class="text-amber-300" title="CM low / trend ueber geslottete Kopien">CM: ${Fmt.eur(cmLowOwned)} / ${Fmt.eur(cmTrendOwned)}</span>` : '')
+        + (haveCM ? ` · <span class="text-sky-300" title="Eigene Preise; geslottete Kopien ohne eigenen Preis mit CM low">Eigene + CM-Fallback: ${Fmt.eur(hybridTotal)}${hybridMissing ? ` <span class="text-slate-500">(${hybridMissing} ohne)</span>` : ''}</span>` : '')
+      : '';
+    const missingPart = (missingTotal
+        ? ` · <span class="text-red-400">${missingTotal} fehlen</span>${missingInWants > 0 ? ` <span class="text-sky-400" title="Davon stehen so viele bereits in einer Wants-Liste">(${missingInWants} in Wants)</span>` : ''}`
+        : '')
       + (missingPricedCount > 0
           ? ` · <span class="text-amber-400" title="Cardmarket low / trend Summe der fehlenden Karten">fehlend CM: ${Fmt.eur(missingLow)} / ${Fmt.eur(missingTrend)}</span>${missingNoCm ? ` <span class="text-slate-500">(${missingNoCm} ohne CM-Preis)</span>` : ''}`
           : '');
+    // Fuehrendes ' · ' entfernen, falls der Owned-Block leer ist (Wants/Trade).
+    return (ownPart + missingPart).replace(/^ · /, '');
   }
 
   function renderDeckHeaderHtml(deck) {

@@ -424,7 +424,23 @@
     const idx = Store.getVariantIndex(state.collection);
     const haveCM = !!(window.CM && CM.hasData());
     let ownedUnique = 0, totalCopies = 0, totalProxies = 0;
-    let lowSum = 0, trendSum = 0, pricedCount = 0, missingPrice = 0;
+    let lowSum = 0, trendSum = 0, missingCM = 0;   // (2) CM low/trend; missingCM = echte Kopien ohne CM-Preis
+    let ownSum = 0, ownMissing = 0;                // (1) eigene eingetragene Preise; ownMissing = Kopien ohne eigenen Preis
+    let hybridSum = 0, hybridMissing = 0;          // (3) eigene + CM-low-Fallback; hybridMissing = Kopien ohne beides
+
+    // Ein Pass ueber alle ECHTEN Kopien (Proxies = kein Besitz): summiert die
+    // eingetragenen Copy-Preise pro Variante (sum/known/missing).
+    const coll = state.collection;
+    const enteredByVariant = Object.create(null);
+    for (const id in (coll.copies || {})) {
+      const cp = coll.copies[id];
+      if (cp.isProxy) continue;
+      let slot = enteredByVariant[cp.variant];
+      if (!slot) { slot = { sum: 0, missing: 0 }; enteredByVariant[cp.variant] = slot; }
+      if (cp.price == null) slot.missing++;
+      else slot.sum += cp.price;
+    }
+
     for (const c of cards) {
       let realCopies = 0, proxyCopies = 0;
       for (const v of CardDB.variantsOf(c)) {
@@ -432,25 +448,35 @@
         if (!s) continue;
         realCopies += s.real;
         proxyCopies += s.proxy;
-        // Nur ECHTE Kopien zaehlen fuer die Preissumme (Proxies = kein Besitz).
-        if (haveCM && s.real > 0) {
-          const p = CM.pricesForEntry(c.id, v.key);
-          if (p.low != null || p.trend != null) {
-            if (p.low != null) lowSum += p.low * s.real;
-            if (p.trend != null) trendSum += p.trend * s.real;
-            pricedCount += s.real;
-          } else {
-            missingPrice += s.real;
-          }
-        }
+        // Nur ECHTE Kopien zaehlen fuer die Preissummen (Proxies = kein Besitz).
+        if (s.real <= 0) continue;
+        const ent = enteredByVariant[v.key] || { sum: 0, missing: 0 };
+        // (1) Eigene eingetragene Preise
+        ownSum += ent.sum;
+        ownMissing += ent.missing;
+        // (2) CM low/trend ueber echte Kopien
+        const p = haveCM ? CM.pricesForEntry(c.id, v.key) : { low: null, trend: null };
+        if (p.low != null) lowSum += p.low * s.real;
+        if (p.trend != null) trendSum += p.trend * s.real;
+        if (haveCM && p.low == null && p.trend == null) missingCM += s.real;
+        // (3) Eigene + CM-low-Fallback fuer Kopien ohne eigenen Preis
+        hybridSum += ent.sum;
+        if (p.low != null) hybridSum += p.low * ent.missing;
+        else hybridMissing += ent.missing;
       }
       if (realCopies + proxyCopies > 0) ownedUnique++;
       totalCopies += realCopies;
       totalProxies += proxyCopies;
     }
     const setLabel = state.selectedSet || 'Alle Karten';
-    const pricePill = haveCM && (lowSum > 0 || trendSum > 0)
-      ? `<div title="CM low / trend Summe ueber echte Kopien (ohne Proxies)"><span class="text-slate-400">Wert (CM):</span> <span class="font-semibold text-amber-300">${Fmt.eur(lowSum)} / ${Fmt.eur(trendSum)}</span>${missingPrice > 0 ? ` <span class="text-slate-500 text-xs">(${missingPrice} ohne)</span>` : ''}</div>`
+    const ownPill = totalCopies > 0
+      ? `<div title="Summe deiner eingetragenen Copy-Preise (echte Kopien)"><span class="text-slate-400">Eigene:</span> <span class="font-semibold text-emerald-400">${Fmt.eur(ownSum)}</span>${ownMissing > 0 ? ` <span class="text-slate-500 text-xs">(${ownMissing} ohne)</span>` : ''}</div>`
+      : '';
+    const cmPill = haveCM && (lowSum > 0 || trendSum > 0)
+      ? `<div title="CM low / trend Summe ueber echte Kopien (ohne Proxies)"><span class="text-slate-400">CM:</span> <span class="font-semibold text-amber-300">${Fmt.eur(lowSum)} / ${Fmt.eur(trendSum)}</span>${missingCM > 0 ? ` <span class="text-slate-500 text-xs">(${missingCM} ohne)</span>` : ''}</div>`
+      : '';
+    const hybridPill = haveCM && totalCopies > 0
+      ? `<div title="Eigene Preise; Kopien ohne eigenen Preis mit CM low aufgefuellt"><span class="text-slate-400">Eigene + CM-Fallback:</span> <span class="font-semibold text-sky-300">${Fmt.eur(hybridSum)}</span>${hybridMissing > 0 ? ` <span class="text-slate-500 text-xs">(${hybridMissing} ohne)</span>` : ''}</div>`
       : '';
     el.innerHTML = `
       <div class="bg-slate-800 rounded p-3 flex flex-wrap gap-4 text-sm">
@@ -459,7 +485,9 @@
         <div><span class="text-slate-400">Davon besessen:</span> <span class="font-semibold text-amber-400">${ownedUnique}</span> <span class="text-slate-500">(${cards.length ? Math.round(ownedUnique / cards.length * 100) : 0}%)</span></div>
         <div><span class="text-slate-400">Kopien gesamt:</span> <span class="font-semibold">${totalCopies}</span></div>
         ${totalProxies > 0 ? `<div><span class="text-slate-400">Davon Proxy:</span> <span class="font-semibold text-purple-400">${totalProxies}</span></div>` : ''}
-        ${pricePill}
+        ${ownPill}
+        ${cmPill}
+        ${hybridPill}
       </div>
     `;
   }
