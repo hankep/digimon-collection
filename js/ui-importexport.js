@@ -175,16 +175,29 @@
     const { items, unknown } = cmParseCurrent(text);
     const sum = Cardmarket.summarize(items);
 
-    const rows = items.map(it => `
-      <tr class="border-b border-slate-800">
+    // Set-Konflikte nur im Cardmarket-Modus markieren (Standard waehlt Sets erst
+    // im Uebernehmen-Modal). requireSet=true: fehlendes Set gilt hier als Fehler.
+    const isCm = state.cardImportMode !== 'standard';
+    const conflicts = isCm ? Cardmarket.findOriginSetConflicts(items, { requireSet: true }) : [];
+    const conflictByItem = new Map(conflicts.map(c => [c.item, c.reason]));
+
+    const rows = items.map(it => {
+      const reason = conflictByItem.get(it);
+      const rowCls = reason ? 'border-b border-red-800 bg-red-900/20' : 'border-b border-slate-800';
+      const setCell = reason
+        ? `<td class="px-2 py-1 font-mono text-xs text-red-300" title="${reason === 'missing' ? 'Kein Set erkannt' : 'Set kommt für diese Karte nicht vor'}">${it.originSet ? escapeHtml(it.originSet) : '⚠ kein Set'} ✖</td>`
+        : `<td class="px-2 py-1 font-mono text-xs ${it.originSet ? 'text-amber-400' : 'text-slate-600'}">${it.originSet ? escapeHtml(it.originSet) : '–'}</td>`;
+      return `
+      <tr class="${rowCls}">
         <td class="px-2 py-1">${it.qty}x</td>
         <td class="px-2 py-1">${escapeHtml(it.cardName)}</td>
         <td class="px-2 py-1 font-mono text-xs text-slate-400">${escapeHtml(it.variant)}${it.isAlt ? ' (Alt)' : ''}</td>
-        <td class="px-2 py-1 font-mono text-xs ${it.originSet ? 'text-amber-400' : 'text-slate-600'}">${it.originSet ? escapeHtml(it.originSet) : '–'}</td>
+        ${setCell}
         <td class="px-2 py-1 text-right">${it.unitPrice == null ? '–' : Fmt.eur(it.unitPrice)}</td>
         <td class="px-2 py-1 text-right">${it.unitPrice == null ? '–' : Fmt.eur(it.unitPrice * it.qty)}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     out.innerHTML = `
       <div class="bg-slate-800 rounded p-3 mb-3 flex flex-wrap gap-4 text-sm">
@@ -192,7 +205,12 @@
         <div><span class="text-slate-400">Wert:</span> <b class="text-emerald-400">${Fmt.eur(sum.totalValue)}</b></div>
         ${sum.unpriced ? `<div><span class="text-slate-400">Ohne Preis:</span> <b>${sum.unpriced}</b></div>` : ''}
         ${unknown.length ? `<div><span class="text-red-400">Unbekannt:</span> <b>${unknown.length}</b></div>` : ''}
+        ${conflicts.length ? `<div><span class="text-red-400">Set-Konflikt:</span> <b class="text-red-300">${conflicts.length}</b></div>` : ''}
       </div>
+      ${conflicts.length ? `
+        <div class="mb-3 bg-red-900/30 border border-red-700 rounded p-3 text-sm text-red-200">
+          <b class="text-red-300">${conflicts.length} Karte(n) mit falschem/fehlendem Set</b> — der Import wird blockiert, bis jedes Set zur Karte passt (rot markierte Zeilen).
+        </div>` : ''}
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead><tr class="text-xs uppercase text-slate-400 text-left">
@@ -216,6 +234,21 @@
     if (!text.trim()) { showCmMsg('Textfeld ist leer.', 'err'); return; }
     const { items, unknown } = cmParseCurrent(text);
     if (!items.length) { showCmMsg('Keine erkennbaren Einträge.', 'err'); return; }
+
+    // Standard-Modus: Set + Preis werden pro Karte im Modal gewaehlt.
+    if (state.cardImportMode === 'standard') {
+      openStandardImportDialog(items, unknown);
+      return;
+    }
+
+    // Cardmarket-Modus: harter Set-Guard. Jede Karte MUSS ein gueltiges, zur
+    // Karte passendes Set haben — sonst wurde der Paste falsch gelesen.
+    const conflicts = Cardmarket.findOriginSetConflicts(items, { requireSet: true });
+    if (conflicts.length) {
+      showCmConflicts(conflicts);
+      return;
+    }
+
     const sum = Cardmarket.summarize(items);
     const msg = `${sum.totalQty} Karten (${Fmt.eur(sum.totalValue)}) zur Sammlung hinzufügen?`
       + (unknown.length ? `\n${unknown.length} unbekannte IDs werden übersprungen.` : '');
@@ -224,12 +257,40 @@
     // Cross-Variant-Analyse: wenn ein Import die gleiche Card-ID in anderer
     // Variante als ein Wants-Eintrag hat, fragen wir per Modal nach. Exakte
     // Treffer werden ohnehin in apply() abgezogen.
+    proceedWantsThenApply(items);
+  }
+
+  // Wants-Cross-Variant-Analyse + finaler Apply. Von Cardmarket- und
+  // Standard-Flow gemeinsam genutzt.
+  function proceedWantsThenApply(items) {
     const impact = Cardmarket.analyzeWantsImpact(items);
     if (impact.crossVariant.length === 0) {
       finishCmApply(items, null);
     } else {
       openCrossVariantDialog(items, impact.crossVariant);
     }
+  }
+
+  // Blockierende Fehlermeldung fuer den Cardmarket-Guard. Listet die Zeilen,
+  // deren Set nicht zur Karte passt (oder fehlt) — der Import laeuft NICHT.
+  function showCmConflicts(conflicts) {
+    const lines = conflicts.map(c => {
+      const it = c.item;
+      const where = c.reason === 'missing'
+        ? 'kein Set erkannt'
+        : `Set ${it.originSet} passt nicht zu ${it.cardId}`;
+      return `${it.qty}x ${it.cardName} (${it.variant}) — ${where}`;
+    });
+    const out = rootEl.querySelector('#cm-preview-out');
+    if (out) {
+      out.innerHTML = `
+        <div class="bg-red-900/30 border border-red-700 rounded p-3">
+          <div class="text-red-300 font-bold text-sm mb-2">Import abgebrochen: ${conflicts.length} Karte(n) mit falschem/fehlendem Set</div>
+          <div class="text-xs font-mono text-red-200">${lines.map(escapeHtml).join('<br>')}</div>
+          <div class="text-xs text-slate-400 mt-2">Karten werden nicht hinzugefügt, solange ein Set nicht zur Karte passt. Bitte den Paste prüfen.</div>
+        </div>`;
+    }
+    showCmMsg(`Import abgebrochen: ${conflicts.length} Karte(n) mit falschem/fehlendem Set.`, 'err');
   }
 
   function finishCmApply(items, decisions) {
@@ -239,6 +300,95 @@
     showCmMsg(`Hinzugefügt: ${res.addedCopies} Kopien, Wert ${Fmt.eur(res.addedValue)}.${wantsNote}${crossNote} Seite wird neu geladen…`, 'ok');
     if (window.Sync && Sync.flushThenReload) Sync.flushThenReload(800);
     else setTimeout(() => location.reload(), 800);
+  }
+
+  // Alle echten App-Sets, in denen die Karte erhaeltlich ist: Origin zuerst,
+  // dann Reprints. Pro Karte (nicht pro Variante) — feiner gibt das Datenmodell
+  // es nicht her.
+  function availableSetsFor(card) {
+    if (!card) return [];
+    const out = [];
+    if (card.set) out.push(card.set);
+    for (const code of CardDB.reprintSetsOf(card)) {
+      if (!out.includes(code)) out.push(code);
+    }
+    return out;
+  }
+
+  // Standard-Import-Modal: pro Karte Preis (vorausgefuellt mit Pauschalpreis)
+  // und Set waehlen. Set-Dropdown nur fuer Karten mit mehreren moeglichen Sets
+  // (Origin + Reprints); sonst fixes Origin-Set. Version/Variante bleibt fix.
+  function openStandardImportDialog(items, unknown) {
+    const rows = items.map((it, idx) => {
+      const card = CardDB.byId.get(it.cardId);
+      const sets = availableSetsFor(card);
+      const setCell = sets.length > 1
+        ? `<select data-si-set="${idx}" class="bg-slate-900 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono w-full">
+             ${sets.map(s => `<option value="${escapeHtml(s)}" ${card && s === card.set ? 'selected' : ''}>${escapeHtml(s)} — ${escapeHtml(CardDB.setNameByCode(s))}</option>`).join('')}
+           </select>`
+        : `<span class="font-mono text-xs text-slate-400">${escapeHtml(sets[0] || '–')}</span>`;
+      const priceVal = it.unitPrice == null ? '' : it.unitPrice;
+      return `
+        <tr class="border-b border-slate-800">
+          <td class="px-2 py-1 whitespace-nowrap">${it.qty}x</td>
+          <td class="px-2 py-1">${escapeHtml(it.cardName)}</td>
+          <td class="px-2 py-1 font-mono text-xs text-slate-400 whitespace-nowrap">${escapeHtml(it.variant)}${it.isAlt ? ' (Alt)' : ''}</td>
+          <td class="px-2 py-1 min-w-[180px]">${setCell}</td>
+          <td class="px-2 py-1 text-right">
+            <input type="number" step="0.01" min="0" data-si-price="${idx}" value="${priceVal}"
+              class="w-20 bg-slate-900 border border-slate-600 rounded px-1.5 py-1 text-xs text-right" />
+          </td>
+        </tr>`;
+    }).join('');
+
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div class="min-w-0">
+          <h2 class="text-lg font-bold">In Sammlung übernehmen</h2>
+          <div class="text-xs text-slate-400 mt-1">Preis ist mit dem Pauschalpreis vorausgefüllt. Bei Karten aus mehreren Sets das richtige Set wählen.</div>
+        </div>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
+
+      <div class="max-h-[55vh] overflow-y-auto border border-slate-700 rounded">
+        <table class="w-full text-sm">
+          <thead><tr class="text-xs uppercase text-slate-400 text-left sticky top-0 bg-slate-800">
+            <th class="px-2 py-1">Menge</th><th class="px-2 py-1">Name</th><th class="px-2 py-1">Variant</th>
+            <th class="px-2 py-1">Set</th><th class="px-2 py-1 text-right">Stk.-Preis €</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+
+      ${unknown.length ? `<div class="mt-3 text-xs text-red-300">${unknown.length} unbekannte ID(s) werden übersprungen.</div>` : ''}
+
+      <div class="flex justify-end gap-2 mt-3">
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="si-go" class="btn-primary-emerald">In Sammlung übernehmen</button>
+      </div>
+    `;
+
+    window.Util.openModal({
+      host: 'standard-import-root',
+      id: 'standard-import-modal',
+      sizeClass: 'w-[760px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#si-go').addEventListener('click', () => {
+          items.forEach((it, idx) => {
+            const card = CardDB.byId.get(it.cardId);
+            const ps = content.querySelector(`[data-si-price="${idx}"]`);
+            const v = ps ? Number(ps.value) : NaN;
+            it.unitPrice = (ps && ps.value.trim() !== '' && !Number.isNaN(v) && v >= 0) ? v : null;
+            const ss = content.querySelector(`[data-si-set="${idx}"]`);
+            it.originSet = ss ? ss.value : (card ? card.set : null);
+          });
+          close();
+          proceedWantsThenApply(items);
+        });
+      }
+    });
   }
 
   function openCrossVariantDialog(items, candidates) {

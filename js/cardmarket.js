@@ -134,6 +134,27 @@
     };
   }
 
+  // Set-Guard: liefert die Items, deren angehaengtes originSet nicht zur Karte
+  // passt. reason 'mismatch' = Set gesetzt, aber Karte kommt da nicht vor
+  // (appearsInSet=false). reason 'missing' = gar kein Set erkannt — nur relevant,
+  // wenn opts.requireSet (Cardmarket-Pastes haben IMMER ein Set).
+  function findOriginSetConflicts(items, opts) {
+    const requireSet = !!(opts && opts.requireSet);
+    const conflicts = [];
+    for (const it of items || []) {
+      const card = CardDB.byId.get(it.cardId);
+      if (!card) continue; // unbekannte IDs landen ohnehin nicht in items
+      if (!it.originSet) {
+        if (requireSet) conflicts.push({ item: it, reason: 'missing' });
+        continue;
+      }
+      if (!CardDB.appearsInSet(card, it.originSet)) {
+        conflicts.push({ item: it, reason: 'mismatch' });
+      }
+    }
+    return conflicts;
+  }
+
   // items -> Map variant -> qty (summiert ueber alle items mit gleicher variant).
   function buildAddedByVariant(items) {
     const m = new Map();
@@ -233,6 +254,15 @@
   //   decisions.acceptCrossVariant = [{deckId, cardId, wantsVariant, take}, ...]
   // werden zusaetzlich zu den exakten Treffern abgezogen.
   function apply(items, decisions) {
+    // Sicherheitsnetz: KEIN Code-Pfad darf Kopien mit nicht passendem Set
+    // schreiben (egal ob Cardmarket- oder Standard-Import). Mode-unabhaengig,
+    // weil ein falsch zugeordnetes Set immer ein Fehler ist.
+    const badSet = findOriginSetConflicts(items, { requireSet: false });
+    if (badSet.length) {
+      const sample = badSet.slice(0, 5)
+        .map(c => `${c.item.cardId} ⟂ ${c.item.originSet}`).join(', ');
+      throw new Error(`Import abgebrochen: ${badSet.length} Karte(n) mit nicht passendem Set (${sample}).`);
+    }
     const coll = Store.loadCollection();
     let addedCopies = 0;
     let addedValue = 0;
@@ -318,5 +348,5 @@
     return { totalQty, totalValue, unpriced };
   }
 
-  window.Cardmarket = { parse, parseStandard, apply, summarize, analyzeWantsImpact };
+  window.Cardmarket = { parse, parseStandard, apply, summarize, analyzeWantsImpact, findOriginSetConflicts };
 })();
