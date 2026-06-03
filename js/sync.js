@@ -419,8 +419,14 @@
     }
 
     if (shared.length) {
+      // kind MUSS zur DB-Check-Constraint 'shared_decks_kind_check' passen
+      // (deck/wants/trade) — sonst schlaegt der GANZE Batch-Upsert mit 400 fehl
+      // und KEINES der Decks wird aktualisiert. Unbekannte kinds (z.B. via
+      // Import-Header '// kind: xy') daher auf 'deck' klemmen.
+      const ALLOWED_KINDS = ['deck', 'wants', 'trade'];
       const payload = shared.map(d => {
-        const isDeck = (d.kind || 'deck') === 'deck';
+        const kind = ALLOWED_KINDS.includes(d.kind) ? d.kind : 'deck';
+        const isDeck = kind === 'deck';
         const entries = (d.entries || []).map(e => {
           const out = { cardId: e.cardId, variant: e.variant, count: e.count };
           if (isDeck) {
@@ -437,7 +443,7 @@
           owner_email: ownerEmail,
           deck_id: d.id,
           name: d.name || 'Untitled',
-          kind: d.kind || 'deck',
+          kind,
           notes: d.notes || '',
           entries,
           updated_at: d.updatedAt || new Date().toISOString()
