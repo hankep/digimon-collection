@@ -193,7 +193,10 @@
       let slotInfo = '';
       if (isDeckKind && m.hasSlottedInfo) {
         const full = m.slottedTotal >= (e.count || 0);
-        const cls = full ? 'text-emerald-400' : (m.slottedTotal === 0 ? 'text-rose-400' : 'text-amber-300');
+        // Lila hat Vorrang: signalisiert, dass Proxies mit reingeslottet sind.
+        const cls = m.slottedProxy > 0
+          ? 'text-purple-400'
+          : (full ? 'text-emerald-400' : (m.slottedTotal === 0 ? 'text-rose-400' : 'text-amber-300'));
         const proxyHint = m.slottedProxy > 0 ? ` <span class="text-slate-500" title="davon Proxies">(${m.slottedProxy}p)</span>` : '';
         slotInfo = `<div class="text-[10px] ${cls} font-semibold" title="Owner hat ${m.slottedReal} real + ${m.slottedProxy} Proxy geslottet">geslottet: ${m.slottedTotal}/${e.count || 0}${proxyHint}</div>`;
       }
