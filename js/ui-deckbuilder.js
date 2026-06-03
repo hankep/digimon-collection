@@ -1295,32 +1295,99 @@
     }
   }
 
-  // Kopiert die vollständige Liste im Standard-Textformat: "Anzahl Name ID".
-  function exportFull(deck) {
-    if (!deck.entries.length) { alert('Diese Liste ist leer.'); return; }
+  // Verfuegbare Export-Formate fuer die volle Liste. Das Label IST das Beispiel
+  // inkl. Usecase in Klammern; build() erzeugt eine Zeile pro Entry.
+  //   App:  "4 Name BT11-095 (V.1)"  — (V.N) nur bei Mehrfach-Varianten.
+  //   DCGO: "4 Name BT11-095_P1"      — entry.variant ist die volle Variant-ID.
+  const FULL_EXPORT_FORMATS = [
+    {
+      id: 'app',
+      label: '4 Kartenname BT11-095 (V.1) (App)',
+      build(e, card, cardName, id) {
+        const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
+        return `${e.count} ${cardName} ${id}${vSuffix}`;
+      }
+    },
+    {
+      id: 'dcgo',
+      label: '4 Kartenname BT11-095_P1 (DCGO)',
+      build(e, card, cardName) {
+        return `${e.count} ${cardName} ${e.variant}`;
+      }
+    }
+  ];
+
+  // Baut den Export-Text der vollen Liste im gewaehlten Format.
+  function buildFullExportText(deck, fmt) {
     const lines = deck.entries.map(e => {
       const card = CardDB.byId.get(e.cardId);
       const cardName = card ? CardDB.cleanDisplayName(card) : e.cardId;
       const id = card ? card.id : e.cardId;
-      const vSuffix = card ? versionSuffixForVariant(card, e.variant) : '';
-      return `${e.count} ${cardName} ${id}${vSuffix}`;
+      return fmt.build(e, card, cardName, id);
     });
-    const text = lines.join('\n') + '\n';
+    return lines.join('\n') + '\n';
+  }
+
+  // Oeffnet ein Modal zur Format-Auswahl und kopiert die volle Liste.
+  function exportFull(deck) {
+    if (!deck.entries.length) { alert('Diese Liste ist leer.'); return; }
     const total = deck.entries.reduce((s, e) => s + e.count, 0);
 
-    const finish = ok => {
-      const btn = rootEl.querySelector('#export-full');
-      if (!btn) return;
-      const orig = btn.textContent;
-      btn.textContent = ok ? `✓ ${total} kopiert` : 'Kopieren fehlgeschlagen';
-      setTimeout(() => { btn.textContent = orig; }, 1800);
-    };
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <div class="min-w-0">
+          <h2 class="text-lg font-bold truncate">Exportieren: „${escapeHtml(deck.name)}"</h2>
+          <div class="text-xs text-slate-400">${total} Karten — Format wählen und in die Zwischenablage kopieren.</div>
+        </div>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
 
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => finish(true), () => fallbackCopy(text, finish));
-    } else {
-      fallbackCopy(text, finish);
-    }
+      <label class="block mb-2">
+        <span class="text-xs text-slate-400">Format</span>
+        <select id="ef-format" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 ml-2 text-sm font-mono">
+          ${FULL_EXPORT_FORMATS.map((f, i) => `<option value="${f.id}" ${i === 0 ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+        </select>
+      </label>
+
+      <pre id="ef-preview" class="w-full bg-slate-900 border border-slate-600 rounded p-3 font-mono text-xs overflow-auto max-h-[40vh] whitespace-pre-wrap"></pre>
+
+      <div class="flex justify-end gap-2 mt-3">
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="ef-copy" class="btn-primary-emerald">Kopieren</button>
+      </div>
+    `;
+
+    window.Util.openModal({
+      host: 'export-full-root',
+      id: 'export-full-modal',
+      sizeClass: 'w-[640px] max-w-[95vw]',
+      contentHtml,
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        const sel = content.querySelector('#ef-format');
+        const preview = content.querySelector('#ef-preview');
+        const copyBtn = content.querySelector('#ef-copy');
+
+        const currentFmt = () => FULL_EXPORT_FORMATS.find(f => f.id === sel.value) || FULL_EXPORT_FORMATS[0];
+        const refresh = () => { preview.textContent = buildFullExportText(deck, currentFmt()); };
+        sel.addEventListener('change', refresh);
+        refresh();
+
+        copyBtn.addEventListener('click', () => {
+          const text = buildFullExportText(deck, currentFmt());
+          const finish = ok => {
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = ok ? `✓ ${total} kopiert` : 'Kopieren fehlgeschlagen';
+            setTimeout(() => { copyBtn.textContent = orig; }, 1800);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => finish(true), () => fallbackCopy(text, finish));
+          } else {
+            fallbackCopy(text, finish);
+          }
+        });
+      }
+    });
   }
 
   // Sammelt die fehlenden Karten eines Decks (echter Slot-Bedarf in DIESEM Deck,
