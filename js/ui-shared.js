@@ -93,6 +93,27 @@
     renderBody();
   }
 
+  // Completion-Status eines geteilten Decks aus den Slot-Daten ableiten:
+  //   'complete' = jeder Eintrag voll mit ECHTEN Kopien geslottet (gruen)
+  //   'proxy'    = jeder Eintrag voll, aber mind. 1 Proxy im Spiel (lila)
+  //   'none'     = es fehlt noch was / keine Slot-Daten / keine Deck-Liste
+  // Spiegelt das Color-Coding der Deck-Listen (deckItemHtml in ui-deckbuilder).
+  function deckCompletionState(d) {
+    if ((d.kind || 'deck') !== 'deck') return 'none';     // Wants/Trade = reine Listen
+    const entries = d.entries || [];
+    if (!entries.length) return 'none';
+    const hasInfo = entries.some(e => ('slottedReal' in e) || ('slottedProxy' in e));
+    if (!hasInfo) return 'none';                           // alter Upload ohne Slot-Daten
+    let usesProxy = false;
+    for (const e of entries) {
+      const real = Math.max(0, parseInt(e.slottedReal, 10) || 0);
+      const proxy = Math.max(0, parseInt(e.slottedProxy, 10) || 0);
+      if (real + proxy < (e.count || 0)) return 'none';    // etwas fehlt
+      if (proxy > 0) usesProxy = true;
+    }
+    return usesProxy ? 'proxy' : 'complete';
+  }
+
   function renderBody() {
     if (!state.bodyEl) return;
     if (state.loadError) {
@@ -122,9 +143,23 @@
       const cards = list.sort((a, b) => a.name.localeCompare(b.name)).map(d => {
         const total = (d.entries || []).reduce((s, e) => s + (e.count || 0), 0);
         const youMark = d.owner_id === ownerEmailHint ? `<span class="text-xs text-amber-400">(du)</span>` : '';
-        return `<div data-shared-row="${escapeAttr(d.id)}" class="bg-slate-900 hover:bg-slate-800 cursor-pointer rounded p-3 flex items-center gap-3">
+        // Color-Coding wie in den Deck-Listen: gruen = komplett (real),
+        // lila = komplett aber mit Proxy, neutral = es fehlt noch was.
+        const st = deckCompletionState(d);
+        const tileCls = st === 'complete'
+          ? 'bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/50'
+          : st === 'proxy'
+            ? 'bg-purple-600/30 border border-purple-500 hover:bg-purple-600/50'
+            : 'bg-slate-900 hover:bg-slate-800';
+        const nameCls = st === 'proxy' ? 'text-purple-300' : '';
+        const check = st === 'complete'
+          ? ' <span class="text-emerald-300" title="komplett geslottet">✓</span>'
+          : st === 'proxy'
+            ? ' <span class="text-purple-300" title="komplett, mit Proxies">✓</span>'
+            : '';
+        return `<div data-shared-row="${escapeAttr(d.id)}" class="${tileCls} cursor-pointer rounded p-3 flex items-center gap-3">
           <div class="min-w-0 flex-1">
-            <div class="font-semibold truncate">${escapeHtml(d.name)} ${youMark}</div>
+            <div class="font-semibold truncate ${nameCls}">${escapeHtml(d.name)}${check} ${youMark}</div>
             <div class="text-xs text-slate-400">${total} Karten · ${(d.entries || []).length} Eintraege</div>
           </div>
           <span class="text-xl shrink-0">📋</span>
