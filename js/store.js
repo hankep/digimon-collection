@@ -446,13 +446,38 @@
 
   // ── Decks ─────────────────────────────────────────────────────────────────
 
+  // Einzige erlaubte Deck-kinds. Muss zur DB-Check-Constraint
+  // 'shared_decks_kind_check' passen (sonst scheitert der Shared-Upload).
+  const DECK_KINDS = ['deck', 'wants', 'trade'];
+
+  // Guard: jeden kind defensiv auf einen erlaubten Wert normalisieren. Faengt
+  // Legacy-/Import-Werte ab ('// kind: xy'), Tippfehler, Gross-/Kleinschreibung
+  // und Leerzeichen ('Deck', 'deck ' → 'deck'). Unbekanntes → 'deck'. Ohne das
+  // landeten kaputte kinds in der UI unter 'Sonstige' (Dropdown zeigte trotzdem
+  // 'deck', weil keine <option> matchte) und blockierten den Shared-Sync.
+  function normalizeKind(kind) {
+    const k = String(kind == null ? '' : kind).trim().toLowerCase();
+    return DECK_KINDS.includes(k) ? k : 'deck';
+  }
+
   function loadDecks() {
-    return readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
+    const state = readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
+    // Self-Heal: vorhandene kaputte kinds beim Laden korrigieren, damit UI,
+    // Dropdown und Sync konsistent sind. Persistiert wird beim naechsten save.
+    if (state && Array.isArray(state.decks)) {
+      for (const d of state.decks) d.kind = normalizeKind(d.kind);
+    }
+    return state;
   }
 
   // opts wie bei saveCollection: { touch, silent }. Synchroner Write.
   function saveDecks(state, opts) {
     opts = opts || {};
+    // Guard am Schreib-Choke-Point: nichts mit ungueltigem kind darf persistiert
+    // werden (deckt Import, Duplizieren, applyRemote von Altdaten etc. ab).
+    if (state && Array.isArray(state.decks)) {
+      for (const d of state.decks) d.kind = normalizeKind(d.kind);
+    }
     if (opts.touch !== false) state.updatedAt = new Date().toISOString();
     writeJSON(DECKS_KEY, state);
     if (!opts.silent) {
@@ -465,7 +490,7 @@
     const deck = {
       id: 'd_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
       name: name || 'Untitled',
-      kind: kind || 'deck',
+      kind: normalizeKind(kind),
       notes: '',
       createdAt: now,
       updatedAt: now,
@@ -609,6 +634,7 @@
     collectionValue,
 
     // Decks
+    normalizeKind,
     loadDecks,
     saveDecks,
     createDeck,
