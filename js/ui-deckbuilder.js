@@ -258,7 +258,9 @@
     const cls = active
       ? 'bg-amber-500 text-slate-900'
       : (complete
-          ? 'bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/50'
+          ? (hasSlottedProxy
+              ? 'bg-purple-600/30 border border-purple-500 hover:bg-purple-600/50'
+              : 'bg-emerald-600/30 border border-emerald-500 hover:bg-emerald-600/50')
           : (slottable
               ? 'bg-yellow-500/15 border border-yellow-400 hover:bg-yellow-500/25 deck-slottable'
               : 'hover:bg-slate-800'));
