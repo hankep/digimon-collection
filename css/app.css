@@ -347,6 +347,21 @@ summary::-webkit-details-marker { display: none; }
 }
 .modal-close-x:hover { color: #ffffff; }
 
+/* Listen-Sidebar: nie horizontal scrollen; lange Namen kuerzen statt umbrechen.
+   Als echtes CSS (ID-Selektor) statt Tailwind-Utilities, weil overflow-x-hidden/
+   truncate auf dynamisch eingefuegten Zeilen sonst nicht zuverlaessig greifen. */
+#deck-list {
+  overflow-x: hidden;
+}
+#deck-list .deck-item {
+  min-width: 0;
+}
+#deck-list .deck-item > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Decklisten: Karten mit zugewiesenen (geslotteten) Proxies lila umranden */
 .card-tile.tile-proxy-slotted {
   border-color: #a855f7;
