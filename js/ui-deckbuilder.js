@@ -57,8 +57,8 @@
     const pickerPct = (state.deckPickerSplit * 100).toFixed(2);
     const detailPct = ((1 - state.deckPickerSplit) * 100).toFixed(2);
     rootEl.innerHTML = `
-      <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-7rem)]">
-        <aside class="w-full lg:w-48 lg:shrink-0 flex flex-col lg:min-h-0">
+      <div class="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh_-_7rem)]">
+        <aside class="w-full lg:w-64 lg:shrink-0 flex flex-col lg:min-h-0">
           <div class="flex items-center justify-between mb-2 shrink-0">
             <h2 class="text-sm font-bold uppercase text-slate-400">Listen</h2>
             <button id="new-deck" class="bg-amber-500 text-slate-900 px-2 py-1 rounded text-sm font-semibold">+ Neu</button>
@@ -66,7 +66,7 @@
           <button id="bulk-missing" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-2 py-2 rounded font-semibold mb-3 text-xs shrink-0">
             Fehlende → Clipboard
           </button>
-          <div id="deck-list" class="space-y-1 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto"></div>
+          <div id="deck-list" class="space-y-1 max-h-[50vh] lg:max-h-none lg:flex-1 lg:min-h-0 overflow-y-auto overflow-x-hidden"></div>
         </aside>
         <div class="min-w-0 lg:min-h-0 lg:flex lg:flex-col flex-1" style="flex-basis: ${detailPct}%">
           <div id="deck-detail" class="lg:flex lg:flex-col lg:flex-1 lg:min-h-0"></div>
@@ -269,12 +269,17 @@
     const starTitle = fav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren';
     const starColor = fav ? 'text-amber-400' : 'text-slate-500 hover:text-amber-300';
     const sharedIcon = d.shared ? `<span class="text-emerald-400 text-xs" title="Im Shared Space sichtbar">🌐</span>` : '';
-    return `<div class="flex items-center gap-1">
+    return `<div class="flex items-center gap-1" data-deck-row="${d.id}" data-deck-kind="${escapeHtml(d.kind)}">
+      <span data-drag-handle="${d.id}" draggable="true" class="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-300 select-none leading-none px-0.5" title="Ziehen zum Sortieren">☰</span>
       <button data-fav="${d.id}" class="${starColor} px-1 text-base leading-none" title="${starTitle}">${fav ? '★' : '☆'}</button>
-      <button data-deck="${d.id}" class="deck-item flex-1 text-left px-3 py-2 rounded ${cls}">
-        <div class="font-semibold text-sm ${nameCls}">${sharedIcon}${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
-        <div class="text-xs opacity-75">${escapeHtml(d.kind)} · ${total} Karten</div>
+      <button data-deck="${d.id}" class="deck-item flex-1 min-w-0 text-left px-3 py-2 rounded ${cls}">
+        <div class="font-semibold text-sm truncate ${nameCls}">${sharedIcon}${escapeHtml(d.name)}${complete && !active ? ` <span class="${hasSlottedProxy ? 'text-purple-300' : 'text-emerald-300'}">✓</span>` : ''}</div>
+        <div class="text-xs opacity-75 truncate">${escapeHtml(d.kind)} · ${total} Karten</div>
       </button>
+      <span class="flex flex-col leading-none">
+        <button data-move-up="${d.id}" class="text-slate-500 hover:text-slate-200 text-[10px] leading-none" title="Nach oben">▲</button>
+        <button data-move-down="${d.id}" class="text-slate-500 hover:text-slate-200 text-[10px] leading-none" title="Nach unten">▼</button>
+      </span>
       <button data-dup="${d.id}" class="text-slate-500 hover:text-sky-400 px-1" title="Liste duplizieren">⎘</button>
       <button data-del="${d.id}" class="text-slate-500 hover:text-red-400 px-2">✕</button>
     </div>`;
@@ -282,8 +287,13 @@
 
   // Pure HTML der nach Kind gruppierten Liste (Wants / Trades / Decks +
   // Sonstige als Fallback, jeweils Favoriten zuerst).
+  // Favoriten zuerst, sonst Array-Reihenfolge erhalten. Array.sort ist stabil,
+  // d.h. die manuelle Sortierung innerhalb der Fav-/Nicht-Fav-Untergruppe bleibt.
+  function favFirst(arr) {
+    return arr.slice().sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+  }
+
   function deckListGroupsHtml(idx, dIdx) {
-    const favFirst = arr => arr.slice().sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
     const GROUPS = [
       { kind: 'wants', label: 'Wants' },
       { kind: 'trade', label: 'Trades' },
@@ -343,6 +353,105 @@
         render();
       });
     });
+
+    // ── Sortieren: ↑↓-Buttons (Touch-tauglich) ───────────────────────────────
+    el.querySelectorAll('[data-move-up]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); moveDeckInGroup(btn.dataset.moveUp, -1); });
+    });
+    el.querySelectorAll('[data-move-down]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); moveDeckInGroup(btn.dataset.moveDown, +1); });
+    });
+
+    // ── Sortieren: Drag-and-Drop am Griff (Maus/Desktop) ─────────────────────
+    let dragId = null, dragKind = null;
+    el.querySelectorAll('[data-drag-handle]').forEach(h => {
+      h.addEventListener('dragstart', e => {
+        dragId = h.getAttribute('data-drag-handle');
+        const deck = state.decksState.decks.find(d => d.id === dragId);
+        dragKind = deck ? deck.kind : null;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragId);
+        const row = h.closest('[data-deck-row]');
+        if (row) {
+          if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(row, 10, 10);
+          row.classList.add('opacity-50');
+        }
+      });
+      h.addEventListener('dragend', () => {
+        const row = h.closest('[data-deck-row]');
+        if (row) row.classList.remove('opacity-50');
+        el.querySelectorAll('[data-deck-row]').forEach(r => r.classList.remove('ring-1', 'ring-amber-400'));
+        dragId = null; dragKind = null;
+      });
+    });
+    el.querySelectorAll('[data-deck-row]').forEach(row => {
+      const sameGroup = () => dragId && row.getAttribute('data-deck-kind') === dragKind;
+      row.addEventListener('dragover', e => {
+        if (!sameGroup()) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (row.getAttribute('data-deck-row') !== dragId) row.classList.add('ring-1', 'ring-amber-400');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('ring-1', 'ring-amber-400'));
+      row.addEventListener('drop', e => {
+        if (!sameGroup()) return;
+        e.preventDefault();
+        row.classList.remove('ring-1', 'ring-amber-400');
+        const targetId = row.getAttribute('data-deck-row');
+        if (!targetId || targetId === dragId) return;
+        const rect = row.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        moveDeckRelative(dragId, targetId, after);
+      });
+    });
+  }
+
+  // Ordnet das decks-Array so um, dass die Listen vom Typ `kind` in der Reihen-
+  // folge von orderedIds stehen; Slots aller anderen kinds bleiben unveraendert.
+  function reorderKind(kind, orderedIds) {
+    const decks = state.decksState.decks;
+    const byId = new Map(decks.map(d => [d.id, d]));
+    const ordered = orderedIds.map(id => byId.get(id)).filter(d => d && d.kind === kind);
+    if (ordered.length !== decks.filter(d => d.kind === kind).length) return; // Safety
+    let oi = 0;
+    state.decksState.decks = decks.map(d => (d.kind === kind ? ordered[oi++] : d));
+  }
+
+  // ↑/↓: tauscht eine Liste mit dem Nachbarn in der gerenderten (Fav-zuerst)
+  // Reihenfolge ihrer Gruppe. Die Favoriten-Grenze wird nicht ueberschritten.
+  function moveDeckInGroup(id, dir) {
+    const decks = state.decksState.decks;
+    const deck = decks.find(d => d.id === id);
+    if (!deck) return;
+    const rendered = favFirst(decks.filter(d => d.kind === deck.kind));
+    const i = rendered.findIndex(d => d.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= rendered.length) return;
+    if (!!rendered[j].favorite !== !!deck.favorite) return; // Fav/Nicht-Fav nicht mischen
+    const tmp = rendered[i]; rendered[i] = rendered[j]; rendered[j] = tmp;
+    reorderKind(deck.kind, rendered.map(d => d.id));
+    Store.saveDecks(state.decksState);
+    renderDeckList();
+  }
+
+  // Drop: setzt dragId relativ zu targetId in der gerenderten Reihenfolge der
+  // Gruppe ein (after=true → dahinter). favFirst pinnt Favoriten beim Re-Render
+  // wieder nach oben, sodass die relative Reihenfolge je Untergruppe zaehlt.
+  function moveDeckRelative(dragId, targetId, after) {
+    const decks = state.decksState.decks;
+    const deck = decks.find(d => d.id === dragId);
+    if (!deck) return;
+    const rendered = favFirst(decks.filter(d => d.kind === deck.kind)).map(d => d.id);
+    const from = rendered.indexOf(dragId);
+    if (from < 0) return;
+    rendered.splice(from, 1);
+    let to = rendered.indexOf(targetId);
+    if (to < 0) return;
+    if (after) to += 1;
+    rendered.splice(to, 0, dragId);
+    reorderKind(deck.kind, rendered);
+    Store.saveDecks(state.decksState);
+    renderDeckList();
   }
 
   function renderDeckList() {

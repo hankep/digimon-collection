@@ -13,7 +13,7 @@
     window.SUPABASE_URL = 'https://igjoqztcwwweemkrjtoj.supabase.co';
     window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlnam9xenRjd3d3ZWVta3JqdG9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NTYwNzAsImV4cCI6MjA5NTQzMjA3MH0.zniEDljTq_T3tjRzPc5ENKzzoTcqJBEek29A2ktJHxc';
   </script>
-  <link rel="stylesheet" href="css/app.css?v=20260602e" />
+  <link rel="stylesheet" href="css/app.css?v=20260612a" />
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
   <!-- Auth-Gate: blockiert die ganze App, bis ein Supabase-Login aktiv ist.
@@ -81,41 +81,41 @@
        CACHE-BUSTING: Der ?v=…-Query zwingt Browser, geaendertes JS/CSS neu zu
        laden statt aus dem Cache zu servieren (sonst laufen Clients mit altem
        Code weiter — z.B. luden geteilte Decks ohne Slot-Counts hoch).
-         • Bei CODE-Aenderung  (js/* oder css):  CODE-Token (20260602e) hochzaehlen.
-         • Bei DATEN-Aenderung (data/*):         DATA-Token (20260530)  hochzaehlen.
+         • Bei CODE-Aenderung  (js/* oder css):  CODE-Token (20260612a) hochzaehlen.
+         • Bei DATEN-Aenderung (data/*):         DATA-Token (20260612)  hochzaehlen.
        Getrennte Tokens, damit eine Code-Aenderung nicht die ~4 MB Kartendaten
        neu herunterlaedt.
        ════════════════════════════════════════════════════════════════════ -->
 
   <!-- Daten zuerst -->
-  <script src="data/cards.data.js?v=20260530"></script>
-  <script src="data/prices.data.js?v=20260530"></script>
-  <script src="data/variant-overrides.data.js?v=20260530"></script>
+  <script src="data/cards.data.js?v=20260612"></script>
+  <script src="data/prices.data.js?v=20260612"></script>
+  <script src="data/variant-overrides.data.js?v=20260612"></script>
 
   <!-- App-Module (Reihenfolge wichtig) -->
-  <script src="js/util.js?v=20260602e"></script>
-  <script src="js/fmt.js?v=20260602e"></script>
-  <script src="js/cm-prices.js?v=20260602e"></script>
-  <script src="js/ui-notes.js?v=20260602e"></script>
-  <script src="js/store.js?v=20260602e"></script>
-  <script src="js/sync.js?v=20260602e"></script>
-  <script src="js/cards.js?v=20260602e"></script>
-  <script src="js/cardmarket.js?v=20260602e"></script>
-  <script src="js/formats/generic-json.js?v=20260602e"></script>
-  <script src="js/formats/plain-text.js?v=20260602e"></script>
-  <script src="js/formats/compact-text.js?v=20260602e"></script>
-  <script src="js/formats/dcgo-text.js?v=20260602e"></script>
-  <script src="js/formats/digimonmeta-json.js?v=20260602e"></script>
-  <script src="js/ui-collection.js?v=20260602e"></script>
-  <script src="js/ui-deckbuilder.js?v=20260602e"></script>
-  <script src="js/ui-importexport.js?v=20260602e"></script>
-  <script src="js/ui-user.js?v=20260602e"></script>
-  <script src="js/ui-shared.js?v=20260602e"></script>
-  <script src="js/ui-stats.js?v=20260602e"></script>
-  <script src="js/ui-wants.js?v=20260602e"></script>
-  <script src="js/ui-trade.js?v=20260602e"></script>
-  <script src="js/ui-card-menu.js?v=20260602e"></script>
-  <script src="js/ui-reports.js?v=20260602e"></script>
-  <script src="js/app.js?v=20260602e"></script>
+  <script src="js/util.js?v=20260612a"></script>
+  <script src="js/fmt.js?v=20260612a"></script>
+  <script src="js/cm-prices.js?v=20260612a"></script>
+  <script src="js/ui-notes.js?v=20260612a"></script>
+  <script src="js/store.js?v=20260612a"></script>
+  <script src="js/sync.js?v=20260612a"></script>
+  <script src="js/cards.js?v=20260612a"></script>
+  <script src="js/cardmarket.js?v=20260612a"></script>
+  <script src="js/formats/generic-json.js?v=20260612a"></script>
+  <script src="js/formats/plain-text.js?v=20260612a"></script>
+  <script src="js/formats/compact-text.js?v=20260612a"></script>
+  <script src="js/formats/dcgo-text.js?v=20260612a"></script>
+  <script src="js/formats/digimonmeta-json.js?v=20260612a"></script>
+  <script src="js/ui-collection.js?v=20260612a"></script>
+  <script src="js/ui-deckbuilder.js?v=20260612a"></script>
+  <script src="js/ui-importexport.js?v=20260612a"></script>
+  <script src="js/ui-user.js?v=20260612a"></script>
+  <script src="js/ui-shared.js?v=20260612a"></script>
+  <script src="js/ui-stats.js?v=20260612a"></script>
+  <script src="js/ui-wants.js?v=20260612a"></script>
+  <script src="js/ui-trade.js?v=20260612a"></script>
+  <script src="js/ui-card-menu.js?v=20260612a"></script>
+  <script src="js/ui-reports.js?v=20260612a"></script>
+  <script src="js/app.js?v=20260612a"></script>
 </body>
 </html>
