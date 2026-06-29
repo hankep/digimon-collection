@@ -21,55 +21,9 @@
     variantIdx: 0,     // gewählte Variante (0 = Main)
     qty: 1,            // Menge, die der nächste Enter bucht (↑/↓ stellt sie ein)
     log: [],           // [{ copyIds:[], variant, cardId, count }] — neueste zuerst
-    committed: 0,      // Anzahl gebuchter Karten (für finalen Save/Toast)
-
-    // ── Kamera-Scan-Modus ──
-    scanActive: false,
-    scanStream: null,      // MediaStream der Kamera
-    scanLoop: null,        // setInterval-Handle der OCR-Schleife
-    scanBusy: false,       // OCR läuft gerade → Frame überspringen
-    scanStaging: [],       // [{ cardId, variant(Main), count }] — noch NICHT in der Collection
-    scanCommittedKey: null,// zuletzt in die Staging gelegte Karte (Anti-Doppel)
-    scanEmpty: 0,          // aufeinanderfolgende Leer-/Kein-Treffer-Frames (Lücken-Erkennung)
-    nameIdx: [],           // [{ card, n }] normalisierte Namen des gewählten Sets (für Namens-Match)
-    _scanCanvas: null      // wiederverwendetes Crop-Canvas
+    committed: 0       // Anzahl gebuchter Karten (für finalen Save/Toast)
   };
   let modal = null;
-
-  function normName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
-
-  // Fuzzy-Substring-Distanz (Sellers): kleinste Editier-Distanz von `needle` zu
-  // IRGENDEINEM Teilstück von `hay`. Erste Zeile = 0 (Start beliebig), Antwort =
-  // Minimum der letzten Zeile (Ende beliebig). So matcht ein Kartenname auch im
-  // Rauschen (Lv/Traits/ID) und toleriert OCR-Lesefehler.
-  function fuzzySubstringDistance(needle, hay) {
-    const n = needle.length, m = hay.length;
-    if (!n) return 0;
-    if (!m) return n;
-    let prev = new Array(m + 1).fill(0);
-    for (let i = 1; i <= n; i++) {
-      const cur = new Array(m + 1);
-      cur[0] = i;
-      for (let j = 1; j <= m; j++) {
-        const cost = needle.charCodeAt(i - 1) === hay.charCodeAt(j - 1) ? 0 : 1;
-        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
-      }
-      prev = cur;
-    }
-    let min = prev[0];
-    for (let j = 1; j <= m; j++) if (prev[j] < min) min = prev[j];
-    return min;
-  }
-
-  function buildNameIndex(setCode) {
-    const out = [];
-    const cards = (window.CardDB && CardDB.bySet.get(setCode)) || [];
-    for (const c of cards) {
-      const n = normName(CardDB.cleanDisplayName(c) || c.name);
-      if (n.length >= 4) out.push({ card: c, n });
-    }
-    return out;
-  }
 
   // ── Auflösung Nummer/ID → Karte ────────────────────────────────────────────
 
@@ -157,7 +111,6 @@
   function changeSet(code) {
     state.setCode = code;
     state.numMap = buildNumMap(code);
-    state.nameIdx = buildNameIndex(code);
     Prefs.set(window.Util.PREF_KEYS.rapidEntrySet, code);
     setSelectedCard(null);
     const inp = inputEl();
@@ -272,250 +225,6 @@
     });
   }
 
-  // ── Kamera-Scan ──────────────────────────────────────────────────────────
-  // Set ist gelockt → OCR muss nur die Nummer lesen; gemappt wird auf die
-  // Hauptvariante (Alt-Arts werden bewusst nicht gescannt).
-
-  function scanVideoEl() { return modal && modal.content.querySelector('#re-video'); }
-
-  function setScanStatus(msg) {
-    const el = modal && modal.content.querySelector('#re-scan-status');
-    if (el) el.textContent = msg || '';
-  }
-
-  // Blendet Tastatur-Teile aus / Scan-Panel ein (oder umgekehrt).
-  function applyScanUI(active) {
-    const c = modal && modal.content;
-    if (!c) return;
-    const toggle = c.querySelector('#re-scan-toggle');
-    if (toggle) toggle.textContent = active ? '⌨ Tastatur' : '📷 Scannen';
-    ['#re-kb-input', '#re-preview', '#re-results-area'].forEach(sel => {
-      const el = c.querySelector(sel);
-      if (el) el.classList.toggle('hidden', active);
-    });
-    const scan = c.querySelector('#re-scan');
-    if (scan) scan.classList.toggle('hidden', !active);
-  }
-
-  function toggleScan() {
-    if (state.scanActive) {
-      state.scanActive = false;
-      stopScan();
-      applyScanUI(false);
-      const inp = inputEl(); if (inp) inp.focus();
-    } else {
-      startScan();
-    }
-  }
-
-  function startScan() {
-    if (!window.isSecureContext) {
-      window.Util.toast('Kamera braucht HTTPS (sicherer Kontext).', 'error', 5000);
-      return;
-    }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      window.Util.toast('Kamera ist auf diesem Gerät/Browser nicht verfügbar.', 'error', 5000);
-      return;
-    }
-    if (!window.OCR) {
-      window.Util.toast('OCR-Modul nicht geladen.', 'error', 5000);
-      return;
-    }
-    state.scanActive = true;
-    applyScanUI(true);
-    setScanStatus('Kamera wird gestartet …');
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then(stream => {
-        if (!state.scanActive) { stream.getTracks().forEach(t => t.stop()); return; }
-        state.scanStream = stream;
-        const v = scanVideoEl();
-        if (v) { v.srcObject = stream; v.play().catch(() => {}); }
-        setScanStatus('OCR wird geladen (einmalig, kann kurz dauern) …');
-        return window.OCR.ensureWorker();
-      })
-      .then(() => {
-        if (!state.scanActive) return;
-        state.scanBusy = false;
-        state.scanCommittedKey = null; state.scanEmpty = 0;
-        setScanStatus('Bereit — Karten-Nummer in den gelben Rahmen halten.');
-        state.scanLoop = setInterval(scanTick, 500);
-      })
-      .catch(err => {
-        console.warn('Scan-Start fehlgeschlagen:', err);
-        window.Util.toast('Kamera/OCR-Start fehlgeschlagen: ' + (err && err.message ? err.message : err), 'error', 6000);
-        state.scanActive = false;
-        stopScan();
-        applyScanUI(false);
-      });
-  }
-
-  function stopScan() {
-    if (state.scanLoop) { clearInterval(state.scanLoop); state.scanLoop = null; }
-    if (state.scanStream) { state.scanStream.getTracks().forEach(t => t.stop()); state.scanStream = null; }
-    const v = scanVideoEl(); if (v) v.srcObject = null;
-  }
-
-  // Erfasst das GESAMTE Kamerabild (kein Teil-Crop → kein Koordinaten-Versatz
-  // zwischen Anzeige und OCR). Auf max. 1000px Breite herunterskaliert (Speed)
-  // und in Graustufen (besser für Tesseract). Der Nutzer hält den oberen
-  // Karten-Bereich formatfüllend in die Kamera.
-  function captureFrame(v) {
-    const vw = v.videoWidth, vh = v.videoHeight;
-    const scale = vw > 1000 ? 1000 / vw : 1;
-    let c = state._scanCanvas;
-    if (!c) { c = state._scanCanvas = document.createElement('canvas'); }
-    c.width = Math.round(vw * scale);
-    c.height = Math.round(vh * scale);
-    const ctx = c.getContext('2d');
-    ctx.drawImage(v, 0, 0, c.width, c.height);
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      d[i] = d[i + 1] = d[i + 2] = g;
-    }
-    ctx.putImageData(img, 0, 0);
-    return c;
-  }
-
-  async function scanTick() {
-    if (!state.scanActive || state.scanBusy) return;
-    const v = scanVideoEl();
-    if (!v || !v.videoWidth) return;
-    state.scanBusy = true;
-    try {
-      const { text } = await window.OCR.recognizeCanvas(captureFrame(v));
-      // Debug-Feedback: zeigt, dass der Loop läuft und WAS gelesen wird.
-      const clean = String(text || '').replace(/\s+/g, ' ').trim();
-      setScanStatus(clean ? ('gelesen: ' + clean.slice(0, 48)) : 'gelesen: — (kein Text erkannt)');
-      handleScanText(text); // überschreibt den Status bei einem Treffer
-    } catch (e) {
-      // Einzel-Frame-Fehler ignorieren (nächster Tick versucht es erneut).
-    }
-    state.scanBusy = false;
-  }
-
-  // OCR-Text → Karte im gelockten Set. Konservativ: nur Nummern akzeptieren, die
-  // im Set wirklich existieren — lieber überspringen als falsch buchen.
-  function parseScan(text) {
-    if (!state.setCode) return null;
-    const up = String(text || '').toUpperCase();
-    // 1) Klar gelesene VOLLE ID gewinnt (auch falls es ausnahmsweise eine
-    //    Fremdkarte ist) — das ist das spezifischste Signal.
-    const m = up.match(/[A-Z]{1,3}\d{1,2}-\d{1,4}/);
-    if (m) { const c = CardDB.byId.get(m[0]); if (c) return c; }
-    // 2) Fuzzy-Namens-Match im gelockten Set: kleinster relativer Editierabstand
-    //    des Kartennamens zu einem Teilstück des OCR-Texts. Toleriert Lesefehler.
-    //    Bestes Verhältnis gewinnt; bei Gleichstand der längere Name (damit
-    //    "WARGREYMON" nicht auf "GREYMON" fällt).
-    const norm = up.replace(/[^A-Z0-9]/g, '').slice(0, 80);
-    let best = null;
-    for (const e of state.nameIdx) {
-      const ratio = fuzzySubstringDistance(e.n, norm) / e.n.length;
-      if (ratio > 0.25) continue;
-      if (!best || ratio < best.ratio || (ratio === best.ratio && e.n.length > best.e.n.length)) {
-        best = { e, ratio };
-      }
-    }
-    if (best) return best.e.card;
-    // 3) Sonst die Nummer im gelockten Set. Set-Code entfernen, dann mehrstellige
-    //    Zifferngruppen zuerst (Sammler-Nr. 3-stellig "004"; Level/Parallel-Nr.
-    //    sind kürzer → durch Längen-Sortierung nachrangig).
-    const rest = up.replace(new RegExp(state.setCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ');
-    const ordered = (rest.match(/\d{1,4}/g) || []).slice().sort((a, b) => b.length - a.length);
-    for (const g of ordered) {
-      if (g.length < 3) continue; // Sammler-Nr. ist 3-stellig; Level/Parallel (1–2-stellig) ignorieren
-      const card = state.numMap && state.numMap.get(parseInt(g, 10));
-      if (card) return card;
-    }
-    return null;
-  }
-
-  function handleScanText(text) {
-    const card = parseScan(text);
-    if (!card) {
-      state.scanEmpty++;
-      // Karte weggenommen (Lücke) → dieselbe Karte darf danach erneut gebucht werden.
-      if (state.scanEmpty >= 2) state.scanCommittedKey = null;
-      return;
-    }
-    state.scanEmpty = 0;
-    const key = card.id;
-    // Erster Treffer reicht: noch nicht zuletzt gebucht → sofort in die Staging.
-    if (key !== state.scanCommittedKey) {
-      addToStaging(card);
-      state.scanCommittedKey = key;
-      flashScan(card);
-    }
-  }
-
-  function flashScan(card) {
-    setScanStatus('✓ ' + card.id + ' · ' + CardDB.cleanDisplayName(card) + ' erfasst');
-    const v = scanVideoEl();
-    if (v) { v.classList.add('ring-4', 'ring-emerald-400'); setTimeout(() => v.classList.remove('ring-4', 'ring-emerald-400'), 250); }
-  }
-
-  function addToStaging(card) {
-    const variant = CardDB.mainVariantKey(card);
-    const e = state.scanStaging.find(x => x.variant === variant);
-    if (e) e.count++;
-    else state.scanStaging.push({ cardId: card.id, variant, count: 1 });
-    renderStaging();
-  }
-
-  function renderStaging() {
-    const c = modal && modal.content;
-    if (!c) return;
-    const host = c.querySelector('#re-stage-list');
-    const sum = c.querySelector('#re-stage-summary');
-    const btn = c.querySelector('#re-scan-confirm');
-    const n = state.scanStaging.reduce((s, e) => s + e.count, 0);
-    if (sum) sum.innerHTML = `Gescannt: <b class="text-emerald-400">${n}</b> <span class="text-slate-500">(${state.scanStaging.length} versch.)</span>`;
-    if (btn) { btn.textContent = n ? `Übernehmen (${n})` : 'Übernehmen'; btn.disabled = !n; btn.classList.toggle('opacity-50', !n); }
-    if (!host) return;
-    if (!state.scanStaging.length) {
-      host.innerHTML = `<div class="text-slate-600 text-sm px-1 py-2">Noch nichts gescannt.</div>`;
-      return;
-    }
-    host.innerHTML = state.scanStaging.map((e, i) => {
-      const card = CardDB.byId.get(e.cardId);
-      return `
-        <div class="flex items-center gap-2 py-1 border-b border-slate-800 last:border-0 text-sm">
-          <span class="font-mono text-xs text-slate-400">${escapeHtml(e.cardId)}</span>
-          <span class="truncate flex-1 min-w-0">${escapeHtml(card ? CardDB.cleanDisplayName(card) : e.cardId)}</span>
-          <button type="button" data-stage-dec="${i}" class="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 font-bold leading-none">−</button>
-          <span class="w-6 text-center font-bold text-amber-400">${e.count}</span>
-          <button type="button" data-stage-inc="${i}" class="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 font-bold leading-none">+</button>
-          <button type="button" data-stage-rm="${i}" title="Entfernen" class="text-slate-500 hover:text-red-400 px-1.5">✕</button>
-        </div>`;
-    }).join('');
-    host.querySelectorAll('[data-stage-inc]').forEach(b => b.addEventListener('click', () => { state.scanStaging[parseInt(b.dataset.stageInc, 10)].count++; renderStaging(); }));
-    host.querySelectorAll('[data-stage-dec]').forEach(b => b.addEventListener('click', () => {
-      const idx = parseInt(b.dataset.stageDec, 10);
-      const e = state.scanStaging[idx];
-      if (e) { e.count--; if (e.count <= 0) state.scanStaging.splice(idx, 1); }
-      renderStaging();
-    }));
-    host.querySelectorAll('[data-stage-rm]').forEach(b => b.addEventListener('click', () => { state.scanStaging.splice(parseInt(b.dataset.stageRm, 10), 1); renderStaging(); }));
-  }
-
-  // Schreibt die Staging-Liste in die Collection (sofort, nicht-silent → Sync +
-  // Tab-Refresh). Danach Staging leeren; Scannen kann weitergehen.
-  function confirmStaging() {
-    const n = state.scanStaging.reduce((s, e) => s + e.count, 0);
-    if (!n) return;
-    for (const e of state.scanStaging) {
-      for (let i = 0; i < e.count; i++) {
-        Store.createCopy(state.coll, e.variant, { isProxy: false, originSet: state.setCode });
-      }
-    }
-    Store.saveCollection(state.coll);
-    state.scanStaging = [];
-    renderStaging();
-    if (window.App && App.refreshActiveTab) App.refreshActiveTab();
-    window.Util.toast(`${n} gescannte Karte(n) übernommen.`, 'success');
-  }
-
   // ── Öffnen ──────────────────────────────────────────────────────────────────
 
   function open() {
@@ -523,8 +232,6 @@
     state.coll = Store.loadCollection();
     state.log = [];
     state.committed = 0;
-    state.scanActive = false;
-    state.scanStaging = [];
     setSelectedCard(null);
 
     const sets = (CardDB.sets || []);
@@ -532,7 +239,6 @@
     const valid = stored && sets.some(s => s.code === stored);
     state.setCode = valid ? stored : (sets[0] && sets[0].code) || null;
     state.numMap = state.setCode ? buildNumMap(state.setCode) : new Map();
-    state.nameIdx = state.setCode ? buildNameIndex(state.setCode) : [];
 
     const setOptions = sets.map(s =>
       `<option value="${escapeAttr(s.code)}" ${s.code === state.setCode ? 'selected' : ''}>${escapeHtml(s.code)} — ${escapeHtml(s.name)}</option>`
@@ -564,42 +270,21 @@
           <span class="text-slate-400 shrink-0">Set:</span>
           <select id="re-set" class="bg-slate-900 border border-slate-600 rounded px-2 py-2 min-h-[40px] flex-1 min-w-0">${setOptions}</select>
         </label>
-        <div id="re-kb-input" class="flex gap-2">
+        <div class="flex gap-2">
           <input id="re-number" type="text" inputmode="numeric" autocomplete="off"
             placeholder="Nr. (z.B. 25)"
             class="bg-slate-900 border border-slate-600 rounded px-3 py-2 min-h-[40px] w-32 font-mono text-lg" />
           <button id="re-add" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-4 py-2 rounded font-bold min-h-[40px] whitespace-nowrap">+1</button>
         </div>
-        <button id="re-scan-toggle" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-3 py-2 rounded text-sm font-semibold min-h-[40px] whitespace-nowrap"
-          title="Karten per Handy-Kamera scannen (OCR). Set vorher wählen.">📷 Scannen</button>
       </div>
 
       <div id="re-preview" class="bg-slate-900 border border-slate-700 rounded p-3 mb-3 min-h-[120px] shrink-0"></div>
 
-      <div id="re-scan" class="hidden flex-1 min-h-0 flex flex-col gap-2 mb-1">
-        <div class="relative bg-black rounded overflow-hidden shrink-0">
-          <video id="re-video" playsinline muted class="w-full block" style="height:auto"></video>
-          <div class="absolute inset-0 pointer-events-none">
-            <div class="absolute inset-0 border-2 border-amber-400/70 rounded"></div>
-            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Namensleiste der Karte (Name + Nummer, unteres Drittel) formatfüllend in die Kamera — das ganze Bild wird gelesen</div>
-          </div>
-        </div>
-        <div id="re-scan-status" class="text-xs text-slate-400 min-h-[1rem] shrink-0"></div>
-        <div class="flex items-center justify-between shrink-0">
-          <div id="re-stage-summary" class="text-sm"></div>
-          <button id="re-scan-stop" class="text-xs text-slate-400 hover:text-slate-200 underline">Scan stoppen</button>
-        </div>
-        <div id="re-stage-list" class="overflow-y-auto flex-1 min-h-[60px] border border-slate-800 rounded px-2"></div>
-        <button id="re-scan-confirm" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-4 py-2 rounded font-bold min-h-[40px] shrink-0">Übernehmen</button>
+      <div class="flex items-center justify-between mb-1 shrink-0">
+        <div id="re-summary" class="text-sm"></div>
+        <div class="text-xs text-slate-500">Erfasste Karten ↓</div>
       </div>
-
-      <div id="re-results-area" class="flex-1 min-h-0 flex flex-col">
-        <div class="flex items-center justify-between mb-1 shrink-0">
-          <div id="re-summary" class="text-sm"></div>
-          <div class="text-xs text-slate-500">Erfasste Karten ↓</div>
-        </div>
-        <div id="re-log" class="overflow-y-auto flex-1 min-h-[80px] border border-slate-800 rounded px-2"></div>
-      </div>
+      <div id="re-log" class="overflow-y-auto flex-1 min-h-[80px] border border-slate-800 rounded px-2"></div>
 
       <div class="flex justify-end gap-2 mt-3 shrink-0">
         <button data-re-close class="btn-primary-emerald">Fertig</button>
@@ -613,15 +298,8 @@
       flex: true,
       contentHtml,
       onClose: () => {
-        // Kamera in jedem Fall freigeben.
-        stopScan();
-        // Noch nicht übernommene Scans? Einmal nachfragen, bevor sie verfallen.
-        const pending = state.scanStaging.reduce((s, e) => s + e.count, 0);
-        if (pending > 0 && window.confirm(`${pending} gescannte Karte(n) sind noch nicht übernommen. Jetzt in die Collection übernehmen?`)) {
-          confirmStaging();
-        }
-        // Finaler, nicht-silenter Save der Tastatur-Erfassung → feuert
-        // 'collection-changed' (Sync-Push + Tab-Refresh). Nur wenn etwas erfasst wurde.
+        // Finaler, nicht-silenter Save → feuert 'collection-changed' (Sync-Push +
+        // Tab-Refresh). Nur wenn überhaupt etwas erfasst wurde.
         if (state.committed > 0) {
           Store.saveCollection(state.coll);
           window.Util.toast(`${state.committed} Karte(n) erfasst.`, 'success');
@@ -649,18 +327,9 @@
           else if (e.key === 'ArrowDown') { e.preventDefault(); adjustQty(-1); }
         });
 
-        // Scan-Controls
-        content.querySelector('#re-scan-toggle').addEventListener('click', toggleScan);
-        content.querySelector('#re-scan-stop').addEventListener('click', () => {
-          state.scanActive = false; stopScan(); applyScanUI(false);
-          const i = inputEl(); if (i) i.focus();
-        });
-        content.querySelector('#re-scan-confirm').addEventListener('click', confirmStaging);
-
         renderPreview();
         renderLog();
         renderSummary();
-        renderStaging();
         setTimeout(() => inp.focus(), 50);
       }
     });
