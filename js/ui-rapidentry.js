@@ -19,7 +19,8 @@
     card: null,        // aktuell aufgelöste Karte (Vorschau)
     variants: [],      // CardDB.variantsOf(card) der Vorschau-Karte
     variantIdx: 0,     // gewählte Variante (0 = Main)
-    log: [],           // [{ copyId, variant, cardId }] — neueste zuerst
+    qty: 1,            // Menge, die der nächste Enter bucht (↑/↓ stellt sie ein)
+    log: [],           // [{ copyIds:[], variant, cardId, count }] — neueste zuerst
     committed: 0       // Anzahl gebuchter Karten (für finalen Save/Toast)
   };
   let modal = null;
@@ -65,15 +66,20 @@
     state.card = card;
     state.variants = card ? CardDB.variantsOf(card) : [];
     state.variantIdx = 0;
+    state.qty = 1; // Menge bei jeder neuen Karte zurücksetzen.
   }
 
   function commit() {
     if (!state.card || !state.variants.length) { flashInput(); return; }
     const variant = state.variants[state.variantIdx].key;
-    const copyId = Store.createCopy(state.coll, variant, { isProxy: false, originSet: state.setCode });
+    const count = Math.max(1, state.qty | 0);
+    const copyIds = [];
+    for (let i = 0; i < count; i++) {
+      copyIds.push(Store.createCopy(state.coll, variant, { isProxy: false, originSet: state.setCode }));
+    }
     Store.saveCollection(state.coll, { silent: true });
-    state.log.unshift({ copyId, variant, cardId: state.card.id });
-    state.committed++;
+    state.log.unshift({ copyIds, variant, cardId: state.card.id, count });
+    state.committed += count;
     // Eingabe leeren + Vorschau zurücksetzen, Fokus zurück ins Feld.
     setSelectedCard(null);
     const inp = inputEl();
@@ -83,13 +89,20 @@
     renderSummary();
   }
 
+  // Menge für den nächsten Enter ändern (nur sinnvoll, wenn eine Karte aufgelöst ist).
+  function adjustQty(delta) {
+    if (!state.card) return;
+    state.qty = Math.max(1, (state.qty | 0) + delta);
+    renderPreview();
+  }
+
   function undo(idx) {
     const entry = state.log[idx];
     if (!entry) return;
-    Store.deleteCopy(state.coll, entry.copyId);
+    (entry.copyIds || []).forEach(id => Store.deleteCopy(state.coll, id));
     Store.saveCollection(state.coll, { silent: true });
     state.log.splice(idx, 1);
-    state.committed = Math.max(0, state.committed - 1);
+    state.committed = Math.max(0, state.committed - (entry.count || 1));
     renderPreview(); // Besitz-Count der ggf. sichtbaren Karte aktualisieren
     renderLog();
     renderSummary();
@@ -126,9 +139,12 @@
   function renderPreview() {
     const host = modal && modal.content.querySelector('#re-preview');
     if (!host) return;
+    // "+N"-Button an die aktuelle Menge anpassen (oder +1, wenn keine Karte).
+    const addBtn = modal.content.querySelector('#re-add');
+    if (addBtn) addBtn.textContent = state.card ? ('+' + Math.max(1, state.qty | 0)) : '+1';
     if (!state.card) {
       host.innerHTML = `<div class="text-slate-500 text-sm flex items-center justify-center h-full text-center px-3">
-        Nummer eingeben und <b class="mx-1">Enter</b> drücken …</div>`;
+        Nummer eingeben, ggf. Menge mit <b class="mx-1">↑ / ↓</b> wählen, dann <b class="mx-1">Enter</b> …</div>`;
       return;
     }
     const card = state.card;
@@ -151,6 +167,13 @@
           <div class="font-mono text-xs text-slate-400 mt-0.5">${escapeHtml(card.id)}
             ${card.rarity ? '· ' + escapeHtml(CardDB.rarityShort(card.rarity)) : ''}</div>
           <div class="text-xs text-slate-400 mt-1">Im Besitz (dieser Variante): <b class="text-emerald-400">${owned}</b></div>
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs text-slate-400">Menge:</span>
+            <button type="button" data-re-qty="-1" class="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold leading-none">−</button>
+            <span class="font-bold text-amber-400 w-6 text-center">${Math.max(1, state.qty | 0)}</span>
+            <button type="button" data-re-qty="1" class="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold leading-none">+</button>
+            <span class="text-[11px] text-slate-500">(↑ / ↓ · Enter bucht ${Math.max(1, state.qty | 0)})</span>
+          </div>
           ${state.variants.length > 1
             ? `<div class="flex flex-wrap gap-1 mt-2">${chips}</div>
                <div class="text-[11px] text-slate-500 mt-1">Alt-Art: Chip antippen oder ← / → drücken.</div>`
@@ -160,6 +183,9 @@
     host.querySelectorAll('[data-re-variant]').forEach(b => {
       b.addEventListener('click', () => { state.variantIdx = parseInt(b.dataset.reVariant, 10) || 0; renderPreview(); inputEl() && inputEl().focus(); });
     });
+    host.querySelectorAll('[data-re-qty]').forEach(b => {
+      b.addEventListener('click', () => { adjustQty(parseInt(b.dataset.reQty, 10) || 0); inputEl() && inputEl().focus(); });
+    });
   }
 
   function renderSummary() {
@@ -168,7 +194,7 @@
     let main = 0, alt = 0;
     for (const e of state.log) {
       const info = CardDB.allVariants.get(e.variant);
-      if (info && info.isAlt) alt++; else main++;
+      if (info && info.isAlt) alt += (e.count || 1); else main += (e.count || 1);
     }
     el.innerHTML = `Erfasst: <b class="text-emerald-400">${state.committed}</b>
       <span class="text-slate-500">(Standard: ${main} · Alt: ${alt})</span>`;
@@ -187,7 +213,7 @@
       const altTag = info && info.isAlt ? ` <span class="text-amber-400">(${escapeHtml(String(e.variant).split('_')[1] || 'Alt')})</span>` : '';
       return `
         <div class="flex items-center gap-2 py-1 border-b border-slate-800 last:border-0 text-sm">
-          <span class="text-emerald-400 font-semibold">+1</span>
+          <span class="text-emerald-400 font-semibold">+${e.count || 1}</span>
           <span class="font-mono text-xs text-slate-400">${escapeHtml(e.cardId)}</span>
           <span class="truncate flex-1 min-w-0">${escapeHtml(card ? CardDB.cleanDisplayName(card) : e.cardId)}${altTag}</span>
           <button type="button" data-re-undo="${i}" title="Rückgängig"
@@ -218,13 +244,25 @@
       `<option value="${escapeAttr(s.code)}" ${s.code === state.setCode ? 'selected' : ''}>${escapeHtml(s.code)} — ${escapeHtml(s.name)}</option>`
     ).join('');
 
+    const kbd = k => `<span class="inline-block px-1.5 py-0.5 rounded bg-slate-700 text-slate-100 font-mono text-[11px] leading-none">${k}</span>`;
+
     const contentHtml = `
-      <div class="flex justify-between items-start mb-3 shrink-0">
-        <div>
+      <div class="flex justify-between items-start mb-2 shrink-0">
+        <div class="min-w-0">
           <h2 class="text-lg font-bold">⚡ Schnellerfassung</h2>
-          <div class="text-xs text-slate-400 mt-1">Set wählen, dann pro Karte die Nummer tippen + <b>Enter</b>. Ideal beim Display-Öffnen.</div>
+          <div class="text-xs text-slate-400 mt-1">Ideal beim Display-Öffnen: oben das <b>Set</b> wählen, dann pro Karte die Nummer ins Feld tippen (z.&nbsp;B. <span class="font-mono">25</span> oder volle ID <span class="font-mono">BT26-025</span>).</div>
         </div>
         <button data-re-close class="modal-close-x">×</button>
+      </div>
+      <div class="bg-slate-900/60 border border-slate-700 rounded px-3 py-2 mb-3 shrink-0">
+        <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-1 font-semibold">Steuerung</div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">
+          <span>${kbd('Enter')} bucht die Menge (+N)</span>
+          <span>${kbd('↑')} / ${kbd('↓')} Menge erhöhen / verringern</span>
+          <span>${kbd('←')} / ${kbd('→')} Variante wechseln (Alt-Arts)</span>
+          <span>${kbd('✕')} in der Liste = Buchung rückgängig</span>
+          <span>${kbd('Esc')} oder „Fertig" = schließen (speichert &amp; synct)</span>
+        </div>
       </div>
 
       <div class="flex flex-col sm:flex-row gap-2 mb-3 shrink-0">
@@ -244,7 +282,7 @@
 
       <div class="flex items-center justify-between mb-1 shrink-0">
         <div id="re-summary" class="text-sm"></div>
-        <div class="text-xs text-slate-500">ESC oder „Fertig" schließt</div>
+        <div class="text-xs text-slate-500">Erfasste Karten ↓</div>
       </div>
       <div id="re-log" class="overflow-y-auto flex-1 min-h-[80px] border border-slate-800 rounded px-2"></div>
 
@@ -279,6 +317,8 @@
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
           else if (e.key === 'ArrowRight') { e.preventDefault(); cycleVariant(1); }
           else if (e.key === 'ArrowLeft') { e.preventDefault(); cycleVariant(-1); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); adjustQty(1); }
+          else if (e.key === 'ArrowDown') { e.preventDefault(); adjustQty(-1); }
         });
 
         renderPreview();
