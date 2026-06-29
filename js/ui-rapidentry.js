@@ -33,13 +33,26 @@
     scanStableCount: 0,    // wie oft in Folge gelesen
     scanCommittedKey: null,// zuletzt in die Staging gelegte Karte (Anti-Doppel)
     scanEmpty: 0,          // aufeinanderfolgende Leer-/Kein-Treffer-Frames (Lücken-Erkennung)
+    nameIdx: [],           // [{ card, n }] normalisierte Namen des gewählten Sets (für Namens-Match)
     _scanCanvas: null      // wiederverwendetes Crop-Canvas
   };
   let modal = null;
 
-  // OCR liest nur den unteren Streifen des Kamerabilds (dort steht die Karten-ID).
+  // OCR liest den OBEREN Karten-Block (Namens-Banner mit Name + Nummer + Level).
   // Werte als Bruchteil der Videogröße; der gelbe Rahmen im UI deckt sich damit.
-  const STRIP = { x: 0.04, y: 0.74, w: 0.62, h: 0.20 };
+  const STRIP = { x: 0.05, y: 0.05, w: 0.90, h: 0.30 };
+
+  function normName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+  function buildNameIndex(setCode) {
+    const out = [];
+    const cards = (window.CardDB && CardDB.bySet.get(setCode)) || [];
+    for (const c of cards) {
+      const n = normName(CardDB.cleanDisplayName(c) || c.name);
+      if (n.length >= 4) out.push({ card: c, n });
+    }
+    return out;
+  }
 
   // ── Auflösung Nummer/ID → Karte ────────────────────────────────────────────
 
@@ -127,6 +140,7 @@
   function changeSet(code) {
     state.setCode = code;
     state.numMap = buildNumMap(code);
+    state.nameIdx = buildNameIndex(code);
     Prefs.set(window.Util.PREF_KEYS.rapidEntrySet, code);
     setSelectedCard(null);
     const inp = inputEl();
@@ -355,7 +369,10 @@
     state.scanBusy = true;
     try {
       const { text } = await window.OCR.recognizeCanvas(cropStrip(v));
-      handleScanText(text);
+      // Debug-Feedback: zeigt, dass der Loop läuft und WAS gelesen wird.
+      const clean = String(text || '').replace(/\s+/g, ' ').trim();
+      setScanStatus(clean ? ('gelesen: ' + clean.slice(0, 48)) : 'gelesen: — (kein Text erkannt)');
+      handleScanText(text); // überschreibt den Status bei einem Treffer
     } catch (e) {
       // Einzel-Frame-Fehler ignorieren (nächster Tick versucht es erneut).
     }
@@ -371,13 +388,22 @@
     //    Fremdkarte ist) — das ist das spezifischste Signal.
     const m = up.match(/[A-Z]{1,3}\d{1,2}-\d{1,4}/);
     if (m) { const c = CardDB.byId.get(m[0]); if (c) return c; }
-    // 2) Sonst nur die Nummer im gelockten Set. Set-Code entfernen, dann
-    //    mehrstellige Zifferngruppen zuerst (Sammler-Nr. ist 3-stellig "001";
-    //    einstellige Funde wie Cost/Level werden bewusst ignoriert).
+    // 2) Namens-Match im gelockten Set: längster Kartenname, der als Teilstring
+    //    im (entrümpelten) OCR-Text vorkommt. Längster gewinnt, damit "WARGREYMON"
+    //    nicht fälschlich auf "GREYMON" matcht.
+    const norm = up.replace(/[^A-Z0-9]/g, '');
+    let best = null;
+    for (const e of state.nameIdx) {
+      if (norm.includes(e.n) && (!best || e.n.length > best.n.length)) best = e;
+    }
+    if (best) return best.card;
+    // 3) Sonst die Nummer im gelockten Set. Set-Code entfernen, dann mehrstellige
+    //    Zifferngruppen zuerst (Sammler-Nr. 3-stellig "004"; Level/Parallel-Nr.
+    //    sind kürzer → durch Längen-Sortierung nachrangig).
     const rest = up.replace(new RegExp(state.setCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), ' ');
     const ordered = (rest.match(/\d{1,4}/g) || []).slice().sort((a, b) => b.length - a.length);
     for (const g of ordered) {
-      if (g.length < 2) continue;
+      if (g.length < 3) continue; // Sammler-Nr. ist 3-stellig; Level/Parallel (1–2-stellig) ignorieren
       const card = state.numMap && state.numMap.get(parseInt(g, 10));
       if (card) return card;
     }
@@ -488,6 +514,7 @@
     const valid = stored && sets.some(s => s.code === stored);
     state.setCode = valid ? stored : (sets[0] && sets[0].code) || null;
     state.numMap = state.setCode ? buildNumMap(state.setCode) : new Map();
+    state.nameIdx = state.setCode ? buildNameIndex(state.setCode) : [];
 
     const setOptions = sets.map(s =>
       `<option value="${escapeAttr(s.code)}" ${s.code === state.setCode ? 'selected' : ''}>${escapeHtml(s.code)} — ${escapeHtml(s.name)}</option>`
@@ -535,8 +562,8 @@
         <div class="relative bg-black rounded overflow-hidden shrink-0" style="max-height:42vh">
           <video id="re-video" playsinline muted class="w-full object-cover" style="aspect-ratio:4/3"></video>
           <div class="absolute inset-0 pointer-events-none">
-            <div class="absolute border-2 border-amber-400 rounded" style="left:4%;top:74%;width:62%;height:20%"></div>
-            <div class="absolute left-2 top-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Karten-Nummer in den gelben Rahmen halten</div>
+            <div class="absolute border-2 border-amber-400 rounded" style="left:5%;top:5%;width:90%;height:30%"></div>
+            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Oberen Karten-Block (Name + Nummer) in den gelben Rahmen halten</div>
           </div>
         </div>
         <div id="re-scan-status" class="text-xs text-slate-400 min-h-[1rem] shrink-0"></div>

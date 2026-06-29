@@ -9,8 +9,9 @@
 
 (function () {
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-  // Nur die Zeichen, die in Karten-IDs vorkommen — schärft die Erkennung.
-  const CHAR_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+  // Wir scannen den oberen Karten-Block (Name + Nummer), daher müssen auch
+  // Buchstaben (Name) durch — nicht nur ID-Zeichen.
+  const CHAR_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/ ';
 
   let scriptPromise = null;
   let worker = null;
@@ -39,7 +40,7 @@
       const w = await window.Tesseract.createWorker('eng');
       await w.setParameters({
         tessedit_char_whitelist: CHAR_WHITELIST,
-        tessedit_pageseg_mode: '7' // PSM 7: eine einzelne Textzeile
+        tessedit_pageseg_mode: '6' // PSM 6: ein zusammenhängender Textblock (Banner)
       });
       worker = w;
       return w;
