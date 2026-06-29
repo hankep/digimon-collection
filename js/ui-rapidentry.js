@@ -38,10 +38,6 @@
   };
   let modal = null;
 
-  // OCR liest den OBEREN Karten-Block (Namens-Banner mit Name + Nummer + Level).
-  // Werte als Bruchteil der Videogröße; der gelbe Rahmen im UI deckt sich damit.
-  const STRIP = { x: 0.05, y: 0.05, w: 0.90, h: 0.30 };
-
   function normName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
   function buildNameIndex(setCode) {
@@ -339,24 +335,24 @@
     const v = scanVideoEl(); if (v) v.srcObject = null;
   }
 
-  // Schneidet den unteren Streifen aus dem Video, skaliert hoch und binarisiert
-  // grob — kleiner, kontrastreicher Ausschnitt liest sich für Tesseract besser.
-  function cropStrip(v) {
+  // Erfasst das GESAMTE Kamerabild (kein Teil-Crop → kein Koordinaten-Versatz
+  // zwischen Anzeige und OCR). Auf max. 1000px Breite herunterskaliert (Speed)
+  // und in Graustufen (besser für Tesseract). Der Nutzer hält den oberen
+  // Karten-Bereich formatfüllend in die Kamera.
+  function captureFrame(v) {
     const vw = v.videoWidth, vh = v.videoHeight;
-    const sx = Math.floor(vw * STRIP.x), sy = Math.floor(vh * STRIP.y);
-    const sw = Math.floor(vw * STRIP.w), sh = Math.floor(vh * STRIP.h);
-    const scale = 2;
+    const scale = vw > 1000 ? 1000 / vw : 1;
     let c = state._scanCanvas;
     if (!c) { c = state._scanCanvas = document.createElement('canvas'); }
-    c.width = sw * scale; c.height = sh * scale;
+    c.width = Math.round(vw * scale);
+    c.height = Math.round(vh * scale);
     const ctx = c.getContext('2d');
-    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    ctx.drawImage(v, 0, 0, c.width, c.height);
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
       const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      const bw = g > 140 ? 255 : (g < 90 ? 0 : g);
-      d[i] = d[i + 1] = d[i + 2] = bw;
+      d[i] = d[i + 1] = d[i + 2] = g;
     }
     ctx.putImageData(img, 0, 0);
     return c;
@@ -368,7 +364,7 @@
     if (!v || !v.videoWidth) return;
     state.scanBusy = true;
     try {
-      const { text } = await window.OCR.recognizeCanvas(cropStrip(v));
+      const { text } = await window.OCR.recognizeCanvas(captureFrame(v));
       // Debug-Feedback: zeigt, dass der Loop läuft und WAS gelesen wird.
       const clean = String(text || '').replace(/\s+/g, ' ').trim();
       setScanStatus(clean ? ('gelesen: ' + clean.slice(0, 48)) : 'gelesen: — (kein Text erkannt)');
@@ -562,8 +558,8 @@
         <div class="relative bg-black rounded overflow-hidden shrink-0">
           <video id="re-video" playsinline muted class="w-full block" style="height:auto"></video>
           <div class="absolute inset-0 pointer-events-none">
-            <div class="absolute border-2 border-amber-400 rounded" style="left:5%;top:5%;width:90%;height:30%"></div>
-            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Oberen Karten-Block (Name + Nummer) in den gelben Rahmen halten</div>
+            <div class="absolute inset-0 border-2 border-amber-400/70 rounded"></div>
+            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Oberen Karten-Bereich (Name + Nummer) formatfüllend in die Kamera halten — das ganze Bild wird gelesen</div>
           </div>
         </div>
         <div id="re-scan-status" class="text-xs text-slate-400 min-h-[1rem] shrink-0"></div>
