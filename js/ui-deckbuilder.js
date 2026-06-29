@@ -293,6 +293,89 @@
     return arr.slice().sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
   }
 
+  // Kategorien eines kind, nach order sortiert.
+  function catsOfKind(kind) {
+    return (state.decksState.categories || [])
+      .filter(c => c.kind === kind)
+      .slice()
+      .sort((a, b) => a.order - b.order);
+  }
+
+  function decksBlockHtml(items, idx, dIdx) {
+    return `<div class="space-y-1">${items.map(d => deckItemHtml(d, idx, dIdx)).join('')}</div>`;
+  }
+
+  // ── Collapse-Zustand (lokal, pro Geraet — nicht im Sync-Blob) ──────────────
+  function collapsedMap() {
+    return Prefs.get(window.Util.PREF_KEYS.deckCatCollapsed, {}) || {};
+  }
+  function isCollapsed(key) { return !!collapsedMap()[key]; }
+  function toggleCollapsed(key) {
+    const m = collapsedMap();
+    if (m[key]) delete m[key]; else m[key] = true;
+    Prefs.set(window.Util.PREF_KEYS.deckCatCollapsed, m);
+  }
+
+  function groupHeaderHtml(label, total, kind) {
+    return `<div class="flex items-center justify-between mt-3 mb-1">
+      <span class="text-[11px] font-bold uppercase tracking-wide text-slate-500">${label} · ${total}</span>
+      <button data-add-cat="${kind}" class="text-slate-500 hover:text-amber-300 text-[11px] font-semibold px-1 leading-none" title="Neue Kategorie in dieser Gruppe">+ Kat.</button>
+    </div>`;
+  }
+
+  function categoryHeaderHtml(cat, count, collapsed) {
+    return `<div class="flex items-center gap-1 mt-1" data-cat-row="${cat.id}" data-cat-id="${cat.id}" data-cat-kind="${escapeAttr(cat.kind)}">
+      <span data-cat-drag-handle="${cat.id}" draggable="true" class="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-300 select-none leading-none px-0.5" title="Ziehen zum Sortieren">☰</span>
+      <button data-cat-toggle="${cat.id}" class="flex-1 min-w-0 flex items-center gap-1 text-left px-1 py-1 rounded hover:bg-slate-800 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+        <span class="text-slate-500 leading-none">${collapsed ? '▶' : '▼'}</span>
+        <span class="truncate">${escapeHtml(cat.name)}</span>
+        <span class="text-slate-600">· ${count}</span>
+      </button>
+      <span class="flex flex-col leading-none">
+        <button data-cat-up="${cat.id}" class="text-slate-500 hover:text-slate-200 text-[10px] leading-none" title="Kategorie nach oben">▲</button>
+        <button data-cat-down="${cat.id}" class="text-slate-500 hover:text-slate-200 text-[10px] leading-none" title="Kategorie nach unten">▼</button>
+      </span>
+      <button data-cat-rename="${cat.id}" class="text-slate-500 hover:text-sky-400 px-1" title="Kategorie umbenennen">✎</button>
+      <button data-cat-del="${cat.id}" class="text-slate-500 hover:text-red-400 px-1" title="Kategorie löschen">✕</button>
+    </div>`;
+  }
+
+  function uncatHeaderHtml(kind, count, collapsed) {
+    return `<div class="flex items-center gap-1 mt-1" data-uncat-kind="${escapeAttr(kind)}">
+      <span class="px-0.5 text-slate-700 select-none leading-none">·</span>
+      <button data-uncat-toggle="${escapeAttr(kind)}" class="flex-1 min-w-0 flex items-center gap-1 text-left px-1 py-1 rounded hover:bg-slate-800 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        <span class="text-slate-600 leading-none">${collapsed ? '▶' : '▼'}</span>
+        <span class="truncate">Ohne Kategorie</span>
+        <span class="text-slate-600">· ${count}</span>
+      </button>
+    </div>`;
+  }
+
+  // Eine feste Gruppe (kind) inkl. eigener Kategorien rendern. Ohne Kategorien
+  // sieht es identisch zum alten Zustand aus (Decks direkt unter dem Header).
+  function deckGroupHtml(kind, label, idx, dIdx) {
+    const all = state.decksState.decks.filter(d => d.kind === kind);
+    const cats = catsOfKind(kind);
+    if (!all.length && !cats.length) return '';
+    let html = groupHeaderHtml(label, all.length, kind);
+    if (!cats.length) {
+      html += decksBlockHtml(favFirst(all), idx, dIdx);
+      return html;
+    }
+    for (const cat of cats) {
+      const items = favFirst(all.filter(d => d.categoryId === cat.id));
+      const collapsed = isCollapsed(cat.id);
+      html += categoryHeaderHtml(cat, items.length, collapsed);
+      if (!collapsed) html += decksBlockHtml(items, idx, dIdx);
+    }
+    // „Ohne Kategorie" immer anzeigen (auch leer) — dient als Drop-Ziel.
+    const uncat = favFirst(all.filter(d => !d.categoryId));
+    const uncatCollapsed = isCollapsed('uncat:' + kind);
+    html += uncatHeaderHtml(kind, uncat.length, uncatCollapsed);
+    if (!uncatCollapsed) html += decksBlockHtml(uncat, idx, dIdx);
+    return html;
+  }
+
   function deckListGroupsHtml(idx, dIdx) {
     const GROUPS = [
       { kind: 'wants', label: 'Wants' },
@@ -300,17 +383,13 @@
       { kind: 'deck',  label: 'Decks' }
     ];
     let html = '';
-    for (const g of GROUPS) {
-      const items = favFirst(state.decksState.decks.filter(d => d.kind === g.kind));
-      if (!items.length) continue;
-      html += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">${g.label} · ${items.length}</div>`
-        + `<div class="space-y-1">${items.map(d => deckItemHtml(d, idx, dIdx)).join('')}</div>`;
-    }
+    for (const g of GROUPS) html += deckGroupHtml(g.kind, g.label, idx, dIdx);
+    // Fallback: unbekannte kinds (sollte dank normalizeKind selten sein) — ohne Kategorien.
     const known = new Set(GROUPS.map(g => g.kind));
     const rest = favFirst(state.decksState.decks.filter(d => !known.has(d.kind)));
     if (rest.length) {
       html += `<div class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mt-3 mb-1">Sonstige · ${rest.length}</div>`
-        + `<div class="space-y-1">${rest.map(d => deckItemHtml(d, idx, dIdx)).join('')}</div>`;
+        + decksBlockHtml(rest, idx, dIdx);
     }
     return html;
   }
@@ -354,6 +433,51 @@
       });
     });
 
+    // ── Kategorien: anlegen / umbenennen / loeschen / einklappen / sortieren ──
+    el.querySelectorAll('[data-add-cat]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const name = prompt('Name der neuen Kategorie:', 'Neue Kategorie');
+        if (!name) return;
+        Store.createCategory(state.decksState, btn.dataset.addCat, name.trim());
+        Store.saveDecks(state.decksState);
+        renderDeckList();
+      });
+    });
+    el.querySelectorAll('[data-cat-toggle]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); toggleCollapsed(btn.dataset.catToggle); renderDeckList(); });
+    });
+    el.querySelectorAll('[data-uncat-toggle]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); toggleCollapsed('uncat:' + btn.dataset.uncatToggle); renderDeckList(); });
+    });
+    el.querySelectorAll('[data-cat-rename]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const cat = (state.decksState.categories || []).find(c => c.id === btn.dataset.catRename);
+        if (!cat) return;
+        const name = prompt('Kategorie umbenennen:', cat.name);
+        if (!name) return;
+        Store.renameCategory(state.decksState, cat.id, name.trim());
+        Store.saveDecks(state.decksState);
+        renderDeckList();
+      });
+    });
+    el.querySelectorAll('[data-cat-del]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirm('Kategorie löschen? Die Listen bleiben erhalten und landen unter „Ohne Kategorie".')) return;
+        Store.deleteCategory(state.decksState, btn.dataset.catDel);
+        Store.saveDecks(state.decksState);
+        renderDeckList();
+      });
+    });
+    el.querySelectorAll('[data-cat-up]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); moveCategory(btn.dataset.catUp, -1); });
+    });
+    el.querySelectorAll('[data-cat-down]').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); moveCategory(btn.dataset.catDown, +1); });
+    });
+
     // ── Sortieren: ↑↓-Buttons (Touch-tauglich) ───────────────────────────────
     el.querySelectorAll('[data-move-up]').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); moveDeckInGroup(btn.dataset.moveUp, -1); });
@@ -362,46 +486,103 @@
       btn.addEventListener('click', e => { e.stopPropagation(); moveDeckInGroup(btn.dataset.moveDown, +1); });
     });
 
-    // ── Sortieren: Drag-and-Drop am Griff (Maus/Desktop) ─────────────────────
-    let dragId = null, dragKind = null;
+    // ── Drag-and-Drop: Decks (umsortieren + in Kategorie ziehen) UND Kategorien
+    //    (umsortieren). dragType unterscheidet die beiden Quellen. ────────────
+    let dragType = null, dragId = null, dragKind = null;
+    function clearDrag() {
+      el.querySelectorAll('.opacity-50').forEach(r => r.classList.remove('opacity-50'));
+      el.querySelectorAll('[data-deck-row], [data-cat-row], [data-uncat-kind]').forEach(r => r.classList.remove('ring-1', 'ring-amber-400'));
+      dragType = null; dragId = null; dragKind = null;
+    }
+    function startDrag(type, id, kind, rowSel, h, e) {
+      dragType = type; dragId = id; dragKind = kind;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+      const row = h.closest(rowSel);
+      if (row) {
+        if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(row, 10, 10);
+        row.classList.add('opacity-50');
+      }
+    }
     el.querySelectorAll('[data-drag-handle]').forEach(h => {
       h.addEventListener('dragstart', e => {
-        dragId = h.getAttribute('data-drag-handle');
-        const deck = state.decksState.decks.find(d => d.id === dragId);
-        dragKind = deck ? deck.kind : null;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', dragId);
-        const row = h.closest('[data-deck-row]');
-        if (row) {
-          if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(row, 10, 10);
-          row.classList.add('opacity-50');
-        }
+        const id = h.getAttribute('data-drag-handle');
+        const deck = state.decksState.decks.find(d => d.id === id);
+        startDrag('deck', id, deck ? deck.kind : null, '[data-deck-row]', h, e);
       });
-      h.addEventListener('dragend', () => {
-        const row = h.closest('[data-deck-row]');
-        if (row) row.classList.remove('opacity-50');
-        el.querySelectorAll('[data-deck-row]').forEach(r => r.classList.remove('ring-1', 'ring-amber-400'));
-        dragId = null; dragKind = null;
-      });
+      h.addEventListener('dragend', clearDrag);
     });
+    el.querySelectorAll('[data-cat-drag-handle]').forEach(h => {
+      h.addEventListener('dragstart', e => {
+        const id = h.getAttribute('data-cat-drag-handle');
+        const cat = (state.decksState.categories || []).find(c => c.id === id);
+        startDrag('cat', id, cat ? cat.kind : null, '[data-cat-row]', h, e);
+      });
+      h.addEventListener('dragend', clearDrag);
+    });
+
+    // Deck-Zeilen: nur Decks droppen (umsortieren / Kategorie wechseln).
     el.querySelectorAll('[data-deck-row]').forEach(row => {
-      const sameGroup = () => dragId && row.getAttribute('data-deck-kind') === dragKind;
+      const ok = () => dragType === 'deck' && row.getAttribute('data-deck-kind') === dragKind;
       row.addEventListener('dragover', e => {
-        if (!sameGroup()) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
+        if (!ok()) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
         if (row.getAttribute('data-deck-row') !== dragId) row.classList.add('ring-1', 'ring-amber-400');
       });
       row.addEventListener('dragleave', () => row.classList.remove('ring-1', 'ring-amber-400'));
       row.addEventListener('drop', e => {
-        if (!sameGroup()) return;
-        e.preventDefault();
-        row.classList.remove('ring-1', 'ring-amber-400');
+        if (!ok()) return;
+        e.preventDefault(); row.classList.remove('ring-1', 'ring-amber-400');
         const targetId = row.getAttribute('data-deck-row');
         if (!targetId || targetId === dragId) return;
         const rect = row.getBoundingClientRect();
         const after = (e.clientY - rect.top) > rect.height / 2;
         moveDeckRelative(dragId, targetId, after);
+      });
+    });
+
+    // Kategorie-Header: Deck → in Kategorie einsortieren; Kategorie → umsortieren.
+    el.querySelectorAll('[data-cat-row]').forEach(row => {
+      const catId = row.getAttribute('data-cat-id');
+      const catKind = row.getAttribute('data-cat-kind');
+      const ok = () => dragKind === catKind && (dragType === 'deck' || (dragType === 'cat' && dragId !== catId));
+      row.addEventListener('dragover', e => {
+        if (!ok()) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        row.classList.add('ring-1', 'ring-amber-400');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('ring-1', 'ring-amber-400'));
+      row.addEventListener('drop', e => {
+        if (!ok()) return;
+        e.preventDefault(); row.classList.remove('ring-1', 'ring-amber-400');
+        if (dragType === 'deck') {
+          Store.assignDeckToCategory(state.decksState, dragId, catId);
+          Store.saveDecks(state.decksState);
+          renderDeckList();
+        } else {
+          const rect = row.getBoundingClientRect();
+          const after = (e.clientY - rect.top) > rect.height / 2;
+          moveCategoryRelative(dragId, catId, after);
+        }
+      });
+    });
+
+    // „Ohne Kategorie"-Header: Deck droppen → Kategorie-Zuordnung loesen.
+    el.querySelectorAll('[data-uncat-kind]').forEach(row => {
+      const k = row.getAttribute('data-uncat-kind');
+      const ok = () => dragType === 'deck' && dragKind === k;
+      row.addEventListener('dragover', e => {
+        if (!ok()) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        row.classList.add('ring-1', 'ring-amber-400');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('ring-1', 'ring-amber-400'));
+      row.addEventListener('drop', e => {
+        if (!ok()) return;
+        e.preventDefault(); row.classList.remove('ring-1', 'ring-amber-400');
+        Store.assignDeckToCategory(state.decksState, dragId, null);
+        Store.saveDecks(state.decksState);
+        renderDeckList();
       });
     });
   }
@@ -417,39 +598,85 @@
     state.decksState.decks = decks.map(d => (d.kind === kind ? ordered[oi++] : d));
   }
 
+  // Reihenfolge der Decks einer Kategorie-Teilmenge festschreiben: die Mitglieder
+  // (subOrderedIds) werden – in dieser Reihenfolge – in die Array-Positionen
+  // gesetzt, die die Teilmenge aktuell im kind belegt; alle anderen Decks bleiben.
+  function commitSubOrder(kind, subOrderedIds) {
+    const kindDecks = state.decksState.decks.filter(d => d.kind === kind);
+    const subSet = new Set(subOrderedIds);
+    let si = 0;
+    const fullOrder = kindDecks.map(d => (subSet.has(d.id) ? subOrderedIds[si++] : d.id));
+    reorderKind(kind, fullOrder);
+  }
+
   // ↑/↓: tauscht eine Liste mit dem Nachbarn in der gerenderten (Fav-zuerst)
-  // Reihenfolge ihrer Gruppe. Die Favoriten-Grenze wird nicht ueberschritten.
+  // Reihenfolge INNERHALB ihrer Kategorie. Fav-Grenze wird nicht ueberschritten.
   function moveDeckInGroup(id, dir) {
     const decks = state.decksState.decks;
     const deck = decks.find(d => d.id === id);
     if (!deck) return;
-    const rendered = favFirst(decks.filter(d => d.kind === deck.kind));
-    const i = rendered.findIndex(d => d.id === id);
+    const cat = deck.categoryId || null;
+    const sub = favFirst(decks.filter(d => d.kind === deck.kind && (d.categoryId || null) === cat));
+    const i = sub.findIndex(d => d.id === id);
     const j = i + dir;
-    if (i < 0 || j < 0 || j >= rendered.length) return;
-    if (!!rendered[j].favorite !== !!deck.favorite) return; // Fav/Nicht-Fav nicht mischen
-    const tmp = rendered[i]; rendered[i] = rendered[j]; rendered[j] = tmp;
-    reorderKind(deck.kind, rendered.map(d => d.id));
+    if (i < 0 || j < 0 || j >= sub.length) return;
+    if (!!sub[j].favorite !== !!deck.favorite) return; // Fav/Nicht-Fav nicht mischen
+    const tmp = sub[i]; sub[i] = sub[j]; sub[j] = tmp;
+    commitSubOrder(deck.kind, sub.map(d => d.id));
     Store.saveDecks(state.decksState);
     renderDeckList();
   }
 
-  // Drop: setzt dragId relativ zu targetId in der gerenderten Reihenfolge der
-  // Gruppe ein (after=true → dahinter). favFirst pinnt Favoriten beim Re-Render
-  // wieder nach oben, sodass die relative Reihenfolge je Untergruppe zaehlt.
+  // Drop eines Decks auf ein anderes Deck: in dessen Kategorie einsortieren (falls
+  // abweichend, wird zuerst umgehaengt) und relativ zu targetId einfuegen.
   function moveDeckRelative(dragId, targetId, after) {
     const decks = state.decksState.decks;
     const deck = decks.find(d => d.id === dragId);
-    if (!deck) return;
-    const rendered = favFirst(decks.filter(d => d.kind === deck.kind)).map(d => d.id);
-    const from = rendered.indexOf(dragId);
+    const target = decks.find(d => d.id === targetId);
+    if (!deck || !target || deck.kind !== target.kind) return;
+    if ((deck.categoryId || null) !== (target.categoryId || null)) {
+      Store.assignDeckToCategory(state.decksState, dragId, target.categoryId || null);
+    }
+    const cat = deck.categoryId || null;
+    const sub = favFirst(decks.filter(d => d.kind === deck.kind && (d.categoryId || null) === cat)).map(d => d.id);
+    const from = sub.indexOf(dragId);
     if (from < 0) return;
-    rendered.splice(from, 1);
-    let to = rendered.indexOf(targetId);
+    sub.splice(from, 1);
+    let to = sub.indexOf(targetId);
     if (to < 0) return;
     if (after) to += 1;
-    rendered.splice(to, 0, dragId);
-    reorderKind(deck.kind, rendered);
+    sub.splice(to, 0, dragId);
+    commitSubOrder(deck.kind, sub);
+    Store.saveDecks(state.decksState);
+    renderDeckList();
+  }
+
+  // ── Kategorien sortieren ──────────────────────────────────────────────────
+  function moveCategory(catId, dir) {
+    const cat = (state.decksState.categories || []).find(c => c.id === catId);
+    if (!cat) return;
+    const ordered = catsOfKind(cat.kind).map(c => c.id);
+    const i = ordered.indexOf(catId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ordered.length) return;
+    const tmp = ordered[i]; ordered[i] = ordered[j]; ordered[j] = tmp;
+    Store.reorderCategories(state.decksState, cat.kind, ordered);
+    Store.saveDecks(state.decksState);
+    renderDeckList();
+  }
+
+  function moveCategoryRelative(dragId, targetId, after) {
+    const cat = (state.decksState.categories || []).find(c => c.id === dragId);
+    if (!cat) return;
+    const ordered = catsOfKind(cat.kind).map(c => c.id);
+    const from = ordered.indexOf(dragId);
+    if (from < 0) return;
+    ordered.splice(from, 1);
+    let to = ordered.indexOf(targetId);
+    if (to < 0) return;
+    if (after) to += 1;
+    ordered.splice(to, 0, dragId);
+    Store.reorderCategories(state.decksState, cat.kind, ordered);
     Store.saveDecks(state.decksState);
     renderDeckList();
   }
@@ -572,6 +799,10 @@
           <select id="deck-kind" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm">
             ${['deck','wants','trade'].map(k => `<option value="${k}" ${deck.kind === k ? 'selected' : ''}>${k}</option>`).join('')}
           </select>
+          <select id="deck-category" class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm" title="Kategorie">
+            <option value="">Ohne Kategorie</option>
+            ${catsOfKind(deck.kind).map(c => `<option value="${escapeAttr(c.id)}" ${deck.categoryId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+          </select>
         </div>
         <div class="text-xs text-slate-400 mt-1">${total} Karten · ${deck.entries.length} Einträge</div>
         ${costLine ? `<div class="text-sm mt-1">${costLine}</div>` : ''}
@@ -632,6 +863,16 @@
     });
     scopeEl.querySelector('#deck-kind').addEventListener('change', e => {
       deck.kind = e.target.value;
+      // Kind-Wechsel macht die alte Kategorie ungueltig (anderer kind) → loesen.
+      deck.categoryId = null;
+      deck.updatedAt = new Date().toISOString();
+      Store.saveDecks(state.decksState);
+      renderDeckList();
+      renderDeckDetail(); // Kategorie-Dropdown auf neuen kind aktualisieren
+    });
+    const catSel = scopeEl.querySelector('#deck-category');
+    if (catSel) catSel.addEventListener('change', e => {
+      Store.assignDeckToCategory(state.decksState, deck.id, e.target.value || null);
       deck.updatedAt = new Date().toISOString();
       Store.saveDecks(state.decksState);
       renderDeckList();

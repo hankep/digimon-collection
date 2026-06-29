@@ -460,13 +460,47 @@
     return DECK_KINDS.includes(k) ? k : 'deck';
   }
 
+  function genId(prefix) {
+    return prefix + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
+
+  // Normalisiert categories + deck.categoryId in-place. Wird an beiden Choke-Points
+  // (loadDecks/saveDecks) aufgerufen, damit Alt-/Import-/Remote-Daten konsistent
+  // sind: categories als Array, jede Kategorie mit gueltigem kind + numeric order,
+  // und verwaiste deck.categoryId (Kategorie weg oder kind passt nicht) → null.
+  function normalizeCategories(state) {
+    if (!Array.isArray(state.categories)) state.categories = [];
+    const valid = new Map(); // id → kind
+    state.categories = state.categories
+      .filter(c => c && typeof c.id === 'string')
+      .map((c, i) => {
+        const kind = normalizeKind(c.kind);
+        const cat = {
+          id: c.id,
+          kind,
+          name: String(c.name == null ? '' : c.name),
+          order: Number.isFinite(c.order) ? c.order : i
+        };
+        valid.set(cat.id, cat.kind);
+        return cat;
+      });
+    if (Array.isArray(state.decks)) {
+      for (const d of state.decks) {
+        if (d.categoryId == null) { d.categoryId = null; continue; }
+        // verwaist oder kind-Mismatch → loesen
+        if (valid.get(d.categoryId) !== normalizeKind(d.kind)) d.categoryId = null;
+      }
+    }
+  }
+
   function loadDecks() {
-    const state = readJSON(DECKS_KEY, { version: 1, decks: [], updatedAt: null });
+    const state = readJSON(DECKS_KEY, { version: 1, decks: [], categories: [], updatedAt: null });
     // Self-Heal: vorhandene kaputte kinds beim Laden korrigieren, damit UI,
     // Dropdown und Sync konsistent sind. Persistiert wird beim naechsten save.
     if (state && Array.isArray(state.decks)) {
       for (const d of state.decks) d.kind = normalizeKind(d.kind);
     }
+    if (state) normalizeCategories(state);
     return state;
   }
 
@@ -478,6 +512,7 @@
     if (state && Array.isArray(state.decks)) {
       for (const d of state.decks) d.kind = normalizeKind(d.kind);
     }
+    if (state) normalizeCategories(state);
     if (opts.touch !== false) state.updatedAt = new Date().toISOString();
     writeJSON(DECKS_KEY, state);
     if (!opts.silent) {
@@ -491,6 +526,7 @@
       id: 'd_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
       name: name || 'Untitled',
       kind: normalizeKind(kind),
+      categoryId: null,
       notes: '',
       createdAt: now,
       updatedAt: now,
@@ -521,6 +557,7 @@
       id: 'd_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
       name: candidate,
       kind: src.kind,
+      categoryId: src.categoryId || null,
       notes: src.notes || '',
       favorite: !!src.favorite,
       // Kopie startet immer privat — kein versehentliches Mit-Sharen.
@@ -532,6 +569,64 @@
     };
     state.decks.push(copy);
     return copy;
+  }
+
+  // ── Kategorien ────────────────────────────────────────────────────────────
+  // Eigene, benannte Unterkategorien INNERHALB eines kind (deck/wants/trade).
+  // Rein lokale Organisation; reisen via LWW-Blob mit, gehen aber nicht in
+  // shared_decks. Collapse-Zustand liegt separat in den UI-Prefs (nicht im Blob).
+
+  function ensureCategories(state) {
+    if (!Array.isArray(state.categories)) state.categories = [];
+    return state.categories;
+  }
+
+  function createCategory(state, kind, name) {
+    const cats = ensureCategories(state);
+    const k = normalizeKind(kind);
+    const maxOrder = cats.filter(c => c.kind === k)
+      .reduce((m, c) => Math.max(m, c.order), -1);
+    const cat = { id: genId('c_'), kind: k, name: name || 'Neue Kategorie', order: maxOrder + 1 };
+    cats.push(cat);
+    return cat;
+  }
+
+  function renameCategory(state, categoryId, name) {
+    const cat = ensureCategories(state).find(c => c.id === categoryId);
+    if (cat) cat.name = name || cat.name;
+    return cat;
+  }
+
+  // Loescht die Kategorie und loest die Zuordnung aller betroffenen Decks (Decks
+  // bleiben erhalten, rutschen nach "Ohne Kategorie").
+  function deleteCategory(state, categoryId) {
+    state.categories = ensureCategories(state).filter(c => c.id !== categoryId);
+    for (const d of (state.decks || [])) {
+      if (d.categoryId === categoryId) d.categoryId = null;
+    }
+  }
+
+  // Schreibt order gemaess orderedIds neu — nur fuer das angegebene kind. Andere
+  // kinds bleiben unberuehrt. Safety: orderedIds muss exakt die Kategorien des
+  // kind abdecken, sonst no-op (analog reorderKind in der UI).
+  function reorderCategories(state, kind, orderedIds) {
+    const k = normalizeKind(kind);
+    const cats = ensureCategories(state);
+    const inKind = cats.filter(c => c.kind === k);
+    if (orderedIds.length !== inKind.length) return;
+    const byId = new Map(inKind.map(c => [c.id, c]));
+    if (!orderedIds.every(id => byId.has(id))) return;
+    orderedIds.forEach((id, i) => { byId.get(id).order = i; });
+  }
+
+  // Setzt deck.categoryId. Validierung: categoryId == null erlaubt; sonst muss die
+  // Kategorie existieren UND denselben kind wie das Deck haben, sonst → null.
+  function assignDeckToCategory(state, deckId, categoryId) {
+    const deck = (state.decks || []).find(d => d.id === deckId);
+    if (!deck) return;
+    if (categoryId == null) { deck.categoryId = null; return; }
+    const cat = ensureCategories(state).find(c => c.id === categoryId);
+    deck.categoryId = (cat && cat.kind === normalizeKind(deck.kind)) ? categoryId : null;
   }
 
   // Wird auch beim Löschen eines Decks aufgerufen: gibt alle ihm zugewiesenen Kopien frei.
@@ -640,6 +735,11 @@
     createDeck,
     deleteDeck,
     duplicateDeck,
+    createCategory,
+    renameCategory,
+    deleteCategory,
+    reorderCategories,
+    assignDeckToCategory,
     addToDeck,
     computeDeckCost,
     computeEntryCost
