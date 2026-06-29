@@ -5,11 +5,23 @@
     decksState: null,
     activeDeckId: null,
     pickerQuery: '',
-    pickerColor: null,
+    pickerColors: [],
     pickerType: null,
+    pickerRarity: null,
+    pickerLevels: [],
     pickerTraitOwn: null,
     pickerTraitInEffect: null,
+    pickerSortBy: 'id',
+    pickerSortDir: 'asc',
+    // Besitz-Filter (gegenseitig exklusiv). Im Picker default ALLE aus — anders als
+    // in der Collection, da man hier auch (noch) nicht besessene Karten zu Listen/
+    // Wants hinzufuegt.
+    pickerMissingOnly: false,
     pickerOwnedOnly: false,
+    pickerOwnedRealOnly: false,
+    pickerProxyOnly: false,
+    pickerAvailableOnly: false,
+    pickerAltOnly: false,
     pickerShowAlts: false,
     pickerOpen: false,  // Mobile-Collapse fuer Picker; auf Desktop irrelevant (Summary versteckt, details immer open)
     deckPickerSplit: 0.5, // 0..1 — Anteil des PICKER am Detail+Picker-Bereich (Desktop). 0.5 = 50/50.
@@ -24,6 +36,14 @@
   function isMainWants(id) { return id === MAIN_WANTS_ID; }
   let rootEl = null;
   let collectionCache = null;
+
+  // Filter-Konstanten — gespiegelt aus der Collection-Ansicht, damit der Picker
+  // dieselben Sortierungen/Filter bietet.
+  const ALT_RARITY = 'Alternative Art';
+  const RARITY_FILTER_ORDER = [ALT_RARITY, 'Secret Rare', 'UR', 'Super Rare', 'Rare', 'Uncommon', 'Common', 'Promo'];
+  const PICKER_COLOR_ORDER = ['Red', 'Blue', 'Green', 'Yellow', 'Black', 'Purple', 'White'];
+  const PICKER_LEVELS = [2, 3, 4, 5, 6, 7];
+  function pickerRarityLabel(r) { return (window.CardDB && CardDB.rarityShort) ? CardDB.rarityShort(r) : (r || ''); }
 
   function init(el) {
     rootEl = el;
@@ -78,14 +98,17 @@
           <div class="space-y-2 mb-2 shrink-0">
             <input id="picker-search" type="text" placeholder="Name oder ID…" value="${escapeAttr(state.pickerQuery)}"
               class="bg-slate-800 border border-slate-600 rounded px-3 py-2 w-full" />
-            <div class="flex gap-2 flex-wrap">
-              <select id="picker-color" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]">
-                <option value="">Farbe: alle</option>
-                ${CardDB.colors.map(c => `<option value="${c}" ${state.pickerColor === c ? 'selected' : ''}>${c}</option>`).join('')}
-              </select>
+            <div id="picker-color-pills" class="flex gap-1 flex-wrap"></div>
+            <div class="flex gap-2 flex-wrap items-center">
               <select id="picker-type" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]">
                 <option value="">Typ: alle</option>
                 ${CardDB.types.map(t => `<option value="${t}" ${state.pickerType === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+              <select id="picker-rarity" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]">
+                <option value="">Rarity: alle</option>
+                ${RARITY_FILTER_ORDER
+                  .filter(r => r === ALT_RARITY || CardDB.rarities.includes(r))
+                  .map(r => `<option value="${escapeAttr(r)}" ${state.pickerRarity === r ? 'selected' : ''}>${escapeHtml(pickerRarityLabel(r))}</option>`).join('')}
               </select>
               <select id="picker-trait-own" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]" title="Filtert Karten mit diesem Trait (digi_type).">
                 <option value="">Trait: alle</option>
@@ -95,13 +118,40 @@
                 <option value="">Trait im Effekt: alle</option>
                 ${(CardDB.traits || []).map(t => `<option value="${escapeAttr(t)}" ${state.pickerTraitInEffect === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
               </select>
-              <label class="flex items-center gap-1 text-xs">
-                <input id="picker-owned" type="checkbox" ${state.pickerOwnedOnly ? 'checked' : ''} />
-                Im Besitz
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-slate-400">Lv</span>
+                <div id="picker-level-pills" class="flex gap-1 flex-wrap"></div>
+              </div>
+              <select id="picker-sort-by" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm min-h-[40px]">
+                <option value="id"    ${state.pickerSortBy === 'id' ? 'selected' : ''}>Sort: ID</option>
+                <option value="name"  ${state.pickerSortBy === 'name' ? 'selected' : ''}>Sort: Name</option>
+                <option value="level" ${state.pickerSortBy === 'level' ? 'selected' : ''}>Sort: Level</option>
+                <option value="cost"  ${state.pickerSortBy === 'cost' ? 'selected' : ''}>Sort: Play-Cost</option>
+                <option value="price" ${state.pickerSortBy === 'price' ? 'selected' : ''}>Sort: Preis (CM low)</option>
+              </select>
+              <button id="picker-sort-dir" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 min-h-[40px] w-10" title="Richtung">${state.pickerSortDir === 'asc' ? '▲' : '▼'}</button>
+            </div>
+            <div class="flex gap-x-3 gap-y-1 flex-wrap items-center text-xs">
+              <label class="flex items-center gap-1" title="Nur Karten, die du (noch) nicht besitzt">
+                <input id="picker-missing" type="checkbox" ${state.pickerMissingOnly ? 'checked' : ''} /> Nur fehlende
               </label>
-              <label class="flex items-center gap-1 text-xs" title="Alt-Arts als eigene Einträge im Picker">
-                <input id="picker-alts" type="checkbox" ${state.pickerShowAlts ? 'checked' : ''} />
-                Alt-Arts einzeln
+              <label class="flex items-center gap-1">
+                <input id="picker-owned" type="checkbox" ${state.pickerOwnedOnly ? 'checked' : ''} /> Im Besitz
+              </label>
+              <label class="flex items-center gap-1" title="Mind. eine echte Kopie (Proxy-only ausgeschlossen)">
+                <input id="picker-owned-real" type="checkbox" ${state.pickerOwnedRealOnly ? 'checked' : ''} /> ohne Proxies
+              </label>
+              <label class="flex items-center gap-1">
+                <input id="picker-proxy" type="checkbox" ${state.pickerProxyOnly ? 'checked' : ''} /> Nur Proxy
+              </label>
+              <label class="flex items-center gap-1" title="Mind. eine freie (keiner Liste zugewiesene) Kopie">
+                <input id="picker-available" type="checkbox" ${state.pickerAvailableOnly ? 'checked' : ''} /> Nur verfügbar
+              </label>
+              <label class="flex items-center gap-1" title="Alt-Arts als eigene Einträge im Picker">
+                <input id="picker-alts" type="checkbox" ${state.pickerShowAlts ? 'checked' : ''} /> Alt-Arts einzeln
+              </label>
+              <label class="flex items-center gap-1" title="Nur Alt-Art-Varianten anzeigen">
+                <input id="picker-alt-only" type="checkbox" ${state.pickerAltOnly ? 'checked' : ''} /> Nur Alt-Arts
               </label>
             </div>
           </div>
@@ -131,11 +181,11 @@
     rootEl.querySelector('#picker-search').addEventListener('input', debounce(e => {
       state.pickerQuery = e.target.value; renderPicker();
     }, 200));
-    rootEl.querySelector('#picker-color').addEventListener('change', e => {
-      state.pickerColor = e.target.value || null; renderPicker();
-    });
     rootEl.querySelector('#picker-type').addEventListener('change', e => {
       state.pickerType = e.target.value || null; renderPicker();
+    });
+    rootEl.querySelector('#picker-rarity').addEventListener('change', e => {
+      state.pickerRarity = e.target.value || null; renderPicker();
     });
     rootEl.querySelector('#picker-trait-own').addEventListener('change', e => {
       state.pickerTraitOwn = e.target.value || null; renderPicker();
@@ -143,14 +193,36 @@
     rootEl.querySelector('#picker-trait-effect').addEventListener('change', e => {
       state.pickerTraitInEffect = e.target.value || null; renderPicker();
     });
-    rootEl.querySelector('#picker-owned').addEventListener('change', e => {
-      state.pickerOwnedOnly = e.target.checked; renderPicker();
+    rootEl.querySelector('#picker-sort-by').addEventListener('change', e => {
+      state.pickerSortBy = e.target.value; renderPicker();
     });
+    rootEl.querySelector('#picker-sort-dir').addEventListener('click', e => {
+      state.pickerSortDir = state.pickerSortDir === 'asc' ? 'desc' : 'asc';
+      e.currentTarget.textContent = state.pickerSortDir === 'asc' ? '▲' : '▼';
+      renderPicker();
+    });
+    rootEl.querySelector('#picker-missing').addEventListener('change', e => setPickerOwnership(e.target.checked ? 'missing' : null));
+    rootEl.querySelector('#picker-owned').addEventListener('change', e => setPickerOwnership(e.target.checked ? 'owned' : null));
+    rootEl.querySelector('#picker-owned-real').addEventListener('change', e => setPickerOwnership(e.target.checked ? 'owned-real' : null));
+    rootEl.querySelector('#picker-proxy').addEventListener('change', e => setPickerOwnership(e.target.checked ? 'proxy' : null));
+    rootEl.querySelector('#picker-available').addEventListener('change', e => setPickerOwnership(e.target.checked ? 'available' : null));
     rootEl.querySelector('#picker-alts').addEventListener('change', e => {
       state.pickerShowAlts = e.target.checked;
       Prefs.set('showAlts', state.pickerShowAlts);
       renderPicker();
     });
+    rootEl.querySelector('#picker-alt-only').addEventListener('change', e => {
+      state.pickerAltOnly = e.target.checked;
+      // "Nur Alt-Arts" impliziert "Alt-Arts einzeln" (sonst gibt es keine Alt-Eintraege).
+      if (state.pickerAltOnly && !state.pickerShowAlts) {
+        state.pickerShowAlts = true;
+        Prefs.set('showAlts', true);
+        const a = rootEl.querySelector('#picker-alts'); if (a) a.checked = true;
+      }
+      renderPicker();
+    });
+    renderPickerColorPills();
+    renderPickerLevelPills();
     const pickerDetails = rootEl.querySelector('#picker-details');
     if (pickerDetails) {
       pickerDetails.addEventListener('toggle', e => {
@@ -1443,32 +1515,99 @@
     renderDeckList();
   }
 
+  // Color-/Level-Pills (gespiegelt aus der Collection). Re-rendern sich selbst
+  // beim Toggle und stossen renderPicker() an.
+  function renderPickerColorPills() {
+    const wrap = rootEl.querySelector('#picker-color-pills');
+    if (!wrap) return;
+    const ordered = CardDB.colors.slice().sort((a, b) => {
+      const ai = PICKER_COLOR_ORDER.indexOf(a), bi = PICKER_COLOR_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+    wrap.innerHTML = ordered.map(c => {
+      const active = state.pickerColors.includes(c);
+      return `<button data-picker-color="${c}" class="color-pill px-2 py-1 rounded text-xs font-bold color-${c} ${active ? 'ring-2 ring-amber-400' : 'opacity-60 hover:opacity-100'}">${c}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-picker-color]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const c = btn.dataset.pickerColor;
+        if (state.pickerColors.includes(c)) state.pickerColors = state.pickerColors.filter(x => x !== c);
+        else state.pickerColors = state.pickerColors.concat([c]);
+        renderPickerColorPills(); renderPicker();
+      });
+    });
+  }
+
+  function renderPickerLevelPills() {
+    const wrap = rootEl.querySelector('#picker-level-pills');
+    if (!wrap) return;
+    wrap.innerHTML = PICKER_LEVELS.map(lv => {
+      const active = state.pickerLevels.includes(lv);
+      return `<button data-picker-level="${lv}" class="px-2 py-1 rounded text-xs font-bold border ${active ? 'bg-amber-500 text-slate-900 border-amber-500' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'}">${lv}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-picker-level]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const lv = Number(btn.dataset.pickerLevel);
+        if (state.pickerLevels.includes(lv)) state.pickerLevels = state.pickerLevels.filter(x => x !== lv);
+        else state.pickerLevels = state.pickerLevels.concat([lv]);
+        renderPickerLevelPills(); renderPicker();
+      });
+    });
+  }
+
+  // Besitz-Filter sind gegenseitig exklusiv (wie in der Collection): genau einer
+  // oder keiner. Setzt State + synchronisiert die Checkboxen, dann Re-Render.
+  function setPickerOwnership(mode) {
+    state.pickerMissingOnly   = mode === 'missing';
+    state.pickerOwnedOnly     = mode === 'owned';
+    state.pickerOwnedRealOnly = mode === 'owned-real';
+    state.pickerProxyOnly     = mode === 'proxy';
+    state.pickerAvailableOnly = mode === 'available';
+    const map = { 'picker-missing': 'missing', 'picker-owned': 'owned', 'picker-owned-real': 'owned-real', 'picker-proxy': 'proxy', 'picker-available': 'available' };
+    for (const id in map) {
+      const cb = rootEl.querySelector('#' + id);
+      if (cb) cb.checked = (mode === map[id]);
+    }
+    renderPicker();
+  }
+
   // Reine Filter-/Sammel-Logik. Liefert die ersten 100 Entries plus Flags fuer
   // die beiden Empty-States. Kein DOM-Zugriff — laesst sich isoliert testen.
+  // Spiegelt Filter + Sortierung der Collection-Ansicht.
   function buildPickerCandidates(vIdx) {
     const q = state.pickerQuery.trim();
-    const hasFilter = !!(q || state.pickerColor || state.pickerType || state.pickerTraitOwn || state.pickerTraitInEffect || state.pickerOwnedOnly);
+    const ownershipMode = state.pickerMissingOnly ? 'missing'
+      : state.pickerOwnedOnly ? 'owned'
+      : state.pickerOwnedRealOnly ? 'owned-real'
+      : state.pickerProxyOnly ? 'proxy'
+      : state.pickerAvailableOnly ? 'available'
+      : null;
+    const hasFilter = !!(q || state.pickerColors.length || state.pickerType || state.pickerRarity
+      || state.pickerLevels.length || state.pickerTraitOwn || state.pickerTraitInEffect
+      || ownershipMode || state.pickerAltOnly);
+
     let results = CardDB.search(q, {
-      color: state.pickerColor,
+      colors: state.pickerColors,
       type: state.pickerType,
+      levels: state.pickerLevels,
       traitOwn: state.pickerTraitOwn,
       traitInEffect: state.pickerTraitInEffect,
-      sortBy: 'name'
+      sortBy: state.pickerSortBy,
+      sortDir: state.pickerSortDir
     });
-    if (state.pickerOwnedOnly) {
-      results = results.filter(c => {
-        for (const v of CardDB.variantsOf(c)) {
-          const s = vIdx[v.key];
-          if (s && (s.real + s.proxy) > 0) return true;
-        }
-        return false;
-      });
-    }
-    // Bei showAlts pro Variant einen Eintrag erzeugen. Auch wenn der Such-
-    // begriff eine Card-ID enthaelt (z.B. "BT25-092"), zeigen wir saemtliche
-    // Varianten der Karte — sonst waere die Suche frustrierend.
+
+    // Variant-Index-Helfer (analog Collection).
+    const vOwned = k => { const s = vIdx[k]; return s ? (s.real + s.proxy) : 0; };
+    const vReal  = k => { const s = vIdx[k]; return s ? s.real : 0; };
+    const vProxy = k => { const s = vIdx[k]; return s ? s.proxy : 0; };
+    const vFree  = k => { const s = vIdx[k]; return s ? s.freeReal : 0; };
+    const anyVariant = (card, fn) => CardDB.variantsOf(card).some(v => fn(v.key));
+
+    // Alt-Varianten als eigene Eintraege erzeugen, wenn showAlts, eine Card-ID in
+    // der Suche, "Nur Alt-Arts" oder Rarity=Alt aktiv ist — sonst gaebe es keine
+    // Alt-Eintraege, gegen die diese Filter greifen koennten.
     const queryHasCardId = /\b[A-Za-z]+\d*-\d+[A-Za-z]?\b/.test(state.pickerQuery || '');
-    const expandAlts = state.pickerShowAlts || queryHasCardId;
+    const expandAlts = state.pickerShowAlts || queryHasCardId || state.pickerAltOnly || state.pickerRarity === ALT_RARITY;
     let entries;
     if (expandAlts) {
       entries = [];
@@ -1480,6 +1619,31 @@
     } else {
       entries = results.map(card => ({ card, variant: CardDB.mainVariantKey(card), isAlt: false, altIdx: 0 }));
     }
+
+    // Rarity (entry-basiert: Alt-Arts zaehlen als "Alternative Art").
+    if (state.pickerRarity) {
+      entries = entries.filter(e => (e.isAlt ? ALT_RARITY : (e.card.rarity || '')) === state.pickerRarity);
+    }
+    // Nur Alt-Arts.
+    if (state.pickerAltOnly) {
+      entries = entries.filter(e => e.isAlt);
+    }
+    // Besitz-Filter. Bei showAlts pro Variante, sonst aggregiert ueber alle
+    // Varianten der Karte (analog Collection).
+    if (ownershipMode) {
+      const perVariant = state.pickerShowAlts;
+      entries = entries.filter(e => {
+        switch (ownershipMode) {
+          case 'missing':    return perVariant ? vOwned(e.variant) === 0 : !anyVariant(e.card, k => vOwned(k) > 0);
+          case 'owned':      return perVariant ? vOwned(e.variant) > 0   : anyVariant(e.card, k => vOwned(k) > 0);
+          case 'owned-real': return perVariant ? vReal(e.variant) > 0    : anyVariant(e.card, k => vReal(k) > 0);
+          case 'proxy':      return perVariant ? vProxy(e.variant) > 0   : anyVariant(e.card, k => vProxy(k) > 0);
+          case 'available':  return perVariant ? vFree(e.variant) > 0    : anyVariant(e.card, k => vFree(k) > 0);
+          default: return true;
+        }
+      });
+    }
+
     return { entries: entries.slice(0, 100), hasFilter };
   }
 
