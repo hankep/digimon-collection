@@ -303,6 +303,12 @@
         if (state.committed > 0) {
           Store.saveCollection(state.coll);
           window.Util.toast(`${state.committed} Karte(n) erfasst.`, 'success');
+          // Den aktiven Tab (i.d.R. Collection, von wo der Button kommt) frisch aus
+          // dem Store rendern. Ohne das bliebe das Grid auf dem alten Stand, weil
+          // 'collection-changed' nur die NICHT-aktiven Tabs als dirty markiert und
+          // die Collection keinen eigenen Listener hat — die Karten waeren zwar
+          // gespeichert, aber erst nach Reload sichtbar.
+          if (window.App && App.refreshActiveTab) App.refreshActiveTab();
         }
         modal = null;
       },
