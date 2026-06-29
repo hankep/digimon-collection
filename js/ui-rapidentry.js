@@ -559,8 +559,8 @@
       <div id="re-preview" class="bg-slate-900 border border-slate-700 rounded p-3 mb-3 min-h-[120px] shrink-0"></div>
 
       <div id="re-scan" class="hidden flex-1 min-h-0 flex flex-col gap-2 mb-1">
-        <div class="relative bg-black rounded overflow-hidden shrink-0" style="max-height:42vh">
-          <video id="re-video" playsinline muted class="w-full object-cover" style="aspect-ratio:4/3"></video>
+        <div class="relative bg-black rounded overflow-hidden shrink-0">
+          <video id="re-video" playsinline muted class="w-full block" style="height:auto"></video>
           <div class="absolute inset-0 pointer-events-none">
             <div class="absolute border-2 border-amber-400 rounded" style="left:5%;top:5%;width:90%;height:30%"></div>
             <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Oberen Karten-Block (Name + Nummer) in den gelben Rahmen halten</div>
