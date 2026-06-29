@@ -587,7 +587,7 @@
           <video id="re-video" playsinline muted class="w-full block" style="height:auto"></video>
           <div class="absolute inset-0 pointer-events-none">
             <div class="absolute inset-0 border-2 border-amber-400/70 rounded"></div>
-            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Oberen Karten-Bereich (Name + Nummer) formatfüllend in die Kamera halten — das ganze Bild wird gelesen</div>
+            <div class="absolute left-2 bottom-2 right-2 text-[11px] bg-black/60 text-amber-200 px-2 py-1 rounded">Namensleiste der Karte (Name + Nummer, unteres Drittel) formatfüllend in die Kamera — das ganze Bild wird gelesen</div>
           </div>
         </div>
         <div id="re-scan-status" class="text-xs text-slate-400 min-h-[1rem] shrink-0"></div>
