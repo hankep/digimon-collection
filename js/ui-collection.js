@@ -78,6 +78,9 @@
             <input id="search" type="text" placeholder="Suche Name oder ID…" value="${escapeAttr(state.query)}"
               class="bg-slate-800 border border-slate-600 rounded px-3 py-2 min-h-[40px] flex-1 min-w-[140px]" />
 
+            <button id="rapid-entry" class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-2 rounded text-sm font-semibold min-h-[40px] whitespace-nowrap"
+              title="Schnellerfassung: Set wählen, Nummern tippen — ideal beim Display-Öffnen">⚡ Schnellerfassung</button>
+
             <div id="color-pills" class="flex gap-1 flex-wrap"></div>
 
             <select id="filter-type" class="bg-slate-800 border border-slate-600 rounded px-2 py-2 min-h-[40px]">
@@ -244,6 +247,9 @@
       renderGrid(); renderStats();
     });
     rootEl.querySelector('#proxies-export').addEventListener('click', exportProxies);
+    rootEl.querySelector('#rapid-entry').addEventListener('click', () => {
+      if (window.UIRapidEntry) UIRapidEntry.open();
+    });
     rootEl.querySelector('#reset-filters').addEventListener('click', () => {
       state.query = '';
       state.colors = [];

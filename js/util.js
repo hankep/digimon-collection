@@ -48,7 +48,8 @@
     wantsTradeSubTab:  'wantsTradeSubTab',  // 'wants' | 'trade' — Sub-Tab im Header-Tab 'Wants & Trade'
     sharedSubTab:      'sharedSubTab',      // 'deck' | 'wants' | 'trade' — Sub-Tab im Shared Space
     cardImportMode:    'cardImportMode',    // 'cardmarket' | 'standard' — Modus im Karten-Import
-    deckCatCollapsed:  'deckCatCollapsed'   // { '<catId>'|'uncat:<kind>': true } — eingeklappte Kategorien (lokal, nicht gesynct)
+    deckCatCollapsed:  'deckCatCollapsed',  // { '<catId>'|'uncat:<kind>': true } — eingeklappte Kategorien (lokal, nicht gesynct)
+    rapidEntrySet:     'rapidEntrySet'       // zuletzt in der Schnellerfassung gewähltes Set (z.B. 'BT26')
   });
 
   // ── Event-Bus ─────────────────────────────────────────────────────────────

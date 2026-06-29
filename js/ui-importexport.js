@@ -39,7 +39,12 @@
 
         <hr class="border-slate-700 my-6" />
 
-        <h2 class="text-lg font-bold mb-2">Karten-Import</h2>
+        <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <h2 class="text-lg font-bold">Karten-Import</h2>
+          <button id="io-rapid-entry" class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-2 rounded text-sm font-semibold whitespace-nowrap"
+            title="Schnellerfassung: Set wählen, Nummern tippen — ideal beim Display-Öffnen">⚡ Schnellerfassung</button>
+        </div>
+        <p class="text-xs text-slate-400 mb-3">Frisches Display ausgepackt? Die <b>Schnellerfassung</b> ist der schnellste Weg, viele neue Karten ohne Tippen ganzer Zeilen einzutragen.</p>
         <div class="flex gap-2 mb-3" id="cm-mode-tabs">
           <button data-cm-mode="cardmarket" class="px-3 py-1.5 rounded text-sm font-semibold cm-mode-btn">Cardmarket</button>
           <button data-cm-mode="standard" class="px-3 py-1.5 rounded text-sm font-semibold cm-mode-btn">Standard</button>
@@ -94,6 +99,9 @@
     rootEl.querySelector('#cm-preview').addEventListener('click', cmPreview);
     rootEl.querySelector('#cm-apply').addEventListener('click', cmApply);
     rootEl.querySelector('#trade-open').addEventListener('click', openTradeDialog);
+    rootEl.querySelector('#io-rapid-entry').addEventListener('click', () => {
+      if (window.UIRapidEntry) UIRapidEntry.open();
+    });
 
     rootEl.querySelectorAll('#cm-mode-tabs [data-cm-mode]').forEach(btn => {
       btn.addEventListener('click', () => setCardImportMode(btn.dataset.cmMode));
