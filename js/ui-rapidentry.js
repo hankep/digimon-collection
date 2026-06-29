@@ -40,6 +40,29 @@
 
   function normName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
+  // Fuzzy-Substring-Distanz (Sellers): kleinste Editier-Distanz von `needle` zu
+  // IRGENDEINEM Teilstück von `hay`. Erste Zeile = 0 (Start beliebig), Antwort =
+  // Minimum der letzten Zeile (Ende beliebig). So matcht ein Kartenname auch im
+  // Rauschen (Lv/Traits/ID) und toleriert OCR-Lesefehler.
+  function fuzzySubstringDistance(needle, hay) {
+    const n = needle.length, m = hay.length;
+    if (!n) return 0;
+    if (!m) return n;
+    let prev = new Array(m + 1).fill(0);
+    for (let i = 1; i <= n; i++) {
+      const cur = new Array(m + 1);
+      cur[0] = i;
+      for (let j = 1; j <= m; j++) {
+        const cost = needle.charCodeAt(i - 1) === hay.charCodeAt(j - 1) ? 0 : 1;
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      }
+      prev = cur;
+    }
+    let min = prev[0];
+    for (let j = 1; j <= m; j++) if (prev[j] < min) min = prev[j];
+    return min;
+  }
+
   function buildNameIndex(setCode) {
     const out = [];
     const cards = (window.CardDB && CardDB.bySet.get(setCode)) || [];
@@ -384,15 +407,20 @@
     //    Fremdkarte ist) — das ist das spezifischste Signal.
     const m = up.match(/[A-Z]{1,3}\d{1,2}-\d{1,4}/);
     if (m) { const c = CardDB.byId.get(m[0]); if (c) return c; }
-    // 2) Namens-Match im gelockten Set: längster Kartenname, der als Teilstring
-    //    im (entrümpelten) OCR-Text vorkommt. Längster gewinnt, damit "WARGREYMON"
-    //    nicht fälschlich auf "GREYMON" matcht.
-    const norm = up.replace(/[^A-Z0-9]/g, '');
+    // 2) Fuzzy-Namens-Match im gelockten Set: kleinster relativer Editierabstand
+    //    des Kartennamens zu einem Teilstück des OCR-Texts. Toleriert Lesefehler.
+    //    Bestes Verhältnis gewinnt; bei Gleichstand der längere Name (damit
+    //    "WARGREYMON" nicht auf "GREYMON" fällt).
+    const norm = up.replace(/[^A-Z0-9]/g, '').slice(0, 80);
     let best = null;
     for (const e of state.nameIdx) {
-      if (norm.includes(e.n) && (!best || e.n.length > best.n.length)) best = e;
+      const ratio = fuzzySubstringDistance(e.n, norm) / e.n.length;
+      if (ratio > 0.25) continue;
+      if (!best || ratio < best.ratio || (ratio === best.ratio && e.n.length > best.e.n.length)) {
+        best = { e, ratio };
+      }
     }
-    if (best) return best.card;
+    if (best) return best.e.card;
     // 3) Sonst die Nummer im gelockten Set. Set-Code entfernen, dann mehrstellige
     //    Zifferngruppen zuerst (Sammler-Nr. 3-stellig "004"; Level/Parallel-Nr.
     //    sind kürzer → durch Längen-Sortierung nachrangig).
