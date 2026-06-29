@@ -161,7 +161,7 @@
       <div class="flex gap-3">
         <img src="${variant ? CardDB.imagePath(variant.key) : ''}" loading="lazy"
           onerror="this.style.visibility='hidden'"
-          class="w-20 shrink-0 aspect-[5/7] object-cover rounded bg-slate-900" alt="" />
+          class="w-40 sm:w-48 shrink-0 aspect-[5/7] object-contain rounded bg-slate-900" alt="" />
         <div class="min-w-0 flex-1">
           <div class="font-bold leading-tight">${escapeHtml(CardDB.cleanDisplayName(card))}</div>
           <div class="font-mono text-xs text-slate-400 mt-0.5">${escapeHtml(card.id)}
@@ -294,7 +294,7 @@
     modal = window.Util.openModal({
       host: 'rapid-entry-root',
       id: 'rapid-entry-modal',
-      sizeClass: 'w-[680px] max-w-[95vw]',
+      sizeClass: 'w-[860px] max-w-[95vw]',
       flex: true,
       contentHtml,
       onClose: () => {
