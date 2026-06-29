@@ -90,11 +90,12 @@ Pro fester Gruppe (Reihenfolge wie heute: Wants, Trades, Decks; danach „Sonsti
      sowie Sortier-Handles (☰-Drag / ▲▼) analog zu Decks.
    - Wenn nicht eingeklappt: zugeordnete Decks via `favFirst` → `deckItemHtml` (bestehende
      manuelle Sortierung & Favoriten-Logik bleiben erhalten).
-3. „Ohne Kategorie"-Sektion (Decks mit `categoryId === null` im `kind`) zuletzt; nur rendern,
-   wenn ≥1 Deck. Ebenfalls einklappbar.
-
-Hat ein `kind` keine Kategorien, ist das Resultat optisch identisch zum heutigen Zustand
-(alle Decks unter „Ohne Kategorie", deren Header dann optional entfällt → wie bisher).
+3. „Ohne Kategorie"-Sektion (Decks mit `categoryId === null` im `kind`):
+   - Existieren **keine** Kategorien im `kind` → kein „Ohne Kategorie"-Header; die Decks
+     werden direkt unter dem Gruppen-Header gerendert (optisch identisch zum heutigen Zustand).
+   - Existiert **≥1** Kategorie im `kind` → „Ohne Kategorie" wird als eigener einklappbarer
+     Header **immer** angezeigt (auch bei 0 uncategorisierten Decks), damit er als Drop-Ziel
+     zum Entfernen aus einer Kategorie dient. Synthetischer Collapse-Key z.B. `uncat:<kind>`.
 
 ### Interaktion (`wireDeckList`)
 
@@ -108,6 +109,11 @@ Hat ein `kind` keine Kategorien, ist das Resultat optisch identisch zum heutigen
 - **Zuordnung per Dropdown:** Im Deck-Editor (Detailbereich) ein `<select>` „Kategorie" mit den
   Kategorien des Deck-`kind` + „Ohne Kategorie" → `assignDeckToCategory`. Touch-Fallback.
 - **Kategorien sortieren:** ☰-Drag / ▲▼ an Kategorie-Headern → `reorderCategories`.
+- **Deck-Sortierung innerhalb Kategorie:** `reorderKind` sortiert weiterhin das flache
+  `decks`-Array pro `kind` (stabil), Kategorie-Filterung passiert erst beim Rendern. ABER:
+  `moveDeckRelative` / `moveDeckInGroup` müssen die Nachbar-Decks künftig innerhalb der
+  gerenderten **Kategorie-Teilmenge** bestimmen, nicht über das ganze `kind`. Andernfalls
+  springt ein Deck beim ▲/▼ über Kategoriegrenzen.
 - **Einklappen:** Klick auf Kategorie-Header toggelt; Zustand im lokalen Collapse-Store
   persistieren; nur Re-Render der Sidebar, **kein** `saveDecks` (kein Sync-Push).
 
@@ -128,6 +134,11 @@ Hat ein `kind` keine Kategorien, ist das Resultat optisch identisch zum heutigen
   gesetzt, da die alte Kategorie nicht zum neuen `kind` passt.
 - Duplizieren eines Decks (`duplicateDeck`): `categoryId` der Quelle mitkopieren (gleiches `kind`).
 - Leere Kategorie (keine Decks) wird weiterhin angezeigt (Header mit `· 0`), damit man hineinziehen kann.
+- **Main-Wants-Pseudo-Eintrag** (`MAIN_WANTS_ID`, separat über die Gruppen via `mainWantsItemHtml`
+  gerendert): bleibt außerhalb des Kategorie-Systems — kein `kind`/`categoryId`, unverändert.
+- **Collapse-Key in `Util.LS_KEYS`:** `LS_KEYS` ist in `util.js` `Object.freeze`d. Wird der
+  Schlüssel dort abgelegt, muss er vor dem Freeze eingetragen werden; alternativ eine lokale
+  Konstante in `ui-deckbuilder.js`. Beides okay — bewusst wählen.
 
 ## Nicht im Scope (YAGNI)
 
