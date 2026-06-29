@@ -29,8 +29,6 @@
     scanLoop: null,        // setInterval-Handle der OCR-Schleife
     scanBusy: false,       // OCR läuft gerade → Frame überspringen
     scanStaging: [],       // [{ cardId, variant(Main), count }] — noch NICHT in der Collection
-    scanStableKey: null,   // zuletzt gelesene Karten-ID (für Stabilitäts-Check)
-    scanStableCount: 0,    // wie oft in Folge gelesen
     scanCommittedKey: null,// zuletzt in die Staging gelegte Karte (Anti-Doppel)
     scanEmpty: 0,          // aufeinanderfolgende Leer-/Kein-Treffer-Frames (Lücken-Erkennung)
     nameIdx: [],           // [{ card, n }] normalisierte Namen des gewählten Sets (für Namens-Match)
@@ -338,7 +336,6 @@
       .then(() => {
         if (!state.scanActive) return;
         state.scanBusy = false;
-        state.scanStableKey = null; state.scanStableCount = 0;
         state.scanCommittedKey = null; state.scanEmpty = 0;
         setScanStatus('Bereit — Karten-Nummer in den gelben Rahmen halten.');
         state.scanLoop = setInterval(scanTick, 500);
@@ -440,15 +437,12 @@
       state.scanEmpty++;
       // Karte weggenommen (Lücke) → dieselbe Karte darf danach erneut gebucht werden.
       if (state.scanEmpty >= 2) state.scanCommittedKey = null;
-      state.scanStableKey = null; state.scanStableCount = 0;
       return;
     }
     state.scanEmpty = 0;
     const key = card.id;
-    if (key === state.scanStableKey) state.scanStableCount++;
-    else { state.scanStableKey = key; state.scanStableCount = 1; }
-    // Stabil (2× in Folge) UND nicht schon zuletzt gebucht → in die Staging.
-    if (state.scanStableCount >= 2 && key !== state.scanCommittedKey) {
+    // Erster Treffer reicht: noch nicht zuletzt gebucht → sofort in die Staging.
+    if (key !== state.scanCommittedKey) {
       addToStaging(card);
       state.scanCommittedKey = key;
       flashScan(card);
