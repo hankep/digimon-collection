@@ -311,23 +311,26 @@
         const tilesEl = content.querySelector('#shared-deck-tiles');
         const scrollWrap = tilesEl.parentElement;
 
-        // Spaltenzahl so waehlen, dass das komplette Grid in die verfuegbare
-        // Hoehe passt -> kein Scrollbalken, alles auf einen Blick sichtbar.
-        // Wenige Spalten = grosse Karten; bei vielen Karten wird schrittweise
-        // auf mehr (kleinere) Spalten erhoeht, bis es in der Hoehe passt.
+        // Karten haben eine normale Groesse und fuellen die Breite mit so vielen
+        // Spalten wie reinpassen (auto-fill, feste Kartenbreite -> keine Riesen-
+        // karten bei wenigen Eintraegen). Passt das Grid nicht in die Hoehe,
+        // werden die Karten schrittweise verkleinert, bis alles ohne Scrollbalken
+        // sichtbar ist.
+        tilesEl.style.justifyContent = 'center';
         function layoutTiles() {
           // Modal geschlossen -> Listener abmelden (kein Leak).
           if (!tilesEl.isConnected) { window.removeEventListener('resize', layoutTiles); return; }
-          const n = tilesEl.childElementCount;
-          if (!n) return;
-          const maxCols = Math.min(n, 12);
-          let cols = 1;
-          for (cols = 1; cols <= maxCols; cols++) {
-            tilesEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+          if (!tilesEl.childElementCount) return;
+          const MAX = 180, MIN = 64;
+          let size = MAX;
+          for (size = MAX; size >= MIN; size -= 8) {
+            tilesEl.style.gridTemplateColumns = `repeat(auto-fill, ${size}px)`;
             if (tilesEl.scrollHeight <= scrollWrap.clientHeight) break;
           }
         }
-        layoutTiles();
+        // Nach dem Layout des Modals messen (sonst ist die Hoehe beim ersten
+        // Oeffnen noch 0 -> falsche Berechnung, erst nach Reopen korrekt).
+        requestAnimationFrame(() => requestAnimationFrame(layoutTiles));
         window.addEventListener('resize', layoutTiles);
 
         function wireTileClicks() {
