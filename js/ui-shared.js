@@ -271,7 +271,7 @@
       ${notes ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap mb-3 shrink-0">${escapeHtml(notes)}</div>` : ''}
       ${searchBar}
       <div class="overflow-y-auto flex-1 min-h-0 pr-1">
-        <div id="shared-deck-tiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">${initialTiles}</div>
+        <div id="shared-deck-tiles" class="grid gap-2">${initialTiles}</div>
       </div>
       <div class="flex justify-end gap-2 mt-3 shrink-0 flex-wrap">
         <button data-modal-close class="btn-secondary">Schliessen</button>
@@ -309,6 +309,27 @@
         }
 
         const tilesEl = content.querySelector('#shared-deck-tiles');
+        const scrollWrap = tilesEl.parentElement;
+
+        // Spaltenzahl so waehlen, dass das komplette Grid in die verfuegbare
+        // Hoehe passt -> kein Scrollbalken, alles auf einen Blick sichtbar.
+        // Wenige Spalten = grosse Karten; bei vielen Karten wird schrittweise
+        // auf mehr (kleinere) Spalten erhoeht, bis es in der Hoehe passt.
+        function layoutTiles() {
+          // Modal geschlossen -> Listener abmelden (kein Leak).
+          if (!tilesEl.isConnected) { window.removeEventListener('resize', layoutTiles); return; }
+          const n = tilesEl.childElementCount;
+          if (!n) return;
+          const maxCols = Math.min(n, 12);
+          let cols = 1;
+          for (cols = 1; cols <= maxCols; cols++) {
+            tilesEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+            if (tilesEl.scrollHeight <= scrollWrap.clientHeight) break;
+          }
+        }
+        layoutTiles();
+        window.addEventListener('resize', layoutTiles);
+
         function wireTileClicks() {
           tilesEl.querySelectorAll('[data-card-id][data-variant-key]').forEach(tile => {
             tile.addEventListener('click', () => {
@@ -325,6 +346,7 @@
             const q = search.value.trim().toLowerCase();
             const filtered = q ? meta.filter(m => m.haystack.includes(q)) : meta;
             tilesEl.innerHTML = filtered.map(tileHtml).join('');
+            layoutTiles();
             wireTileClicks();
             if (cntEl) cntEl.textContent = q ? `${filtered.length} / ${meta.length}` : '';
           };
