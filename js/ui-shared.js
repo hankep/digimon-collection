@@ -202,6 +202,7 @@
         entry: e,
         name,
         rarity,
+        level: card && card.level != null ? card.level : null,
         slottedReal,
         slottedProxy,
         slottedTotal,
@@ -211,14 +212,13 @@
       };
     });
 
-    // Default-Sort fuer Decks: unvollstaendige zuerst (groesster Fehlbestand zuerst),
-    // dann nach Name. Fuer Wants/Trade: ID-Reihenfolge (entries-Reihenfolge).
-    if (isDeckKind) {
-      meta.sort((a, b) => {
-        if (b.missing !== a.missing) return b.missing - a.missing;
-        return a.name.localeCompare(b.name);
-      });
-    }
+    // Sortierung immer nach Level (aufsteigend, ohne Level ans Ende), dann Name.
+    meta.sort((a, b) => {
+      const al = a.level == null ? Infinity : a.level;
+      const bl = b.level == null ? Infinity : b.level;
+      if (al !== bl) return al - bl;
+      return a.name.localeCompare(b.name);
+    });
 
     const anySlottedInfo = isDeckKind && meta.some(m => m.hasSlottedInfo);
     const totalMissing = isDeckKind ? meta.reduce((s, m) => s + m.missing, 0) : 0;
@@ -271,7 +271,7 @@
       ${notes ? `<div class="bg-slate-900 rounded p-3 text-sm whitespace-pre-wrap mb-3 shrink-0">${escapeHtml(notes)}</div>` : ''}
       ${searchBar}
       <div class="overflow-y-auto flex-1 min-h-0 pr-1">
-        <div id="shared-deck-tiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">${initialTiles}</div>
+        <div id="shared-deck-tiles" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">${initialTiles}</div>
       </div>
       <div class="flex justify-end gap-2 mt-3 shrink-0 flex-wrap">
         <button data-modal-close class="btn-secondary">Schliessen</button>
@@ -282,7 +282,7 @@
     window.Util.openModal({
       host: 'shared-modal-root',
       id: 'shared-modal',
-      sizeClass: 'w-[920px] max-w-[95vw] max-h-[92vh]',
+      sizeClass: 'w-[1200px] max-w-[95vw] max-h-[92vh]',
       flex: true,
       contentHtml,
       onMount: (content, close) => {
