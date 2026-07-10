@@ -79,6 +79,14 @@
           Wants-Liste eines anderen Users einfügen, lieferbare Karten markieren und aus deiner Collection entfernen. Du bekommst danach einen App-Import-Text mit den abgegebenen Karten für den Sender.
         </p>
         <button id="trade-open" class="bg-sky-500 hover:bg-sky-400 text-slate-900 px-4 py-2 rounded font-semibold">Trade-Modal öffnen</button>
+
+        <hr class="border-slate-700 my-6" />
+
+        <h2 class="text-lg font-bold mb-2">Decks vergleichen</h2>
+        <p class="text-sm text-slate-400 mb-3">
+          Mehrere Decks übereinanderlegen: sehen, welche Karten sich überschneiden, was jedes Deck kostet und wie viel du durch geteilte Karten sparst.
+        </p>
+        <button id="compare-open" class="bg-violet-500 hover:bg-violet-400 text-slate-900 px-4 py-2 rounded font-semibold">Decks vergleichen</button>
       </div>
     `;
 
@@ -99,6 +107,7 @@
     rootEl.querySelector('#cm-preview').addEventListener('click', cmPreview);
     rootEl.querySelector('#cm-apply').addEventListener('click', cmApply);
     rootEl.querySelector('#trade-open').addEventListener('click', openTradeDialog);
+    rootEl.querySelector('#compare-open').addEventListener('click', openCompareDialog);
     rootEl.querySelector('#io-rapid-entry').addEventListener('click', () => {
       if (window.UIRapidEntry) UIRapidEntry.open();
     });
@@ -1291,6 +1300,343 @@
             ta.select();
             try { finish(document.execCommand('copy')); } catch (e) { finish(false); }
           }
+        });
+      }
+    });
+  }
+
+  // ============================================================================
+  // Decks vergleichen: mehrere echte Decks (kind='deck') übereinanderlegen.
+  // Zeigt pro Karte, in wie vielen der ausgewählten Decks sie vorkommt und mit
+  // welcher Menge, plus Preise. Overlap-Logik: "Maximum je Karte" — der Nutzer
+  // baut immer nur ein Deck gleichzeitig auf, braucht also pro Karte nur so
+  // viele Exemplare wie das anspruchsvollste ausgewählte Deck verlangt, nicht
+  // die Summe über alle Decks. "Geteiltes Geld" = Ersparnis dadurch gegenüber
+  // der Summe der Einzelkosten aller Decks.
+  // ============================================================================
+
+  const compareState = {
+    phase: 'select',      // 'select' | 'result'
+    selectedIds: new Set(),
+    excludeOwned: false,  // Checkbox: Collection-Bestand von den Mengen abziehen
+    hideCheap10: false,   // Checkbox: Karten mit CM-Trend ≤ 0,10 € ausblenden
+    hideCheap50: false,   // Checkbox: Karten mit CM-Trend ≤ 0,50 € ausblenden
+    onlyOverlap: false,   // Checkbox: nur Karten zeigen, die in >1 Deck vorkommen
+    sort: 'id'            // 'id' | 'price' | 'decks'
+  };
+  let compareModal = null;
+
+  function openCompareDialog() {
+    compareState.phase = 'select';
+    compareState.selectedIds = new Set();
+    compareState.excludeOwned = false;
+    compareState.hideCheap10 = false;
+    compareState.hideCheap50 = false;
+    compareState.onlyOverlap = false;
+    compareState.sort = 'id';
+    renderCompareModal();
+  }
+
+  // Der 0,50€-Filter deckt den 0,10€-Filter mit ab — bei beiden aktiv gilt
+  // der strengere (hoehere) Schwellwert.
+  function compareCheapThreshold(state) {
+    if (state.hideCheap50) return 0.50;
+    if (state.hideCheap10) return 0.10;
+    return 0;
+  }
+
+  function setComparePhase(phase) {
+    compareState.phase = phase;
+    renderCompareModal();
+  }
+
+  function eligibleCompareDecks() {
+    const decksState = Store.loadDecks();
+    return decksState.decks.filter(d => d.kind === 'deck');
+  }
+
+  function renderCompareModal() {
+    if (compareState.phase === 'result') renderComparePhaseResult();
+    else renderComparePhaseSelect();
+  }
+
+  function renderComparePhaseSelect() {
+    const decks = eligibleCompareDecks();
+    const renderRow = d => `
+      <label class="flex items-center gap-2 px-2 py-1 hover:bg-slate-800 rounded cursor-pointer">
+        <input type="checkbox" data-compare-deck="${d.id}" class="accent-violet-500" ${compareState.selectedIds.has(d.id) ? 'checked' : ''} />
+        <span class="flex-1 text-sm truncate">${escapeHtml(d.name)}</span>
+        <span class="text-xs text-slate-500">${d.entries.length} Karten</span>
+      </label>
+    `;
+
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3">
+        <h2 class="text-lg font-bold">Decks vergleichen</h2>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
+      <div class="text-xs text-slate-400 mb-2">Mindestens zwei Decks auswählen, um sie übereinanderzulegen.</div>
+      ${decks.length ? `
+        <div class="flex gap-2 mb-2 text-xs">
+          <button id="cmp-all" class="text-violet-400 hover:underline">Alle aktivieren</button>
+          <button id="cmp-none" class="text-slate-400 hover:underline">Alle abwählen</button>
+        </div>
+        <div id="cmp-decks" class="max-h-[50vh] overflow-y-auto border border-slate-700 rounded p-1 mb-3">
+          ${decks.map(renderRow).join('')}
+        </div>
+      ` : `<div class="text-sm text-slate-500 bg-slate-900 rounded p-4 mb-3">Noch keine Decks vorhanden (Decks &amp; Lists → "+ Neu", Kind "Deck").</div>`}
+      <div class="flex justify-end gap-2">
+        <button data-modal-close class="btn-secondary">Abbrechen</button>
+        <button id="cmp-go" class="btn-primary-emerald" ${compareState.selectedIds.size < 2 ? 'disabled' : ''}>Vergleichen</button>
+      </div>
+    `;
+
+    compareModal = window.Util.openModal({
+      host: 'compare-modal-root',
+      id: 'compare-modal',
+      sizeClass: 'w-[560px] max-w-[95vw]',
+      contentHtml,
+      onClose: () => { compareModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        const goBtn = content.querySelector('#cmp-go');
+        const syncGoBtn = () => { if (goBtn) goBtn.disabled = compareState.selectedIds.size < 2; };
+        const allBtn = content.querySelector('#cmp-all');
+        const noneBtn = content.querySelector('#cmp-none');
+        if (allBtn) allBtn.addEventListener('click', () => {
+          decks.forEach(d => compareState.selectedIds.add(d.id));
+          content.querySelectorAll('input[data-compare-deck]').forEach(cb => { cb.checked = true; });
+          syncGoBtn();
+        });
+        if (noneBtn) noneBtn.addEventListener('click', () => {
+          compareState.selectedIds.clear();
+          content.querySelectorAll('input[data-compare-deck]').forEach(cb => { cb.checked = false; });
+          syncGoBtn();
+        });
+        const decksEl = content.querySelector('#cmp-decks');
+        if (decksEl) decksEl.addEventListener('change', e => {
+          const cb = e.target.closest('input[data-compare-deck]');
+          if (!cb) return;
+          if (cb.checked) compareState.selectedIds.add(cb.dataset.compareDeck);
+          else compareState.selectedIds.delete(cb.dataset.compareDeck);
+          syncGoBtn();
+        });
+        if (goBtn) goBtn.addEventListener('click', () => setComparePhase('result'));
+      }
+    });
+  }
+
+  // Merged Zeilen ueber alle ausgewaehlten Decks, gruppiert nach Variant (nicht
+  // Card-ID) — Alt-Arts bleiben so getrennte Zeilen. "Maximum je Karte": neededMax
+  // ist die hoechste Deck-Menge, nicht die Summe.
+  function buildCompareRows(decks, coll, excludeOwned) {
+    const rows = new Map();
+    for (const deck of decks) {
+      for (const e of deck.entries) {
+        if (!rows.has(e.variant)) rows.set(e.variant, { cardId: e.cardId, variant: e.variant, perDeck: new Map() });
+        const row = rows.get(e.variant);
+        row.perDeck.set(deck.id, (row.perDeck.get(deck.id) || 0) + e.count);
+      }
+    }
+    return Array.from(rows.values()).map(row => {
+      const counts = Array.from(row.perDeck.values());
+      const maxCount = counts.length ? Math.max(...counts) : 0;
+      const owned = excludeOwned ? Store.ownedTotal(coll, row.variant) : 0;
+      const neededMax = Math.max(0, maxCount - owned);
+      const price = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(row.cardId, row.variant) : { low: null, trend: null };
+      return { ...row, maxCount, deckCount: row.perDeck.size, owned, neededMax, price };
+    });
+  }
+
+  // Was ein einzelnes Deck fuer sich genommen kosten wuerde (mit dem gleichen
+  // excludeOwned-Toggle wie der kombinierte Vergleich, damit beide Zahlen
+  // vergleichbar sind).
+  function deckStandaloneCost(deck, coll, excludeOwned) {
+    let low = 0, trend = 0, unknown = 0;
+    for (const e of deck.entries) {
+      const owned = excludeOwned ? Store.ownedTotal(coll, e.variant) : 0;
+      const need = Math.max(0, e.count - owned);
+      if (need <= 0) continue;
+      const p = (window.CM && CM.pricesForEntry) ? CM.pricesForEntry(e.cardId, e.variant) : { low: null, trend: null };
+      if (p.low != null) low += p.low * need; else unknown += need;
+      if (p.trend != null) trend += p.trend * need;
+    }
+    return { low, trend, unknown };
+  }
+
+  function sortCompareRows(rows, mode) {
+    const sorted = rows.slice();
+    sorted.sort((a, b) => {
+      if (mode === 'price') {
+        const pa = a.price.low != null ? a.price.low : -1;
+        const pb = b.price.low != null ? b.price.low : -1;
+        if (pb !== pa) return pb - pa;
+      } else if (mode === 'decks') {
+        if (b.deckCount !== a.deckCount) return b.deckCount - a.deckCount;
+      }
+      if (a.cardId !== b.cardId) return a.cardId.localeCompare(b.cardId);
+      return a.variant.localeCompare(b.variant);
+    });
+    return sorted;
+  }
+
+  function renderComparePhaseResult() {
+    const decks = eligibleCompareDecks().filter(d => compareState.selectedIds.has(d.id));
+    const coll = Store.loadCollection();
+    const rows = sortCompareRows(buildCompareRows(decks, coll, compareState.excludeOwned), compareState.sort);
+
+    const standalone = decks.map(d => ({ deck: d, cost: deckStandaloneCost(d, coll, compareState.excludeOwned) }));
+    const sumLow = standalone.reduce((s, x) => s + x.cost.low, 0);
+    const sumTrend = standalone.reduce((s, x) => s + x.cost.trend, 0);
+    const combinedLow = rows.reduce((s, r) => s + (r.price.low != null ? r.price.low * r.neededMax : 0), 0);
+    const combinedTrend = rows.reduce((s, r) => s + (r.price.trend != null ? r.price.trend * r.neededMax : 0), 0);
+    const savedLow = sumLow - combinedLow;
+    const savedTrend = sumTrend - combinedTrend;
+    const unpricedRows = rows.filter(r => r.price.low == null && r.price.trend == null && r.neededMax > 0).length;
+
+    // Filter (guenstige Karten, nur-Overlap) wirken nur auf die Tabellenzeilen
+    // (Deckluttern), NICHT auf die Kostensummen oben — die bilden weiterhin den
+    // vollen, echten Betrag ueber ALLE Karten ab.
+    const cheapThreshold = compareCheapThreshold(compareState);
+    const visibleRows = rows.filter(r => {
+      if (cheapThreshold > 0 && r.price.trend != null && r.price.trend <= cheapThreshold) return false;
+      if (compareState.onlyOverlap && r.deckCount <= 1) return false;
+      return true;
+    });
+    const hiddenCount = rows.length - visibleRows.length;
+    const hiddenReasons = [];
+    if (cheapThreshold > 0) hiddenReasons.push(`≤ ${Fmt.eur(cheapThreshold)}`);
+    if (compareState.onlyOverlap) hiddenReasons.push('nur 1 Deck');
+
+    const deckSummaryHtml = standalone.map(x => `
+      <div class="bg-slate-900 rounded p-2">
+        <div class="text-sm font-semibold truncate" title="${escapeHtml(x.deck.name)}">${escapeHtml(x.deck.name)}</div>
+        <div class="text-xs text-amber-400 tabular-nums">${Fmt.eur(x.cost.low)} / ${Fmt.eur(x.cost.trend)}</div>
+        ${x.cost.unknown ? `<div class="text-[10px] text-slate-500">${x.cost.unknown} ohne Preis</div>` : ''}
+      </div>
+    `).join('');
+
+    const headerCols = decks.map(d => `<th class="px-2 py-1 text-right whitespace-nowrap" title="${escapeHtml(d.name)}">${escapeHtml(d.name.length > 12 ? d.name.slice(0, 11) + '…' : d.name)}</th>`).join('');
+
+    const bodyRows = visibleRows.map(r => {
+      const card = CardDB.byId.get(r.cardId);
+      const name = card ? CardDB.cleanDisplayName(card) : r.cardId;
+      const deckCells = decks.map(d => {
+        const n = r.perDeck.get(d.id) || 0;
+        return `<td class="px-2 py-1 text-right tabular-nums ${n ? '' : 'text-slate-600'}">${n || '–'}</td>`;
+      }).join('');
+      const priceText = CM.fmtLowTrend(r.price) || '–';
+      const rowCost = (r.price.low != null ? r.price.low * r.neededMax : null);
+      const rowCls = r.deckCount > 1 ? 'bg-violet-900/15' : '';
+      return `<tr class="hover:bg-slate-700/40 ${rowCls}">
+        <td class="px-2 py-1 text-sm truncate max-w-[220px]" title="${escapeHtml(name)}">${escapeHtml(name)}</td>
+        <td class="px-2 py-1 font-mono text-xs text-slate-400">${escapeHtml(r.variant)}</td>
+        ${deckCells}
+        <td class="px-2 py-1 text-right tabular-nums font-semibold">${r.neededMax}</td>
+        <td class="px-2 py-1 text-center">
+          <span class="text-xs font-semibold ${r.deckCount > 1 ? 'text-violet-300' : 'text-slate-500'}" title="Verwendet in ${r.deckCount} von ${decks.length} ausgewählten Decks">${r.deckCount}/${decks.length}</span>
+        </td>
+        <td class="px-2 py-1 text-right text-amber-400 text-xs tabular-nums whitespace-nowrap" title="Cardmarket low / trend">${priceText}</td>
+        <td class="px-2 py-1 text-right tabular-nums">${rowCost != null ? Fmt.eur(rowCost) : '–'}</td>
+      </tr>`;
+    }).join('');
+
+    const contentHtml = `
+      <div class="flex justify-between items-start mb-3 shrink-0">
+        <div>
+          <h2 class="text-lg font-bold">Decks vergleichen</h2>
+          <div class="text-xs text-slate-400 mt-1">${decks.length} Decks · ${rows.length} unterschiedliche Karten${unpricedRows ? ` · ${unpricedRows} ohne Preis` : ''}${hiddenCount ? ` · ${hiddenCount} ausgeblendet (${hiddenReasons.join(', ')})` : ''}</div>
+        </div>
+        <button data-modal-close class="modal-close-x">×</button>
+      </div>
+
+      <div class="flex items-center gap-3 mb-2 flex-wrap text-sm shrink-0">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="cmp-exclude-owned" class="accent-violet-500" ${compareState.excludeOwned ? 'checked' : ''} />
+          <span>Bereits in Sammlung enthaltene Karten abziehen</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="cmp-hide-cheap-10" class="accent-violet-500" ${compareState.hideCheap10 ? 'checked' : ''} />
+          <span>Karten ≤ 0,10 € Trend ausblenden</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="cmp-hide-cheap-50" class="accent-violet-500" ${compareState.hideCheap50 ? 'checked' : ''} />
+          <span>Karten ≤ 0,50 € Trend ausblenden</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="cmp-only-overlap" class="accent-violet-500" ${compareState.onlyOverlap ? 'checked' : ''} />
+          <span>Nur Überschneidungen (in &gt;1 Deck) anzeigen</span>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-2 mb-3 text-sm shrink-0">
+        <span class="text-slate-400">Sortierung:</span>
+        <select id="cmp-sort" class="bg-slate-800 border border-slate-600 rounded px-2 py-1">
+          <option value="id"    ${compareState.sort === 'id'    ? 'selected' : ''}>ID</option>
+          <option value="price" ${compareState.sort === 'price' ? 'selected' : ''}>Preis ↓</option>
+          <option value="decks" ${compareState.sort === 'decks' ? 'selected' : ''}>Anzahl Decks</option>
+        </select>
+      </div>
+
+      <div class="grid gap-2 mb-3 shrink-0" style="grid-template-columns: repeat(${Math.min(decks.length, 4)}, minmax(0,1fr))">
+        ${deckSummaryHtml}
+      </div>
+
+      <div class="bg-slate-900 rounded p-3 mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm shrink-0">
+        <div><span class="text-slate-400">Summe Einzeldecks:</span> <b class="tabular-nums">${Fmt.eur(sumLow)} / ${Fmt.eur(sumTrend)}</b></div>
+        <div><span class="text-slate-400">Kombiniert (Max je Karte):</span> <b class="tabular-nums">${Fmt.eur(combinedLow)} / ${Fmt.eur(combinedTrend)}</b></div>
+        <div class="ml-auto"><span class="text-slate-400">Geteiltes Geld (Ersparnis):</span> <b class="text-emerald-400 tabular-nums">${Fmt.eur(savedLow)} / ${Fmt.eur(savedTrend)}</b></div>
+      </div>
+
+      <div class="overflow-x-auto overflow-y-auto flex-1 min-h-0">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 bg-slate-800"><tr class="text-xs uppercase text-slate-400 text-left">
+            <th class="px-2 py-1">Karte</th><th class="px-2 py-1">Variante</th>
+            ${headerCols}
+            <th class="px-2 py-1 text-right">Max</th>
+            <th class="px-2 py-1 text-center">Decks</th>
+            <th class="px-2 py-1 text-right">CM low/trend</th>
+            <th class="px-2 py-1 text-right">Kosten</th>
+          </tr></thead>
+          <tbody>${bodyRows || `<tr><td class="text-slate-500 px-2 py-2" colspan="${6 + decks.length}">${rows.length ? 'Alle Karten durch den Preis-Filter ausgeblendet.' : 'Keine Karten in den ausgewählten Decks.'}</td></tr>`}</tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-3 shrink-0">
+        <button id="cmp-back" class="btn-secondary">Zurück zur Auswahl</button>
+        <button data-modal-close class="btn-secondary">Schließen</button>
+      </div>
+    `;
+
+    compareModal = window.Util.openModal({
+      host: 'compare-modal-root',
+      id: 'compare-modal',
+      sizeClass: 'w-[1100px] max-w-[95vw]',
+      flex: true,
+      contentHtml,
+      onClose: () => { compareModal = null; },
+      onMount: (content, close) => {
+        content.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', close));
+        content.querySelector('#cmp-back').addEventListener('click', () => setComparePhase('select'));
+        content.querySelector('#cmp-exclude-owned').addEventListener('change', e => {
+          compareState.excludeOwned = e.target.checked;
+          renderComparePhaseResult();
+        });
+        content.querySelector('#cmp-hide-cheap-10').addEventListener('change', e => {
+          compareState.hideCheap10 = e.target.checked;
+          renderComparePhaseResult();
+        });
+        content.querySelector('#cmp-hide-cheap-50').addEventListener('change', e => {
+          compareState.hideCheap50 = e.target.checked;
+          renderComparePhaseResult();
+        });
+        content.querySelector('#cmp-only-overlap').addEventListener('change', e => {
+          compareState.onlyOverlap = e.target.checked;
+          renderComparePhaseResult();
+        });
+        content.querySelector('#cmp-sort').addEventListener('change', e => {
+          compareState.sort = e.target.value;
+          renderComparePhaseResult();
         });
       }
     });
