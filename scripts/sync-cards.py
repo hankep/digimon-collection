@@ -61,6 +61,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CARDS_DATA_JS = DATA_DIR / 'cards.data.js'
+SET_PROGRESS_JS = DATA_DIR / 'set-progress.data.js'
+REVEAL_IMAGES_JS = DATA_DIR / 'reveal-images.data.js'
 
 
 def log(msg):
@@ -200,6 +202,57 @@ def write_cards_data_js(cards):
     tmp = CARDS_DATA_JS.with_suffix('.js.tmp')
     tmp.write_text(payload, encoding='utf-8')
     tmp.replace(CARDS_DATA_JS)
+
+
+def load_set_progress():
+    """Liest data/set-progress.data.js (manuell gepflegte Gesamtkartenzahl
+       je unvollständigem Set). Gültiges JSON nach dem 'window.SET_PROGRESS = '-Präfix."""
+    if not SET_PROGRESS_JS.exists():
+        return {}
+    text = SET_PROGRESS_JS.read_text(encoding='utf-8')
+    m = re.search(r'window\.SET_PROGRESS\s*=\s*', text)
+    if not m:
+        return {}
+    json_part = text[m.end():].rstrip().rstrip(';').rstrip()
+    return json.loads(json_part)
+
+
+def write_reveal_images(mapping):
+    payload = 'window.REVEAL_IMAGES = ' + json.dumps(mapping, ensure_ascii=False, indent=2, sort_keys=True) + ';\n'
+    tmp = REVEAL_IMAGES_JS.with_suffix('.js.tmp')
+    tmp.write_text(payload, encoding='utf-8')
+    tmp.replace(REVEAL_IMAGES_JS)
+
+
+def sync_reveal_images(existing):
+    """Für Sets aus set-progress.data.js: IDs, die weder in cards.data.js noch
+       digimoncard.io bekannt sind, aber bei digimoncard.dev schon ein
+       Community-Bild haben, landen in reveal-images.data.js. Nur die Bild-URL
+       wird übernommen — keine Kartendaten (Name/Effekt/etc. kommen erst mit
+       dem offiziellen digimoncard.io-Sync)."""
+    progress = load_set_progress()
+    if not progress:
+        return
+    known_ids = {c['id'] for c in existing if c.get('id')}
+    reveal = {}
+    fb_map = None
+    for set_code, total in progress.items():
+        sample = next((c for c in existing if c.get('set') == set_code and c.get('id')), None)
+        pad = len((sample['id'].split('-')[1] if sample else '')) or 3
+        missing = [f'{set_code}-{n:0{pad}d}' for n in range(1, total + 1)
+                   if f'{set_code}-{n:0{pad}d}' not in known_ids]
+        if not missing:
+            continue
+        if fb_map is None:
+            fb_map = fetch_dcd_fallback_map()
+        for cid in missing:
+            url = fb_map.get(cid)
+            if url:
+                reveal[cid] = url
+    if not reveal and not REVEAL_IMAGES_JS.exists():
+        return
+    write_reveal_images(reveal)
+    log(f'  🖼  reveal-images.data.js: {len(reveal)} Community-Bild(er) für noch nicht offiziell erfasste Karten.')
 
 
 def backup_cards_data_js():
@@ -422,6 +475,12 @@ def main():
     existing = load_existing_cards()
     known_ids = {c.get('id') for c in existing if c.get('id')}
     log(f'  → {len(known_ids)} Karten bekannt.')
+
+    # Community-Bilder (digimoncard.dev) für Karten, die noch NICHT einmal bei
+    # digimoncard.io gelistet sind, aber schon geleakt/gespoilert wurden —
+    # unabhängig vom gewählten Modus, außer bei --dry-run.
+    if not args.dry_run:
+        sync_reveal_images(existing)
 
     # Backfill-only Modus: kein API-Sync, nur Alt-Arts probieren.
     if args.backfill_alts:

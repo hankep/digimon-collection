@@ -7,6 +7,7 @@
 //
 // Sobald ein Set komplett bekannt ist, kann der Eintrag entfernt werden
 // (schadet aber nicht, es werden dann einfach keine Lücken mehr gefunden).
-window.SET_PROGRESS = {
-  BT26: 108,
-};
+//
+// Format bewusst gültiges JSON (quoted keys, kein trailing comma) — wird
+// von scripts/sync-cards.py mit json.loads() mitgelesen.
+window.SET_PROGRESS = {"BT26": 108};

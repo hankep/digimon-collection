@@ -63,6 +63,7 @@
       if (!known.length || !total) continue;
       const padWidth = (known[0].id.split('-')[1] || '').length || 3;
       const knownIds = new Set(known.map(c => c.id));
+      const revealImages = window.REVEAL_IMAGES || {};
       for (let n = 1; n <= total; n++) {
         const id = setCode + '-' + String(n).padStart(padWidth, '0');
         if (knownIds.has(id)) continue;
@@ -81,7 +82,7 @@
           effect: '',
           traits: [],
           unrevealed: true,
-          imageFallback: UNREVEALED_PLACEHOLDER_IMAGE,
+          imageFallback: revealImages[id] || UNREVEALED_PLACEHOLDER_IMAGE,
         });
       }
     }
