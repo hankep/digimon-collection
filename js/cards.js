@@ -42,34 +42,55 @@
   }
 
   // Platzhalter-Kartenrückseite für noch nicht enthüllte Karten (inline SVG,
-  // kein zusätzliches Asset nötig).
-  const UNREVEALED_PLACEHOLDER_IMAGE = 'data:image/svg+xml,' + encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='560' viewBox='0 0 400 560'>
-      <rect width='400' height='560' rx='20' fill='#1e293b'/>
-      <rect x='14' y='14' width='372' height='532' rx='14' fill='none' stroke='#475569' stroke-width='4'/>
-      <text x='200' y='300' font-family='sans-serif' font-size='120' fill='#475569' text-anchor='middle' dominant-baseline='middle'>?</text>
-      <text x='200' y='500' font-family='sans-serif' font-size='22' fill='#94a3b8' text-anchor='middle'>Noch nicht enthüllt</text>
-    </svg>`
-  );
+  // kein zusätzliches Asset nötig). Wenn eine manuelle Notiz vorliegt (z.B.
+  // "V1 AA", siehe data/placeholder-overrides.data.js), wird die statt dem
+  // "?" zentral angezeigt — Schriftgröße skaliert mit der Textlänge.
+  function unrevealedPlaceholderSvg(note) {
+    const big = note || '?';
+    const small = note ? 'Unbestätigt' : 'Noch nicht enthüllt';
+    const bigSize = big.length <= 2 ? 120 : big.length <= 5 ? 80 : big.length <= 8 ? 56 : 36;
+    return 'data:image/svg+xml,' + encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='560' viewBox='0 0 400 560'>
+        <rect width='400' height='560' rx='20' fill='#1e293b'/>
+        <rect x='14' y='14' width='372' height='532' rx='14' fill='none' stroke='#475569' stroke-width='4'/>
+        <text x='200' y='300' font-family='sans-serif' font-size='${bigSize}' fill='#475569' text-anchor='middle' dominant-baseline='middle'>${escapeHtml(big)}</text>
+        <text x='200' y='500' font-family='sans-serif' font-size='22' fill='#94a3b8' text-anchor='middle'>${escapeHtml(small)}</text>
+      </svg>`
+    );
+  }
 
   // Für Sets, die noch nicht vollständig veröffentlicht sind (window.SET_PROGRESS,
   // siehe data/set-progress.data.js), Platzhalter-Karten für alle bislang nicht
   // enthüllten IDs ergänzen, damit das komplette Set (mit Lücken) sichtbar ist.
+  //
+  // Zwei Datenquellen für Zusatzinfos zu einzelnen Platzhaltern, Bild-Priorität
+  // offiziell > digimoncard.dev > eigene manuelle Notiz (Notnagel):
+  // - window.REVEAL_IMAGES (data/reveal-images.data.js): automatisch vom
+  //   Sync-Skript gepflegt (digimoncard.dev-Bilder für noch nicht offiziell
+  //   erfasste Karten). Additiv, bestehende Einträge werden nie überschrieben.
+  // - window.PLACEHOLDER_OVERRIDES (data/placeholder-overrides.data.js): rein
+  //   manuell gepflegt, vom Sync-Skript NIE angefasst — für Wissen, das sich
+  //   aus keiner Quelle automatisch ableiten lässt (z.B. "dieser Slot ist
+  //   sicher ein Alt-Art"). Das Bild daraus wird nur genutzt, solange weder
+  //   offiziell noch digimoncard.dev etwas Besseres liefern.
   (function addUnrevealedPlaceholders() {
     const progress = window.SET_PROGRESS || {};
+    const revealImages = window.REVEAL_IMAGES || {};
+    const overrides = window.PLACEHOLDER_OVERRIDES || {};
     for (const setCode of Object.keys(progress)) {
       const total = progress[setCode];
       const known = CARDS.filter(c => c.set === setCode);
       if (!known.length || !total) continue;
       const padWidth = (known[0].id.split('-')[1] || '').length || 3;
       const knownIds = new Set(known.map(c => c.id));
-      const revealImages = window.REVEAL_IMAGES || {};
       for (let n = 1; n <= total; n++) {
         const id = setCode + '-' + String(n).padStart(padWidth, '0');
         if (knownIds.has(id)) continue;
+        const override = overrides[id] || {};
+        const note = override.note || null;
         CARDS.push({
           id,
-          name: 'Noch nicht enthüllt',
+          name: note || 'Noch nicht enthüllt',
           set: setCode,
           rarity: '',
           color: [],
@@ -82,7 +103,10 @@
           effect: '',
           traits: [],
           unrevealed: true,
-          imageFallback: revealImages[id] || UNREVEALED_PLACEHOLDER_IMAGE,
+          // Prioritaet: offiziell (kommt ueber known_ids/Bandai, s.o.) > digimoncard.dev
+          // (echter Community-Scan) > eigene manuelle Notiz/Bild (nur Notnagel,
+          // bis es echte Daten gibt).
+          imageFallback: revealImages[id] || override.image || unrevealedPlaceholderSvg(note),
         });
       }
     }

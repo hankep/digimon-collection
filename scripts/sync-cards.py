@@ -217,6 +217,20 @@ def load_set_progress():
     return json.loads(json_part)
 
 
+def load_reveal_images():
+    if not REVEAL_IMAGES_JS.exists():
+        return {}
+    text = REVEAL_IMAGES_JS.read_text(encoding='utf-8')
+    m = re.search(r'window\.REVEAL_IMAGES\s*=\s*', text)
+    if not m:
+        return {}
+    json_part = text[m.end():].rstrip().rstrip(';').rstrip()
+    try:
+        return json.loads(json_part)
+    except json.JSONDecodeError:
+        return {}
+
+
 def write_reveal_images(mapping):
     payload = 'window.REVEAL_IMAGES = ' + json.dumps(mapping, ensure_ascii=False, indent=2, sort_keys=True) + ';\n'
     tmp = REVEAL_IMAGES_JS.with_suffix('.js.tmp')
@@ -229,30 +243,45 @@ def sync_reveal_images(existing):
        digimoncard.io bekannt sind, aber bei digimoncard.dev schon ein
        Community-Bild haben, landen in reveal-images.data.js. Nur die Bild-URL
        wird übernommen — keine Kartendaten (Name/Effekt/etc. kommen erst mit
-       dem offiziellen digimoncard.io-Sync)."""
+       dem offiziellen digimoncard.io-Sync).
+
+       Additiv, nicht destruktiv: bestehende Einträge (auch von Hand
+       korrigierte, z.B. weil digimoncard.dev mal ein falsches Bild verlinkt
+       hat) werden nie neu berechnet oder überschrieben — nur wirklich neue
+       IDs kommen dazu. Ein Eintrag verschwindet erst wieder, sobald die Karte
+       offiziell erfasst ist (dann übernimmt der normale Sync das echte Bild)."""
     progress = load_set_progress()
     if not progress:
         return
     known_ids = {c['id'] for c in existing if c.get('id')}
-    reveal = {}
+    reveal = load_reveal_images()
+    changed = False
+
+    for cid in list(reveal.keys()):
+        if cid in known_ids:
+            del reveal[cid]
+            changed = True
+
     fb_map = None
     for set_code, total in progress.items():
         sample = next((c for c in existing if c.get('set') == set_code and c.get('id')), None)
         pad = len((sample['id'].split('-')[1] if sample else '')) or 3
-        missing = [f'{set_code}-{n:0{pad}d}' for n in range(1, total + 1)
-                   if f'{set_code}-{n:0{pad}d}' not in known_ids]
-        if not missing:
+        new_ids = [f'{set_code}-{n:0{pad}d}' for n in range(1, total + 1)
+                   if f'{set_code}-{n:0{pad}d}' not in known_ids and f'{set_code}-{n:0{pad}d}' not in reveal]
+        if not new_ids:
             continue
         if fb_map is None:
             fb_map = fetch_dcd_fallback_map()
-        for cid in missing:
+        for cid in new_ids:
             url = fb_map.get(cid)
             if url:
                 reveal[cid] = url
-    if not reveal and not REVEAL_IMAGES_JS.exists():
+                changed = True
+
+    if not changed:
         return
     write_reveal_images(reveal)
-    log(f'  🖼  reveal-images.data.js: {len(reveal)} Community-Bild(er) für noch nicht offiziell erfasste Karten.')
+    log(f'  🖼  reveal-images.data.js: {len(reveal)} Bild(er) insgesamt (nur neue IDs ergänzt, Bestand unangetastet).')
 
 
 def backup_cards_data_js():
