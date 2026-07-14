@@ -20,8 +20,13 @@
     availableOnly: false,     // besessen, aber mind. eine freie (keinem Deck zugewiesene) Kopie
     altOnly: false,           // nur Alt-Art-Eintraege (zwingt showAlts an)
     showAlts: false,
-    setGroups: { BT: true, EX: true, ST: true, Andere: true }
+    setGroups: { BT: true, EX: true, ST: true, Andere: true },
+    zoom: 'm'                 // Kartengröße im Grid: s/m/l
   };
+
+  // Zoom-Stufe -> Mindestbreite pro Kachel (px). Grid nutzt auto-fill/minmax,
+  // damit die Spaltenzahl sich responsive an die Breite anpasst.
+  const ZOOM_LEVELS = { s: 100, m: 140, l: 190, xl: 250 };
 
   // Anzeige-Label je Rarity: kompakte Abkuerzung (C/U/R/SR/SEC/UR/P/Alt).
   function rarityLabel(r) { return (window.CardDB && CardDB.rarityShort) ? CardDB.rarityShort(r) : (r || ''); }
@@ -42,6 +47,8 @@
     rootEl = el;
     state.collection = Store.loadCollection();
     state.showAlts = !!Prefs.get('showAlts', false);
+    const z = Prefs.get('cardZoom', 'm');
+    state.zoom = ZOOM_LEVELS[z] ? z : 'm';
     const sg = Prefs.get('setGroups', null);
     if (sg && typeof sg === 'object') state.setGroups = Object.assign({ BT: true, EX: true, ST: true, Andere: true }, sg);
     if (!busWired) {
@@ -118,6 +125,12 @@
               ${state.sortDir === 'asc' ? '▲' : '▼'}
             </button>
 
+            <div id="zoom-buttons" class="flex items-center gap-0.5 bg-slate-800 border border-slate-600 rounded min-h-[40px] px-0.5" title="Kartengröße">
+              ${Object.keys(ZOOM_LEVELS).map(z => `
+                <button data-zoom="${z}" class="px-2 py-1.5 rounded text-xs font-semibold ${state.zoom === z ? 'bg-amber-500 text-slate-900' : 'text-slate-300 hover:bg-slate-700'}">${z.toUpperCase()}</button>
+              `).join('')}
+            </div>
+
             <button id="reset-filters" class="text-slate-400 hover:text-slate-200 text-sm ml-auto">Filter zurücksetzen</button>
             </div>
 
@@ -159,7 +172,7 @@
 
           <div id="bulk-bar" class="mb-3"></div>
 
-          <div id="card-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3"></div>
+          <div id="card-grid" class="grid zoom-grid gap-2 md:gap-3" style="--tile-min:${ZOOM_LEVELS[state.zoom]}px"></div>
           <div id="result-info" class="text-sm text-slate-400 mt-3"></div>
         </div>
       </div>
@@ -205,6 +218,19 @@
     rootEl.querySelector('#sort-dir').addEventListener('click', () => {
       state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       render();
+    });
+    rootEl.querySelector('#zoom-buttons').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-zoom]');
+      if (!btn) return;
+      state.zoom = btn.dataset.zoom;
+      Prefs.set('cardZoom', state.zoom);
+      const grid = rootEl.querySelector('#card-grid');
+      if (grid) grid.style.setProperty('--tile-min', ZOOM_LEVELS[state.zoom] + 'px');
+      rootEl.querySelectorAll('#zoom-buttons button').forEach(b => {
+        b.classList.toggle('bg-amber-500', b.dataset.zoom === state.zoom);
+        b.classList.toggle('text-slate-900', b.dataset.zoom === state.zoom);
+        b.classList.toggle('text-slate-300', b.dataset.zoom !== state.zoom);
+      });
     });
     // Die Besitz-Filter schließen sich gegenseitig aus (nur einer aktiv).
     const setExclusive = active => {
