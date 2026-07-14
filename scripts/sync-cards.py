@@ -32,6 +32,17 @@ API_INDEX = 'https://digimoncard.io/api-public/getAllCards.php?series=Digimon%20
 API_CARD = 'https://digimoncard.io/api-public/search.php?card='
 IMG_BASE = 'https://world.digimoncard.com/images/cardlist/card/'
 
+# Übergangs-Bildquelle: Bandai veröffentlicht Kartenbilder auf world.digimoncard.com
+# oft erst Wochen nach den Kartendaten. digimoncard.dev sammelt Community-Scans
+# schneller. Braucht Browser-typische Header, sonst 406 (mod_security).
+DCD_INDEX = 'https://digimoncard.dev/data8675309.php'
+DCD_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Referer': 'https://digimoncard.dev/',
+    'Origin': 'https://digimoncard.dev',
+}
+
 MAX_ALT_PROBE = 10      # _P1 .. _P10 probieren (bestehende Daten haben bis zu 7 Alts)
 ALT_PROBE_DELAY = 0.2   # 200 ms zwischen HEAD-Requests
 
@@ -61,6 +72,58 @@ def http_get_json(url, timeout=30):
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()
     return json.loads(data.decode('utf-8'))
+
+
+_dcd_fallback_cache = None
+
+
+def fetch_dcd_fallback_map():
+    """Lädt den digimoncard.dev-Datensatz (einmal pro Lauf, memoisiert) und
+       baut cardid -> imageUrl (nur en-US, erster Treffer pro Karte)."""
+    global _dcd_fallback_cache
+    if _dcd_fallback_cache is not None:
+        return _dcd_fallback_cache
+    log('  Lade digimoncard.dev-Fallback-Index (Übergangsbilder) …')
+    try:
+        req = urllib.request.Request(DCD_INDEX, headers=DCD_HEADERS)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        out = {}
+        for entry in data:
+            cid = entry.get('cardid')
+            url = entry.get('imageUrl')
+            if cid and url and 'en-US' in url and cid not in out:
+                out[cid] = url
+        log(f'  → {len(out)} Fallback-Bilder bei digimoncard.dev gefunden.')
+        _dcd_fallback_cache = out
+    except Exception as e:
+        log(f'  ⚠ digimoncard.dev-Fallback nicht erreichbar: {e}')
+        _dcd_fallback_cache = {}
+    return _dcd_fallback_cache
+
+
+def apply_image_fallback(card):
+    """Prüft, ob das offizielle Bandai-Bild für `card` existiert. Falls nicht
+       und noch kein Fallback gesetzt ist, wird digimoncard.dev als
+       Übergangsquelle nachgeschlagen. Falls Bandai inzwischen doch ein Bild
+       hat, wird ein vorher gesetzter Fallback wieder entfernt.
+       Gibt 'added' / 'resolved' / None zurück (für Logging)."""
+    cid = card.get('id')
+    if not cid:
+        return None
+    status, _ = head_probe(IMG_BASE + cid + '.png')
+    if status == 200:
+        if card.get('imageFallback'):
+            del card['imageFallback']
+            return 'resolved'
+        return None
+    if card.get('imageFallback'):
+        return None
+    fb = fetch_dcd_fallback_map().get(cid)
+    if fb:
+        card['imageFallback'] = fb
+        return 'added'
+    return None
 
 
 def head_probe(url, timeout=10):
@@ -253,6 +316,44 @@ def run_backfill_alts(existing, args):
     return 0
 
 
+def run_fix_missing_images(existing, args):
+    """Prüft Karten ohne offizielles Bandai-Bild (frisch angekündigte Sets,
+       CDN hinkt hinterher) und ergänzt eine digimoncard.dev-Übergangs-URL im
+       Feld 'imageFallback'. Wird ein zuvor gesetzter Fallback durch ein
+       inzwischen erschienenes Bandai-Bild überflüssig, wird er entfernt.
+       Standard: nur das neueste Set (per --set einschränkbar)."""
+    target_set = args.set
+    if not target_set:
+        # Set-Codes (BT/EX/ST/P/…) korrelieren nicht mit Erscheinungsdatum,
+        # daher über 'raw.date_added' das zuletzt hinzugefügte Set ermitteln.
+        dated = [(c['raw']['date_added'], c.get('set')) for c in existing
+                 if isinstance(c.get('raw'), dict) and c['raw'].get('date_added') and c.get('set')]
+        target_set = max(dated)[1] if dated else None
+
+    candidates = [c for c in existing if c.get('set') == target_set] if target_set else existing
+    log('')
+    log(f'🖼  Bild-Fallback-Check für Set {target_set!r} ({len(candidates)} Karten) …')
+    bak = backup_cards_data_js()
+    if bak:
+        log(f'   Backup: {bak.name}')
+    log('')
+
+    added, resolved = 0, 0
+    for i, card in enumerate(candidates, 1):
+        action = apply_image_fallback(card)
+        if action == 'added':
+            added += 1
+            log(f'  [{i:>3}/{len(candidates)}] {card["id"]}  → Fallback ergänzt')
+        elif action == 'resolved':
+            resolved += 1
+            log(f'  [{i:>3}/{len(candidates)}] {card["id"]}  → Bandai-Bild jetzt da, Fallback entfernt')
+
+    write_cards_data_js(existing)
+    log('')
+    log(f'✅ Fertig. {added} Fallback(s) ergänzt, {resolved} durch offizielles Bild ersetzt.')
+    return 0
+
+
 def run_slim_raw(existing):
     """Einmalige Migration: reduziert das raw-Objekt jeder bekannten Karte auf
        die zur Laufzeit genutzten Felder (RAW_KEEP) und spart so ~66% Dateigröße."""
@@ -310,6 +411,8 @@ def main():
     p.add_argument('--backfill-alts', action='store_true', help='Nur Alt-Arts nachprobieren für Karten mit leerem altImages, kein API-Sync')
     p.add_argument('--no-alt-probe', action='store_true', help='Beim Sync keine Alt-Arts probieren')
     p.add_argument('--slim-raw', action='store_true', help='Nur raw-Felder auf das Noetige reduzieren (einmalige Migration), kein API-Sync')
+    p.add_argument('--fix-missing-images', action='store_true', help='Nur Bild-Fallback (digimoncard.dev) für Karten ohne offizielles Bandai-Bild prüfen/ergänzen, kein API-Sync')
+    p.add_argument('--set', type=str, default=None, help='Zusammen mit --fix-missing-images: nur dieses Set prüfen (Default: neuestes Set)')
     args = p.parse_args()
 
     log('🔄 Digimon Collection — Karten-Update')
@@ -326,6 +429,24 @@ def main():
 
     if args.slim_raw:
         return run_slim_raw(existing)
+
+    if args.fix_missing_images:
+        return run_fix_missing_images(existing, args)
+
+    # Karten mit offenem Bild-Fallback sind normalerweise wenige (nur ganz neue
+    # Sets, bei denen Bandai die Bilder noch nicht veröffentlicht hat) — bei
+    # jedem normalen Sync günstig mitprüfen, ob Bandai inzwischen nachgezogen hat.
+    pending_fallback = [c for c in existing if c.get('imageFallback')]
+    if pending_fallback and not args.dry_run:
+        log(f'  Prüfe {len(pending_fallback)} Karte(n) mit Bild-Fallback auf offizielles Bandai-Bild …')
+        resolved = 0
+        for card in pending_fallback:
+            if apply_image_fallback(card) == 'resolved':
+                resolved += 1
+                log(f'    ✓ {card["id"]} — Bandai-Bild jetzt da, Fallback entfernt')
+        if resolved:
+            write_cards_data_js(existing)
+        log('')
 
     log('  Lade Index von digimoncard.io …')
     try:
@@ -384,6 +505,9 @@ def main():
                 if alts:
                     card['altImages'] = alts
                     log(f'      → {len(alts)} Alt-Art(s) übernommen')
+            fb_action = apply_image_fallback(card)
+            if fb_action == 'added':
+                log(f'      → kein Bandai-Bild, Übergangs-Fallback (digimoncard.dev) gesetzt')
             fetched.append(card)
             cards_buffer.append(card)
         else:

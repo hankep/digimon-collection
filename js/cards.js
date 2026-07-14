@@ -7,6 +7,9 @@
   const byId = new Map();
   const bySet = new Map();
   const allVariants = new Map(); // variantKey -> { cardId, isAlt }
+  // Übergangs-Bildquelle (digimoncard.dev) für Karten ohne offizielles
+  // Bandai-Bild, gesetzt von scripts/sync-cards.py als card.imageFallback.
+  const imageFallbackByVariant = new Map();
   const sets = []; // { code, name, count }
   const colors = new Set();
   const types = new Set();
@@ -38,6 +41,52 @@
     return RARITY_CANON[String(r).toLowerCase()] || r;
   }
 
+  // Platzhalter-Kartenrückseite für noch nicht enthüllte Karten (inline SVG,
+  // kein zusätzliches Asset nötig).
+  const UNREVEALED_PLACEHOLDER_IMAGE = 'data:image/svg+xml,' + encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='560' viewBox='0 0 400 560'>
+      <rect width='400' height='560' rx='20' fill='#1e293b'/>
+      <rect x='14' y='14' width='372' height='532' rx='14' fill='none' stroke='#475569' stroke-width='4'/>
+      <text x='200' y='300' font-family='sans-serif' font-size='120' fill='#475569' text-anchor='middle' dominant-baseline='middle'>?</text>
+      <text x='200' y='500' font-family='sans-serif' font-size='22' fill='#94a3b8' text-anchor='middle'>Noch nicht enthüllt</text>
+    </svg>`
+  );
+
+  // Für Sets, die noch nicht vollständig veröffentlicht sind (window.SET_PROGRESS,
+  // siehe data/set-progress.data.js), Platzhalter-Karten für alle bislang nicht
+  // enthüllten IDs ergänzen, damit das komplette Set (mit Lücken) sichtbar ist.
+  (function addUnrevealedPlaceholders() {
+    const progress = window.SET_PROGRESS || {};
+    for (const setCode of Object.keys(progress)) {
+      const total = progress[setCode];
+      const known = CARDS.filter(c => c.set === setCode);
+      if (!known.length || !total) continue;
+      const padWidth = (known[0].id.split('-')[1] || '').length || 3;
+      const knownIds = new Set(known.map(c => c.id));
+      for (let n = 1; n <= total; n++) {
+        const id = setCode + '-' + String(n).padStart(padWidth, '0');
+        if (knownIds.has(id)) continue;
+        CARDS.push({
+          id,
+          name: 'Noch nicht enthüllt',
+          set: setCode,
+          rarity: '',
+          color: [],
+          type: null,
+          image: id + '.placeholder',
+          raw: {},
+          altImages: [],
+          level: null,
+          cost: null,
+          effect: '',
+          traits: [],
+          unrevealed: true,
+          imageFallback: UNREVEALED_PLACEHOLDER_IMAGE,
+        });
+      }
+    }
+  })();
+
   for (const card of CARDS) {
     card.rarity = canonRarity(card.rarity);
     byId.set(card.id, card);
@@ -49,6 +98,7 @@
     if (card.image) {
       const main = variantKeyFromImage(card.image);
       allVariants.set(main, { cardId: card.id, isAlt: false });
+      if (card.imageFallback) imageFallbackByVariant.set(main, card.imageFallback);
     }
     // Alt-Arts
     if (Array.isArray(card.altImages)) {
@@ -183,6 +233,8 @@
   function imagePath(variantKey) {
     // Errata-Varianten haben dieselbe Bilddatei wie die Basis (URL ohne -Errata-Suffix).
     const key = variantKey.replace(/-Errata$/i, '');
+    const fallback = imageFallbackByVariant.get(key);
+    if (fallback) return fallback;
     return 'https://world.digimoncard.com/images/cardlist/card/' + key + '.png';
   }
 
