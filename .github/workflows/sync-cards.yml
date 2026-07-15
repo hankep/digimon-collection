@@ -2,7 +2,7 @@ name: Karten-Sync
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 06:00 UTC = 08:00 Berlin (CEST) / 07:00 Berlin (CET)
+    - cron: '0 7 * * *'  # 07:00 UTC = 09:00 Berlin (CEST) / 08:00 Berlin (CET)
   workflow_dispatch:
 
 permissions:
