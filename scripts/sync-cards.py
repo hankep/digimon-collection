@@ -17,8 +17,8 @@ Usage:
 """
 
 import argparse
+import io
 import json
-import os
 import re
 import sys
 import time
@@ -27,6 +27,14 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image
+
+# Karten werden im Grid max. ~250px breit angezeigt (Zoom-Stufe XL), im
+# Karten-Detail max. ~320px. 480px Zielbreite gibt etwas Retina-Reserve, ohne
+# die vollaufgeloesten Community-Scans (oft 800px+, 1MB+) unnoetig mitzuschleppen.
+MIRROR_MAX_WIDTH = 480
+MIRROR_JPEG_QUALITY = 82
 
 API_INDEX = 'https://digimoncard.io/api-public/getAllCards.php?series=Digimon%20Card%20Game&sort=name'
 API_CARD = 'https://digimoncard.io/api-public/search.php?card='
@@ -63,6 +71,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 CARDS_DATA_JS = DATA_DIR / 'cards.data.js'
 SET_PROGRESS_JS = DATA_DIR / 'set-progress.data.js'
 REVEAL_IMAGES_JS = DATA_DIR / 'reveal-images.data.js'
+REVEAL_CACHE_DIR = DATA_DIR / 'reveal-cache'
 
 
 def log(msg):
@@ -238,18 +247,46 @@ def write_reveal_images(mapping):
     tmp.replace(REVEAL_IMAGES_JS)
 
 
+def mirror_image(cid, url):
+    """Lädt ein digimoncard.dev-Bild einmalig herunter, verkleinert es auf
+       Anzeigegröße und speichert es lokal unter data/reveal-cache/. So
+       hotlinken wir ihre CDN nicht bei jedem Seitenaufruf (die blockt das per
+       Referer-Check sowieso) — ihre Bandbreite wird nur 1x pro Karte belastet,
+       nicht pro Besucher. Immer als JPEG gespeichert, damit die oft 1MB+
+       grossen Rohscans nicht 1:1 ins Repo wandern.
+       Gibt den repo-relativen Pfad zurück, oder None bei Fehler."""
+    REVEAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    dest = REVEAL_CACHE_DIR / f'{cid}.jpg'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'digimon-collection-sync/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+        img = Image.open(io.BytesIO(raw)).convert('RGB')
+        if img.width > MIRROR_MAX_WIDTH:
+            new_h = round(img.height * MIRROR_MAX_WIDTH / img.width)
+            img = img.resize((MIRROR_MAX_WIDTH, new_h), Image.LANCZOS)
+        img.save(dest, 'JPEG', quality=MIRROR_JPEG_QUALITY, optimize=True)
+        return f'data/reveal-cache/{dest.name}'
+    except Exception as e:
+        log(f'  ⚠ Mirror fehlgeschlagen für {cid}: {e}')
+        return None
+
+
 def sync_reveal_images(existing):
     """Für Sets aus set-progress.data.js: IDs, die weder in cards.data.js noch
        digimoncard.io bekannt sind, aber bei digimoncard.dev schon ein
-       Community-Bild haben, landen in reveal-images.data.js. Nur die Bild-URL
-       wird übernommen — keine Kartendaten (Name/Effekt/etc. kommen erst mit
-       dem offiziellen digimoncard.io-Sync).
+       Community-Bild haben, landen in reveal-images.data.js — als lokal
+       gespiegelte Kopie (data/reveal-cache/), nicht als direkter Link zu
+       deren CDN (die blockt Hotlinking per Referer-Check, und selbst ohne
+       Block waere staendiges Hotlinken unfair gegenueber ihrer Bandbreite).
+       Nur die Bild-Datei wird übernommen — keine Kartendaten (Name/Effekt/etc.
+       kommen erst mit dem offiziellen digimoncard.io-Sync).
 
        Additiv, nicht destruktiv: bestehende Einträge (auch von Hand
-       korrigierte, z.B. weil digimoncard.dev mal ein falsches Bild verlinkt
-       hat) werden nie neu berechnet oder überschrieben — nur wirklich neue
-       IDs kommen dazu. Ein Eintrag verschwindet erst wieder, sobald die Karte
-       offiziell erfasst ist (dann übernimmt der normale Sync das echte Bild)."""
+       korrigierte) werden nie neu berechnet oder überschrieben — nur wirklich
+       neue IDs kommen dazu. Ein Eintrag verschwindet erst wieder, sobald die
+       Karte offiziell erfasst ist (dann übernimmt der normale Sync das echte
+       Bild), die gespiegelte Datei wird dann ebenfalls aufgeräumt."""
     progress = load_set_progress()
     if not progress:
         return
@@ -259,8 +296,20 @@ def sync_reveal_images(existing):
 
     for cid in list(reveal.keys()):
         if cid in known_ids:
+            old_path = PROJECT_ROOT / reveal[cid]
+            if old_path.exists() and REVEAL_CACHE_DIR in old_path.parents:
+                old_path.unlink()
             del reveal[cid]
             changed = True
+
+    # Migration: Einträge aus früheren Läufen, die noch direkt auf deren CDN
+    # zeigen (vor Einführung des Mirrorings), einmalig lokal spiegeln.
+    for cid, val in list(reveal.items()):
+        if isinstance(val, str) and val.startswith('http'):
+            local_path = mirror_image(cid, val)
+            if local_path:
+                reveal[cid] = local_path
+                changed = True
 
     fb_map = None
     for set_code, total in progress.items():
@@ -274,8 +323,11 @@ def sync_reveal_images(existing):
             fb_map = fetch_dcd_fallback_map()
         for cid in new_ids:
             url = fb_map.get(cid)
-            if url:
-                reveal[cid] = url
+            if not url:
+                continue
+            local_path = mirror_image(cid, url)
+            if local_path:
+                reveal[cid] = local_path
                 changed = True
 
     if not changed:
