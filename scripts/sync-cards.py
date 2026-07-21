@@ -126,12 +126,11 @@ _dcd_fallback_cache = None
 
 
 def fetch_dcd_fallback_map():
-    """Lädt den digimoncard.dev-Datensatz und baut cardid -> imageUrl (nur
-       en-US, ERSTER Treffer pro Karte = das Hauptbild). Weitere en-US-Einträge
-       einer Karte sind i.d.R. Alt-Arts, NICHT Korrekturen — deshalb gewinnt der
-       erste. Ausnahmen (dort wurde zwischenzeitlich eine JP-Karte einsortiert,
-       das englische Bild kam als zweiter Eintrag) stehen in
-       DCD_MAIN_ENTRY_OVERRIDE.
+    """Lädt den digimoncard.dev-Datensatz und baut cardid -> [en-US-URLs in
+       Reihenfolge]. Der ERSTE Eintrag ist normalerweise das Hauptbild, weitere
+       Einträge sind Alt-Arts (NICHT Korrekturen). Ausnahmen, bei denen ein
+       anderer Eintrag das Hauptbild ist (zwischenzeitlich JP einsortiert),
+       stehen in DCD_MAIN_ENTRY_OVERRIDE — s. dcd_main_url()/dcd_alt_urls().
 
        Zwei Drosseln, damit digimoncard.dev höchstens 1×/Tag getroffen wird:
        - memoisiert innerhalb eines Laufs (_dcd_fallback_cache)
@@ -153,26 +152,38 @@ def fetch_dcd_fallback_map():
         req = urllib.request.Request(DCD_INDEX, headers=DCD_HEADERS)
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode('utf-8'))
-        out = {}
-        order = {}   # cid -> [en-US-URLs in Reihenfolge], für Overrides/Alt-Arts
+        order = {}   # cid -> [en-US-URLs in Reihenfolge]
         for entry in data:
             cid = entry.get('cardid')
             url = entry.get('imageUrl')
-            if cid and url and 'en-US' in url:
+            if cid and url and 'en-US' in url and url not in order.get(cid, ()):
                 order.setdefault(cid, []).append(url)
-                if cid not in out:
-                    out[cid] = url   # erster en-US-Treffer = Hauptbild
-        # Manuelle Ausnahmen: bei diesen Karten ist ein anderer Eintrag das Bild.
-        for cid, idx in DCD_MAIN_ENTRY_OVERRIDE.items():
-            urls = order.get(cid, [])
-            if len(urls) > idx:
-                out[cid] = urls[idx]
-        log(f'  → {len(out)} Fallback-Bilder bei digimoncard.dev gefunden.')
-        _dcd_fallback_cache = out
+        log(f'  → {len(order)} Karten mit en-US-Bild(ern) bei digimoncard.dev.')
+        _dcd_fallback_cache = order
     except Exception as e:
         log(f'  ⚠ digimoncard.dev-Fallback nicht erreichbar: {e}')
         _dcd_fallback_cache = {}
     return _dcd_fallback_cache
+
+
+def dcd_main_url(fbmap, cid):
+    """Haupt-Bild-URL einer Karte aus dem dev-Map (oder None). Standard: erster
+       en-US-Eintrag; per DCD_MAIN_ENTRY_OVERRIDE ein anderer Index."""
+    urls = fbmap.get(cid) or []
+    if not urls:
+        return None
+    idx = DCD_MAIN_ENTRY_OVERRIDE.get(cid, 0)
+    return urls[idx] if len(urls) > idx else urls[0]
+
+
+def dcd_alt_urls(fbmap, cid):
+    """Alt-Art-URLs einer Karte: alle en-US-Einträge außer dem Hauptbild, in
+       Reihenfolge. Für Override-Karten (dort ist ein Extra-Eintrag nur ein
+       JP-Duplikat, kein echtes Alt-Art) leer."""
+    if cid in DCD_MAIN_ENTRY_OVERRIDE:
+        return []
+    urls = fbmap.get(cid) or []
+    return urls[1:]
 
 
 def remove_local_mirror(fallback):
@@ -188,58 +199,116 @@ def remove_local_mirror(fallback):
         pass
 
 
-def apply_image_fallback(card):
-    """Prüft, ob das offizielle Bandai-Bild für `card` existiert. Falls nicht
-       und noch kein Fallback gesetzt ist, wird bei digimoncard.dev ein
-       Übergangsbild nachgeschlagen und — wie bei sync_reveal_images — LOKAL
-       gespiegelt (data/reveal-cache/), NICHT direkt verlinkt: deren CDN
-       (assets.cardlist.dev) blockt Cross-Origin-Zugriffe mit 403, ein Hotlink
-       wäre im Browser also ein kaputtes Bild. Falls Bandai inzwischen doch ein
-       eigenes Bild hat, wird ein vorher gesetzter Fallback (inkl. lokaler
-       Spiegel-Datei) wieder entfernt.
+def clear_community_alts(card):
+    """Entfernt alle Community-Alt-Arts einer Karte (inkl. Spiegel-Dateien).
+       Gibt True zurück, wenn etwas entfernt wurde."""
+    alts = card.get('communityAlts')
+    if not alts:
+        return False
+    for a in alts:
+        if isinstance(a, dict) and a.get('fallback'):
+            remove_local_mirror(a['fallback'])
+    del card['communityAlts']
+    return True
 
-       Die Quell-URL wird in 'imageFallbackSrc' mitgespeichert: liefert
-       digimoncard.dev später ein besseres/korrigiertes Bild unter einer neuen
-       URL (z.B. erst JP-, dann englischer Scan), wird automatisch neu
-       gespiegelt. Ein Fallback ohne bekannte Quelle (Altbestand) wird beim
-       nächsten Check einmalig aufgefrischt.
+
+def sync_community_alts(card, alt_urls):
+    """Legt/aktualisiert lokal gespiegelte Community-Alt-Arts (2.+ en-US-Eintrag
+       bei digimoncard.dev) unter data/reveal-cache/<id>_dcd<n>.jpg an und
+       hinterlegt sie als card['communityAlts'] = [{key, fallback, src}, …].
+       Das Frontend rendert sie als zusätzliche Varianten der Karte.
+
+       Entfernt NICHT automatisch, wenn alt_urls leer ist — das könnte an der
+       Tagessperre liegen (dann kennen wir die Alts gerade nicht). Aufräumen
+       passiert nur, wenn Bandai das offizielle Bild liefert (clear_community_alts)
+       oder wenn dev bei einer echten Abfrage weniger Alts liefert.
+       Gibt True zurück bei Änderung."""
+    if not alt_urls:
+        return False
+    cid = card['id']
+    existing = card.get('communityAlts') or []
+    by_src = {a.get('src'): a for a in existing if isinstance(a, dict)}
+    new_list, changed = [], False
+    for i, url in enumerate(alt_urls, 1):
+        key = f'{cid}_dcd{i}'
+        prev = by_src.get(url)
+        if (prev and prev.get('key') == key and prev.get('fallback')
+                and (PROJECT_ROOT / prev['fallback']).exists()):
+            new_list.append({'key': key, 'fallback': prev['fallback'], 'src': url})
+            continue
+        local = mirror_image(cid, url, stem=key)
+        if local:
+            new_list.append({'key': key, 'fallback': local, 'src': url})
+            changed = True
+    # Dateien alter Alts, die nicht mehr vorkommen, aufräumen.
+    keep = {a['fallback'] for a in new_list}
+    for a in existing:
+        if isinstance(a, dict) and a.get('fallback') and a['fallback'] not in keep:
+            remove_local_mirror(a['fallback'])
+            changed = True
+    if new_list != existing:
+        changed = True
+    if new_list:
+        card['communityAlts'] = new_list
+    elif 'communityAlts' in card:
+        del card['communityAlts']
+    return changed
+
+
+def apply_image_fallback(card):
+    """Pflegt Übergangs-Bilder einer Karte aus digimoncard.dev, solange Bandai
+       noch keine eigenen veröffentlicht hat. Alles wird LOKAL gespiegelt
+       (data/reveal-cache/), NICHT gehotlinkt: deren CDN (assets.cardlist.dev)
+       blockt Cross-Origin-Zugriffe mit 403 → im Browser ein kaputtes Bild.
+
+       - Hauptbild → card['imageFallback'] (+ Quell-URL in 'imageFallbackSrc',
+         damit ein späteres besseres dev-Bild unter neuer URL erkannt und neu
+         gespiegelt wird).
+       - Weitere en-US-Einträge → card['communityAlts'] (Alt-Arts, s.
+         sync_community_alts).
+       Sobald Bandai ein offizielles Bild hat, werden Fallback UND Community-
+       Alt-Arts (inkl. Dateien) wieder entfernt.
        Gibt 'added' / 'refreshed' / 'resolved' / None zurück (für Logging)."""
     cid = card.get('id')
     if not cid:
         return None
+    fbmap = fetch_dcd_fallback_map()
     status, _ = head_probe(IMG_BASE + cid + '.png')
     if status == 200:
-        # Bandai hat jetzt ein offizielles Bild → Übergangs-Fallback entfernen.
+        # Bandai hat jetzt ein offizielles Bild → alle Übergangs-Daten weg.
+        changed = False
         if card.get('imageFallback'):
             remove_local_mirror(card['imageFallback'])
             del card['imageFallback']
             card.pop('imageFallbackSrc', None)
-            return 'resolved'
-        return None
-    url = fetch_dcd_fallback_map().get(cid)
-    if not url:
-        return None
-    if card.get('imageFallback'):
-        # Schon ein Fallback da — nur neu spiegeln, wenn dev inzwischen eine
-        # andere Quelle liefert (oder die Quelle unbekannt ist, Altbestand).
-        # Sonst kein Download.
-        if card.get('imageFallbackSrc') == url:
-            return None
-        local = mirror_image(cid, url)
-        if local:
-            card['imageFallback'] = local
-            card['imageFallbackSrc'] = url
-            return 'refreshed'
-        return None
-    # Noch gar kein Fallback → neu anlegen.
-    local = mirror_image(cid, url)
-    if local:
-        card['imageFallback'] = local
-        card['imageFallbackSrc'] = url
-        return 'added'
-    # Spiegeln fehlgeschlagen → lieber gar kein Fallback als ein blockierter
-    # Hotlink (kaputtes Bild). Nächster Lauf versucht es erneut.
-    return None
+            changed = True
+        if clear_community_alts(card):
+            changed = True
+        return 'resolved' if changed else None
+
+    main_url = dcd_main_url(fbmap, cid)
+    action = None
+    if main_url:
+        if card.get('imageFallback'):
+            # Nur neu spiegeln, wenn dev eine andere Quelle liefert (oder die
+            # Quelle unbekannt ist, Altbestand). Sonst kein Download.
+            if card.get('imageFallbackSrc') != main_url:
+                local = mirror_image(cid, main_url)
+                if local:
+                    card['imageFallback'] = local
+                    card['imageFallbackSrc'] = main_url
+                    action = 'refreshed'
+        else:
+            local = mirror_image(cid, main_url)
+            if local:
+                card['imageFallback'] = local
+                card['imageFallbackSrc'] = main_url
+                action = 'added'
+
+    # Community-Alt-Arts (2.+ Eintrag) pflegen.
+    if sync_community_alts(card, dcd_alt_urls(fbmap, cid)):
+        action = action or 'refreshed'
+    return action
 
 
 def head_probe(url, timeout=10):
@@ -352,16 +421,18 @@ def write_reveal_images(mapping):
     tmp.replace(REVEAL_IMAGES_JS)
 
 
-def mirror_image(cid, url):
+def mirror_image(cid, url, stem=None):
     """Lädt ein digimoncard.dev-Bild einmalig herunter, verkleinert es auf
        Anzeigegröße und speichert es lokal unter data/reveal-cache/. So
        hotlinken wir ihre CDN nicht bei jedem Seitenaufruf (die blockt das per
        Referer-Check sowieso) — ihre Bandbreite wird nur 1x pro Karte belastet,
        nicht pro Besucher. Immer als JPEG gespeichert, damit die oft 1MB+
        grossen Rohscans nicht 1:1 ins Repo wandern.
+       `stem` überschreibt den Dateinamen (ohne .jpg) — für Alt-Art-Varianten
+       wie '<id>_dcd1'. Default ist die Card-ID.
        Gibt den repo-relativen Pfad zurück, oder None bei Fehler."""
     REVEAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    dest = REVEAL_CACHE_DIR / f'{cid}.jpg'
+    dest = REVEAL_CACHE_DIR / f'{stem or cid}.jpg'
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'digimon-collection-sync/1.0'})
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -436,7 +507,7 @@ def sync_reveal_images(existing):
         if fb_map is None:
             fb_map = fetch_dcd_fallback_map()
         for cid in new_ids:
-            url = fb_map.get(cid)
+            url = dcd_main_url(fb_map, cid)
             if not url:
                 continue
             local_path = mirror_image(cid, url)

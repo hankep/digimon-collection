@@ -132,6 +132,16 @@
         allVariants.set(altKey, { cardId: card.id, isAlt: true });
       }
     }
+    // Community-Alt-Arts (digimoncard.dev-Übergangsbilder, lokal gespiegelt) —
+    // eigener Variantenschlüssel + lokaler Fallback-Pfad. Gesetzt vom Sync-Skript,
+    // solange Bandai die offiziellen Bilder noch nicht veröffentlicht hat.
+    if (Array.isArray(card.communityAlts)) {
+      for (const ca of card.communityAlts) {
+        if (!ca || !ca.key) continue;
+        allVariants.set(ca.key, { cardId: card.id, isAlt: true });
+        if (ca.fallback) imageFallbackByVariant.set(ca.key, ca.fallback);
+      }
+    }
 
     if (Array.isArray(card.color)) for (const c of card.color) colors.add(c);
     if (card.type) types.add(card.type);
@@ -249,6 +259,11 @@
     if (Array.isArray(card.altImages)) {
       for (const alt of card.altImages) {
         list.push({ key: variantKeyFromImage(alt), isAlt: true });
+      }
+    }
+    if (Array.isArray(card.communityAlts)) {
+      for (const ca of card.communityAlts) {
+        if (ca && ca.key) list.push({ key: ca.key, isAlt: true });
       }
     }
     variantsOfCache.set(card.id, list);
