@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PIL import Image
@@ -83,7 +83,7 @@ DCD_STAMP_FILE = REVEAL_CACHE_DIR / '.dcd-last-fetch'
 
 
 def _today_utc():
-    return datetime.utcnow().strftime('%Y-%m-%d')
+    return datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
 
 def dcd_fetched_today():
@@ -118,7 +118,8 @@ _dcd_fallback_cache = None
 
 def fetch_dcd_fallback_map():
     """Lädt den digimoncard.dev-Datensatz und baut cardid -> imageUrl (nur
-       en-US, erster Treffer pro Karte).
+       en-US, LETZTER Treffer pro Karte — dev ergänzt korrigierte/englische
+       Scans oft als zusätzlichen Eintrag, der neuere gewinnt).
 
        Zwei Drosseln, damit digimoncard.dev höchstens 1×/Tag getroffen wird:
        - memoisiert innerhalb eines Laufs (_dcd_fallback_cache)
@@ -144,8 +145,8 @@ def fetch_dcd_fallback_map():
         for entry in data:
             cid = entry.get('cardid')
             url = entry.get('imageUrl')
-            if cid and url and 'en-US' in url and cid not in out:
-                out[cid] = url
+            if cid and url and 'en-US' in url:
+                out[cid] = url   # letzter en-US-Treffer gewinnt (s. Docstring)
         log(f'  → {len(out)} Fallback-Bilder bei digimoncard.dev gefunden.')
         _dcd_fallback_cache = out
     except Exception as e:
@@ -176,25 +177,45 @@ def apply_image_fallback(card):
        wäre im Browser also ein kaputtes Bild. Falls Bandai inzwischen doch ein
        eigenes Bild hat, wird ein vorher gesetzter Fallback (inkl. lokaler
        Spiegel-Datei) wieder entfernt.
-       Gibt 'added' / 'resolved' / None zurück (für Logging)."""
+
+       Die Quell-URL wird in 'imageFallbackSrc' mitgespeichert: liefert
+       digimoncard.dev später ein besseres/korrigiertes Bild unter einer neuen
+       URL (z.B. erst JP-, dann englischer Scan), wird automatisch neu
+       gespiegelt. Ein Fallback ohne bekannte Quelle (Altbestand) wird beim
+       nächsten Check einmalig aufgefrischt.
+       Gibt 'added' / 'refreshed' / 'resolved' / None zurück (für Logging)."""
     cid = card.get('id')
     if not cid:
         return None
     status, _ = head_probe(IMG_BASE + cid + '.png')
     if status == 200:
+        # Bandai hat jetzt ein offizielles Bild → Übergangs-Fallback entfernen.
         if card.get('imageFallback'):
             remove_local_mirror(card['imageFallback'])
             del card['imageFallback']
+            card.pop('imageFallbackSrc', None)
             return 'resolved'
-        return None
-    if card.get('imageFallback'):
         return None
     url = fetch_dcd_fallback_map().get(cid)
     if not url:
         return None
+    if card.get('imageFallback'):
+        # Schon ein Fallback da — nur neu spiegeln, wenn dev inzwischen eine
+        # andere Quelle liefert (oder die Quelle unbekannt ist, Altbestand).
+        # Sonst kein Download.
+        if card.get('imageFallbackSrc') == url:
+            return None
+        local = mirror_image(cid, url)
+        if local:
+            card['imageFallback'] = local
+            card['imageFallbackSrc'] = url
+            return 'refreshed'
+        return None
+    # Noch gar kein Fallback → neu anlegen.
     local = mirror_image(cid, url)
     if local:
         card['imageFallback'] = local
+        card['imageFallbackSrc'] = url
         return 'added'
     # Spiegeln fehlgeschlagen → lieber gar kein Fallback als ein blockierter
     # Hotlink (kaputtes Bild). Nächster Lauf versucht es erneut.
@@ -523,20 +544,41 @@ def run_backfill_alts(existing, args):
     return 0
 
 
+def newest_set(existing):
+    """Ermittelt das zuletzt hinzugefügte Set (über raw.date_added — Set-Codes
+       korrelieren nicht mit dem Erscheinungsdatum)."""
+    dated = [(c['raw']['date_added'], c.get('set')) for c in existing
+             if isinstance(c.get('raw'), dict) and c['raw'].get('date_added') and c.get('set')]
+    return max(dated)[1] if dated else None
+
+
+def fix_images_for_cards(candidates):
+    """Läuft apply_image_fallback über candidates und loggt je Karte.
+       Gibt (added, refreshed, resolved) zurück. Schreibt NICHT — das erledigt
+       der Aufrufer."""
+    added = refreshed = resolved = 0
+    total = len(candidates)
+    for i, card in enumerate(candidates, 1):
+        action = apply_image_fallback(card)
+        if action == 'added':
+            added += 1
+            log(f'  [{i:>3}/{total}] {card["id"]}  → Fallback ergänzt')
+        elif action == 'refreshed':
+            refreshed += 1
+            log(f'  [{i:>3}/{total}] {card["id"]}  → besseres dev-Bild, neu gespiegelt')
+        elif action == 'resolved':
+            resolved += 1
+            log(f'  [{i:>3}/{total}] {card["id"]}  → Bandai-Bild jetzt da, Fallback entfernt')
+    return added, refreshed, resolved
+
+
 def run_fix_missing_images(existing, args):
     """Prüft Karten ohne offizielles Bandai-Bild (frisch angekündigte Sets,
-       CDN hinkt hinterher) und ergänzt eine digimoncard.dev-Übergangs-URL im
-       Feld 'imageFallback'. Wird ein zuvor gesetzter Fallback durch ein
-       inzwischen erschienenes Bandai-Bild überflüssig, wird er entfernt.
+       CDN hinkt hinterher) und ergänzt/aktualisiert eine lokal gespiegelte
+       digimoncard.dev-Übergangsgrafik. Wird ein Fallback durch ein inzwischen
+       erschienenes Bandai-Bild überflüssig, wird er entfernt.
        Standard: nur das neueste Set (per --set einschränkbar)."""
-    target_set = args.set
-    if not target_set:
-        # Set-Codes (BT/EX/ST/P/…) korrelieren nicht mit Erscheinungsdatum,
-        # daher über 'raw.date_added' das zuletzt hinzugefügte Set ermitteln.
-        dated = [(c['raw']['date_added'], c.get('set')) for c in existing
-                 if isinstance(c.get('raw'), dict) and c['raw'].get('date_added') and c.get('set')]
-        target_set = max(dated)[1] if dated else None
-
+    target_set = args.set or newest_set(existing)
     candidates = [c for c in existing if c.get('set') == target_set] if target_set else existing
     log('')
     log(f'🖼  Bild-Fallback-Check für Set {target_set!r} ({len(candidates)} Karten) …')
@@ -545,19 +587,11 @@ def run_fix_missing_images(existing, args):
         log(f'   Backup: {bak.name}')
     log('')
 
-    added, resolved = 0, 0
-    for i, card in enumerate(candidates, 1):
-        action = apply_image_fallback(card)
-        if action == 'added':
-            added += 1
-            log(f'  [{i:>3}/{len(candidates)}] {card["id"]}  → Fallback ergänzt')
-        elif action == 'resolved':
-            resolved += 1
-            log(f'  [{i:>3}/{len(candidates)}] {card["id"]}  → Bandai-Bild jetzt da, Fallback entfernt')
+    added, refreshed, resolved = fix_images_for_cards(candidates)
 
     write_cards_data_js(existing)
     log('')
-    log(f'✅ Fertig. {added} Fallback(s) ergänzt, {resolved} durch offizielles Bild ersetzt.')
+    log(f'✅ Fertig. {added} ergänzt, {refreshed} aufgefrischt, {resolved} durch offizielles Bild ersetzt.')
     return 0
 
 
@@ -693,20 +727,26 @@ def main():
     if args.fix_missing_images:
         return run_fix_missing_images(existing, args)
 
-    # Karten mit offenem Bild-Fallback sind normalerweise wenige (nur ganz neue
-    # Sets, bei denen Bandai die Bilder noch nicht veröffentlicht hat) — bei
-    # jedem normalen Sync günstig mitprüfen, ob Bandai inzwischen nachgezogen hat.
-    pending_fallback = [c for c in existing if c.get('imageFallback')]
-    if pending_fallback and not args.dry_run:
-        log(f'  Prüfe {len(pending_fallback)} Karte(n) mit Bild-Fallback auf offizielles Bandai-Bild …')
-        resolved = 0
-        for card in pending_fallback:
-            if apply_image_fallback(card) == 'resolved':
-                resolved += 1
-                log(f'    ✓ {card["id"]} — Bandai-Bild jetzt da, Fallback entfernt')
-        if resolved:
-            write_cards_data_js(existing)
-        log('')
+    # Bild-Übergangsgrafiken des neuesten Sets bei jedem Sync mitpflegen: neue
+    # Karten ohne Bandai-Bild bekommen einen Fallback, bestehende werden
+    # aufgefrischt, sobald dev ein besseres (englisches) Bild hat, und gelöst,
+    # sobald Bandai nachzieht. Der dev-Index wird dabei nur 1×/Tag getroffen
+    # (Tagessperre in fetch_dcd_fallback_map); Karten anderer Sets mit noch
+    # offenem Fallback prüfen wir zusätzlich auf ein inzwischen erschienenes
+    # Bandai-Bild.
+    if not args.dry_run:
+        target_set = newest_set(existing)
+        newest = [c for c in existing if c.get('set') == target_set]
+        newest_ids = {id(c) for c in newest}
+        others = [c for c in existing if c.get('imageFallback') and id(c) not in newest_ids]
+        candidates = newest + others
+        if candidates:
+            log(f'  Bild-Fallback-Pflege: Set {target_set!r} ({len(newest)}) + {len(others)} weitere mit offenem Fallback …')
+            added, refreshed, resolved = fix_images_for_cards(candidates)
+            if added or refreshed or resolved:
+                write_cards_data_js(existing)
+            log(f'  → {added} ergänzt, {refreshed} aufgefrischt, {resolved} gelöst.')
+            log('')
 
     log('  Lade Index von digimoncard.io …')
     try:
