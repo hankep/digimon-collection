@@ -51,6 +51,15 @@ DCD_HEADERS = {
     'Origin': 'https://digimoncard.dev',
 }
 
+# Ausnahmen, bei denen NICHT der erste en-US-Eintrag von digimoncard.dev das
+# richtige Hauptbild ist: dort wurde zwischenzeitlich eine japanische Karte
+# einsortiert (weil sie zufällig zuerst verfügbar war), das korrekte englische
+# Bild kam als späterer Eintrag. Wert = 0-basierter Index des zu nutzenden
+# en-US-Eintrags. Manuell gepflegt (nur bei Bedarf ergänzen).
+DCD_MAIN_ENTRY_OVERRIDE = {
+    'BT26-045': 1,   # GranKuwagamon: 1. en-US = JP-Scan, 2. = englisch
+}
+
 MAX_ALT_PROBE = 10      # _P1 .. _P10 probieren (bestehende Daten haben bis zu 7 Alts)
 ALT_PROBE_DELAY = 0.2   # 200 ms zwischen HEAD-Requests
 
@@ -118,8 +127,11 @@ _dcd_fallback_cache = None
 
 def fetch_dcd_fallback_map():
     """Lädt den digimoncard.dev-Datensatz und baut cardid -> imageUrl (nur
-       en-US, LETZTER Treffer pro Karte — dev ergänzt korrigierte/englische
-       Scans oft als zusätzlichen Eintrag, der neuere gewinnt).
+       en-US, ERSTER Treffer pro Karte = das Hauptbild). Weitere en-US-Einträge
+       einer Karte sind i.d.R. Alt-Arts, NICHT Korrekturen — deshalb gewinnt der
+       erste. Ausnahmen (dort wurde zwischenzeitlich eine JP-Karte einsortiert,
+       das englische Bild kam als zweiter Eintrag) stehen in
+       DCD_MAIN_ENTRY_OVERRIDE.
 
        Zwei Drosseln, damit digimoncard.dev höchstens 1×/Tag getroffen wird:
        - memoisiert innerhalb eines Laufs (_dcd_fallback_cache)
@@ -142,11 +154,19 @@ def fetch_dcd_fallback_map():
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         out = {}
+        order = {}   # cid -> [en-US-URLs in Reihenfolge], für Overrides/Alt-Arts
         for entry in data:
             cid = entry.get('cardid')
             url = entry.get('imageUrl')
             if cid and url and 'en-US' in url:
-                out[cid] = url   # letzter en-US-Treffer gewinnt (s. Docstring)
+                order.setdefault(cid, []).append(url)
+                if cid not in out:
+                    out[cid] = url   # erster en-US-Treffer = Hauptbild
+        # Manuelle Ausnahmen: bei diesen Karten ist ein anderer Eintrag das Bild.
+        for cid, idx in DCD_MAIN_ENTRY_OVERRIDE.items():
+            urls = order.get(cid, [])
+            if len(urls) > idx:
+                out[cid] = urls[idx]
         log(f'  → {len(out)} Fallback-Bilder bei digimoncard.dev gefunden.')
         _dcd_fallback_cache = out
     except Exception as e:
