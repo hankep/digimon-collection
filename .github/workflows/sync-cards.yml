@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# Nie zwei Sync-Läufe gleichzeitig — sonst könnte digimoncard.dev an einem Tag
+# doppelt getroffen werden. Ein zweiter Trigger wartet, bis der erste fertig ist.
+concurrency:
+  group: karten-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -29,7 +35,12 @@ jobs:
           git config user.name "hankep"
           git config user.email "50618028+hankep@users.noreply.github.com"
           git add -A -- data/cards.data.js data/reveal-images.data.js data/reveal-cache
-          if git diff --cached --quiet; then
+          # Nur committen, wenn sich echte Kartendaten/Bilder geändert haben. Eine
+          # reine Aktualisierung des digimoncard.dev-Zeitstempels (.dcd-last-fetch)
+          # allein löst KEINEN Commit aus — sonst gäbe es an ruhigen Tagen einen
+          # täglichen Leer-Commit.
+          changed=$(git diff --cached --name-only | grep -v '^data/reveal-cache/\.dcd-last-fetch$' || true)
+          if [ -z "$changed" ]; then
             echo "Keine neuen Karten."
             exit 0
           fi

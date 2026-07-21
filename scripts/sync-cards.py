@@ -72,6 +72,34 @@ CARDS_DATA_JS = DATA_DIR / 'cards.data.js'
 SET_PROGRESS_JS = DATA_DIR / 'set-progress.data.js'
 REVEAL_IMAGES_JS = DATA_DIR / 'reveal-images.data.js'
 REVEAL_CACHE_DIR = DATA_DIR / 'reveal-cache'
+# Zeitstempel (YYYY-MM-DD, UTC) des letzten digimoncard.dev-Index-Abrufs. Sorgt
+# dafür, dass der Index selbst dann höchstens EINMAL pro Kalendertag abgefragt
+# wird, wenn der Workflow an einem Tag mehrfach ausgelöst wird (Cron-Re-Run,
+# workflow_dispatch, lokaler Lauf) — Schutz davor, von digimoncard.dev
+# (mod_security) ausgesperrt zu werden. Liegt bewusst in reveal-cache/, wird
+# also mit den gespiegelten Bildern versioniert und ist in GitHub Actions über
+# Läufe hinweg persistent.
+DCD_STAMP_FILE = REVEAL_CACHE_DIR / '.dcd-last-fetch'
+
+
+def _today_utc():
+    return datetime.utcnow().strftime('%Y-%m-%d')
+
+
+def dcd_fetched_today():
+    """True, wenn der digimoncard.dev-Index heute (UTC) bereits abgefragt wurde."""
+    try:
+        return DCD_STAMP_FILE.read_text(encoding='utf-8').strip() == _today_utc()
+    except OSError:
+        return False
+
+
+def mark_dcd_fetched():
+    try:
+        REVEAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        DCD_STAMP_FILE.write_text(_today_utc(), encoding='utf-8')
+    except OSError as e:
+        log(f'  ⚠ Konnte digimoncard.dev-Zeitstempel nicht schreiben: {e}')
 
 
 def log(msg):
@@ -89,12 +117,25 @@ _dcd_fallback_cache = None
 
 
 def fetch_dcd_fallback_map():
-    """Lädt den digimoncard.dev-Datensatz (einmal pro Lauf, memoisiert) und
-       baut cardid -> imageUrl (nur en-US, erster Treffer pro Karte)."""
+    """Lädt den digimoncard.dev-Datensatz und baut cardid -> imageUrl (nur
+       en-US, erster Treffer pro Karte).
+
+       Zwei Drosseln, damit digimoncard.dev höchstens 1×/Tag getroffen wird:
+       - memoisiert innerhalb eines Laufs (_dcd_fallback_cache)
+       - persistente Tagessperre über Läufe hinweg (DCD_STAMP_FILE): wurde der
+         Index heute schon geholt, wird NICHT erneut angefragt — es kommt ein
+         leerer Map zurück, offene Fallbacks werden dann eben morgen ergänzt.
+       Der Zeitstempel wird VOR dem Netz-Request gesetzt: auch ein
+       fehlgeschlagener Versuch zählt als Tagesabfrage (kein Retry-Hämmern)."""
     global _dcd_fallback_cache
     if _dcd_fallback_cache is not None:
         return _dcd_fallback_cache
+    if dcd_fetched_today():
+        log('  digimoncard.dev heute bereits abgefragt — überspringe (max. 1×/Tag).')
+        _dcd_fallback_cache = {}
+        return _dcd_fallback_cache
     log('  Lade digimoncard.dev-Fallback-Index (Übergangsbilder) …')
+    mark_dcd_fetched()
     try:
         req = urllib.request.Request(DCD_INDEX, headers=DCD_HEADERS)
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -113,11 +154,28 @@ def fetch_dcd_fallback_map():
     return _dcd_fallback_cache
 
 
+def remove_local_mirror(fallback):
+    """Löscht die gespiegelte reveal-cache-Datei zu einem Fallback (nur wenn es
+       ein lokaler Pfad unter reveal-cache/ ist). Hotlink-URLs werden ignoriert."""
+    if not isinstance(fallback, str) or fallback.startswith('http'):
+        return
+    p = PROJECT_ROOT / fallback
+    try:
+        if p.exists() and REVEAL_CACHE_DIR in p.parents:
+            p.unlink()
+    except OSError:
+        pass
+
+
 def apply_image_fallback(card):
     """Prüft, ob das offizielle Bandai-Bild für `card` existiert. Falls nicht
-       und noch kein Fallback gesetzt ist, wird digimoncard.dev als
-       Übergangsquelle nachgeschlagen. Falls Bandai inzwischen doch ein Bild
-       hat, wird ein vorher gesetzter Fallback wieder entfernt.
+       und noch kein Fallback gesetzt ist, wird bei digimoncard.dev ein
+       Übergangsbild nachgeschlagen und — wie bei sync_reveal_images — LOKAL
+       gespiegelt (data/reveal-cache/), NICHT direkt verlinkt: deren CDN
+       (assets.cardlist.dev) blockt Cross-Origin-Zugriffe mit 403, ein Hotlink
+       wäre im Browser also ein kaputtes Bild. Falls Bandai inzwischen doch ein
+       eigenes Bild hat, wird ein vorher gesetzter Fallback (inkl. lokaler
+       Spiegel-Datei) wieder entfernt.
        Gibt 'added' / 'resolved' / None zurück (für Logging)."""
     cid = card.get('id')
     if not cid:
@@ -125,15 +183,21 @@ def apply_image_fallback(card):
     status, _ = head_probe(IMG_BASE + cid + '.png')
     if status == 200:
         if card.get('imageFallback'):
+            remove_local_mirror(card['imageFallback'])
             del card['imageFallback']
             return 'resolved'
         return None
     if card.get('imageFallback'):
         return None
-    fb = fetch_dcd_fallback_map().get(cid)
-    if fb:
-        card['imageFallback'] = fb
+    url = fetch_dcd_fallback_map().get(cid)
+    if not url:
+        return None
+    local = mirror_image(cid, url)
+    if local:
+        card['imageFallback'] = local
         return 'added'
+    # Spiegeln fehlgeschlagen → lieber gar kein Fallback als ein blockierter
+    # Hotlink (kaputtes Bild). Nächster Lauf versucht es erneut.
     return None
 
 
@@ -294,10 +358,19 @@ def sync_reveal_images(existing):
     reveal = load_reveal_images()
     changed = False
 
+    # Spiegel-Dateien, die als offizieller Fallback in cards.data.js referenziert
+    # werden — die dürfen beim Aufräumen NICHT gelöscht werden, auch wenn dieselbe
+    # ID noch (verwaist) in reveal-images steht. Sonst zeigt der cards.data.js-
+    # Fallback nach dem Cleanup ins Leere (kaputtes Bild).
+    fallbacks_in_use = {c['imageFallback'] for c in existing
+                        if isinstance(c.get('imageFallback'), str)}
+
     for cid in list(reveal.keys()):
         if cid in known_ids:
-            old_path = PROJECT_ROOT / reveal[cid]
-            if old_path.exists() and REVEAL_CACHE_DIR in old_path.parents:
+            path = reveal[cid]
+            old_path = PROJECT_ROOT / path
+            if (path not in fallbacks_in_use
+                    and old_path.exists() and REVEAL_CACHE_DIR in old_path.parents):
                 old_path.unlink()
             del reveal[cid]
             changed = True
@@ -488,6 +561,46 @@ def run_fix_missing_images(existing, args):
     return 0
 
 
+def run_mirror_fallbacks(existing):
+    """Einmalige Migration: bestehende Hotlink-Fallbacks (imageFallback = http…,
+       z.B. assets.cardlist.dev) lokal nach data/reveal-cache/ spiegeln und den
+       Eintrag auf den lokalen Pfad umbiegen. Nötig, weil deren CDN
+       Cross-Origin-Hotlinks mit 403 blockt (kaputtes Bild im Browser).
+
+       Lädt NUR die bereits in cards.data.js gespeicherten Bild-URLs herunter —
+       KEIN digimoncard.dev-Index-Abruf. Damit unabhängig von der Tagessperre
+       und gefahrlos einmalig ausführbar (das „Nachziehen")."""
+    targets = [c for c in existing
+               if isinstance(c.get('imageFallback'), str) and c['imageFallback'].startswith('http')]
+    log('')
+    log(f'🪞 Spiegle {len(targets)} vorhandene(n) Hotlink-Fallback(s) lokal '
+        f'(kein digimoncard.dev-Index-Abruf) …')
+    if not targets:
+        log('   Nichts zu tun.')
+        return 0
+    bak = backup_cards_data_js()
+    if bak:
+        log(f'   Backup: {bak.name}')
+    log('')
+
+    ok, fail = 0, 0
+    for i, card in enumerate(targets, 1):
+        cid = card['id']
+        local = mirror_image(cid, card['imageFallback'])
+        if local:
+            card['imageFallback'] = local
+            ok += 1
+            log(f'  [{i:>3}/{len(targets)}] {cid}  → {local}')
+        else:
+            fail += 1
+            log(f'  [{i:>3}/{len(targets)}] {cid}  ✗ Spiegeln fehlgeschlagen (Hotlink bleibt)')
+
+    write_cards_data_js(existing)
+    log('')
+    log(f'✅ Fertig. {ok} lokal gespiegelt, {fail} fehlgeschlagen.')
+    return 0
+
+
 def run_slim_raw(existing):
     """Einmalige Migration: reduziert das raw-Objekt jeder bekannten Karte auf
        die zur Laufzeit genutzten Felder (RAW_KEEP) und spart so ~66% Dateigröße."""
@@ -546,6 +659,7 @@ def main():
     p.add_argument('--no-alt-probe', action='store_true', help='Beim Sync keine Alt-Arts probieren')
     p.add_argument('--slim-raw', action='store_true', help='Nur raw-Felder auf das Noetige reduzieren (einmalige Migration), kein API-Sync')
     p.add_argument('--fix-missing-images', action='store_true', help='Nur Bild-Fallback (digimoncard.dev) für Karten ohne offizielles Bandai-Bild prüfen/ergänzen, kein API-Sync')
+    p.add_argument('--mirror-fallbacks', action='store_true', help='Einmalige Migration: bestehende Hotlink-Fallbacks (http…) lokal nach data/reveal-cache/ spiegeln, kein API- und kein digimoncard.dev-Index-Abruf')
     p.add_argument('--set', type=str, default=None, help='Zusammen mit --fix-missing-images: nur dieses Set prüfen (Default: neuestes Set)')
     args = p.parse_args()
 
@@ -556,6 +670,12 @@ def main():
     existing = load_existing_cards()
     known_ids = {c.get('id') for c in existing if c.get('id')}
     log(f'  → {len(known_ids)} Karten bekannt.')
+
+    # Einmalige Migration: reine Datei-Umschreibung, KEIN Netz-Index-Abruf.
+    # Läuft vor sync_reveal_images(), damit digimoncard.dev dabei nicht getroffen
+    # wird (nur die schon gespeicherten Bild-URLs werden heruntergeladen).
+    if args.mirror_fallbacks:
+        return run_mirror_fallbacks(existing)
 
     # Community-Bilder (digimoncard.dev) für Karten, die noch NICHT einmal bei
     # digimoncard.io gelistet sind, aber schon geleakt/gespoilert wurden —
