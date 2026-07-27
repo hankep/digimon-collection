@@ -5,7 +5,7 @@
     collection: { panel: 'tab-collection', initFn: () => UICollection.init(document.getElementById('tab-collection')) },
     decks:      { panel: 'tab-decks',      initFn: () => UIDeckbuilder.init(document.getElementById('tab-decks')) },
     wants:      { panel: 'tab-wants',      initFn: () => initWantsTradeTab() },
-    stats:      { panel: 'tab-stats',      initFn: () => UIStats.init(document.getElementById('tab-stats')) },
+    tournaments: { panel: 'tab-tournaments', initFn: () => UITournaments.init(document.getElementById('tab-tournaments')) },
     io:         { panel: 'tab-io',         initFn: () => UIImportExport.init(document.getElementById('tab-io')) },
     shared:     { panel: 'tab-shared',     initFn: () => UIShared.init(document.getElementById('tab-shared')) }
   };
@@ -65,6 +65,7 @@
   }
   document.addEventListener('collection-changed', markOtherTabsDirty);
   document.addEventListener('decks-changed', markOtherTabsDirty);
+  document.addEventListener('tournaments-changed', markOtherTabsDirty);
 
   let appShellWired = false;
 

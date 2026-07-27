@@ -472,6 +472,52 @@
     return { decks: data || [], error: null };
   }
 
+  // ── Turniere ────────────────────────────────────────────────────────────────
+  // Eigene Tabelle, eine Zeile pro Turnier, geteilt von allen eingeloggten Usern
+  // (RLS erlaubt jedem authentifizierten User lesen/schreiben — geschlossene
+  // 3-Personen-Gruppe, kein Owner-Konzept). Bewusst OHNE LocalStorage-Cache und
+  // OHNE app_state-Blob: direkt gegen Supabase lesen/schreiben, sonst wuerde
+  // gleichzeitige Bearbeitung durch mehrere User per Last-Write-Wins Daten
+  // verlieren (siehe pull()/push() oben, die genau dieses Problem fuer
+  // Collection/Decks bewusst in Kauf nehmen, weil dort nur ein Owner schreibt).
+
+  const TOURNAMENTS_TABLE = 'tournaments';
+  const TOURNAMENT_TYPES = ['Locals', 'Regional', 'National', 'Online'];
+
+  async function listTournaments() {
+    if (!client) return { tournaments: [], error: 'Sync nicht verfügbar' };
+    const { data, error } = await client.from(TOURNAMENTS_TABLE)
+      .select('id,location,event_date,type,participant_count,placements,created_by,updated_at')
+      .order('event_date', { ascending: false });
+    if (error) return { tournaments: [], error: error.message || String(error) };
+    return { tournaments: data || [], error: null };
+  }
+
+  async function upsertTournament(t) {
+    if (!client || !isLoggedIn()) return { error: 'Nicht eingeloggt' };
+    // Defensiv wie normalizeKind() in store.js: ein ungueltiger type wuerde
+    // sonst am DB-Check-Constraint scheitern und den ganzen Upsert ablehnen.
+    const type = TOURNAMENT_TYPES.includes(t.type) ? t.type : TOURNAMENT_TYPES[0];
+    const payload = {
+      id: t.id,
+      location: t.location || null,
+      event_date: t.eventDate || null,
+      type,
+      participant_count: Number.isFinite(t.participantCount) ? t.participantCount : null,
+      placements: Array.isArray(t.placements) ? t.placements : [],
+      created_by: t.createdBy || session.user.id,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await client.from(TOURNAMENTS_TABLE).upsert(payload, { onConflict: 'id' });
+    return { error: error ? (error.message || String(error)) : null };
+  }
+
+  async function deleteTournament(id) {
+    if (!client || !isLoggedIn()) return { error: 'Nicht eingeloggt' };
+    const { error } = await client.from(TOURNAMENTS_TABLE).delete().eq('id', id);
+    return { error: error ? (error.message || String(error)) : null };
+  }
+
   // True, wenn Supabase-SDK + URL + Anon-Key gesetzt sind.
   function isConfigured() {
     return !!(window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
@@ -495,6 +541,10 @@
     saveProfile,
     getOwnDisplayName,
     syncSharedDecks,
-    loadSharedDecks
+    loadSharedDecks,
+    listTournaments,
+    upsertTournament,
+    deleteTournament,
+    TOURNAMENT_TYPES
   };
 })();
