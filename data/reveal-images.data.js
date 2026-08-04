@@ -6,7 +6,12 @@ window.REVEAL_IMAGES = {
   "BT26-018": "data/reveal-cache/BT26-018.jpg",
   "BT26-020": "data/reveal-cache/BT26-020.jpg",
   "BT26-022": "data/reveal-cache/BT26-022.jpg",
+  "BT26-023": "data/reveal-cache/BT26-023.jpg",
   "BT26-030": "data/reveal-cache/BT26-030.jpg",
+  "BT26-034": "data/reveal-cache/BT26-034.jpg",
+  "BT26-043": "data/reveal-cache/BT26-043.jpg",
+  "BT26-046": "data/reveal-cache/BT26-046.jpg",
+  "BT26-048": "data/reveal-cache/BT26-048.jpg",
   "BT26-049": "data/reveal-cache/BT26-049.jpg",
   "BT26-067": "data/reveal-cache/BT26-067.jpg",
   "BT26-072": "data/reveal-cache/BT26-072.jpg",
@@ -14,5 +19,6 @@ window.REVEAL_IMAGES = {
   "BT26-078": "data/reveal-cache/BT26-078.jpg",
   "BT26-081": "data/reveal-cache/BT26-081.jpg",
   "BT26-083": "data/reveal-cache/BT26-083.jpg",
-  "BT26-098": "data/reveal-cache/BT26-098.jpg"
+  "BT26-098": "data/reveal-cache/BT26-098.jpg",
+  "BT26-099": "data/reveal-cache/BT26-099.jpg"
 };
