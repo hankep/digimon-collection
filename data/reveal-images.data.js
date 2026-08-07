@@ -6,6 +6,8 @@ window.REVEAL_IMAGES = {
   "BT26-043": "data/reveal-cache/BT26-043.jpg",
   "BT26-046": "data/reveal-cache/BT26-046.jpg",
   "BT26-048": "data/reveal-cache/BT26-048.jpg",
+  "BT26-054": "data/reveal-cache/BT26-054.jpg",
+  "BT26-058": "data/reveal-cache/BT26-058.jpg",
   "BT26-067": "data/reveal-cache/BT26-067.jpg",
   "BT26-080": "data/reveal-cache/BT26-080.jpg",
   "BT26-099": "data/reveal-cache/BT26-099.jpg"
