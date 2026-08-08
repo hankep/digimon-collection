@@ -10,5 +10,7 @@ window.REVEAL_IMAGES = {
   "BT26-058": "data/reveal-cache/BT26-058.jpg",
   "BT26-067": "data/reveal-cache/BT26-067.jpg",
   "BT26-080": "data/reveal-cache/BT26-080.jpg",
+  "BT26-086": "data/reveal-cache/BT26-086.jpg",
+  "BT26-097": "data/reveal-cache/BT26-097.jpg",
   "BT26-099": "data/reveal-cache/BT26-099.jpg"
 };
