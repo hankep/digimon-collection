@@ -1,8 +1,12 @@
 name: Karten-Sync
 
 on:
-  schedule:
-    - cron: '0 7 * * *'  # 07:00 UTC = 09:00 Berlin (CEST) / 08:00 Berlin (CET)
+  # Täglicher Cron deaktiviert (Aug 2026): alle BT26-Karten sind revealed, der
+  # Übergangs-Bildabruf von digimoncard.dev wird nicht mehr gebraucht (s. auch
+  # DCD_ENABLED=False in scripts/sync-cards.py). Sync läuft nur noch manuell.
+  # Zum Reaktivieren die beiden folgenden Zeilen wieder einkommentieren.
+  # schedule:
+  #   - cron: '0 7 * * *'  # 07:00 UTC = 09:00 Berlin (CEST) / 08:00 Berlin (CET)
   workflow_dispatch:
 
 permissions:

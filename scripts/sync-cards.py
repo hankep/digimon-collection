@@ -40,6 +40,11 @@ API_INDEX = 'https://digimoncard.io/api-public/getAllCards.php?series=Digimon%20
 API_CARD = 'https://digimoncard.io/api-public/search.php?card='
 IMG_BASE = 'https://world.digimoncard.com/images/cardlist/card/'
 
+# Schalter für den digimoncard.dev-Abruf. Seit alle BT26-Karten offiziell
+# revealed sind, wird der Übergangs-Fallback nicht mehr gebraucht → aus.
+# Auf True setzen, sobald wieder ein Set mit unveröffentlichten Bildern ansteht.
+DCD_ENABLED = False
+
 # Übergangs-Bildquelle: Bandai veröffentlicht Kartenbilder auf world.digimoncard.com
 # oft erst Wochen nach den Kartendaten. digimoncard.dev sammelt Community-Scans
 # schneller. Braucht Browser-typische Header, sonst 406 (mod_security).
@@ -132,6 +137,8 @@ def fetch_dcd_fallback_map():
        anderer Eintrag das Hauptbild ist (zwischenzeitlich JP einsortiert),
        stehen in DCD_MAIN_ENTRY_OVERRIDE — s. dcd_main_url()/dcd_alt_urls().
 
+       Ist DCD_ENABLED False, wird gar nicht angefragt (leere Map).
+
        Zwei Drosseln, damit digimoncard.dev höchstens 1×/Tag getroffen wird:
        - memoisiert innerhalb eines Laufs (_dcd_fallback_cache)
        - persistente Tagessperre über Läufe hinweg (DCD_STAMP_FILE): wurde der
@@ -141,6 +148,10 @@ def fetch_dcd_fallback_map():
        fehlgeschlagener Versuch zählt als Tagesabfrage (kein Retry-Hämmern)."""
     global _dcd_fallback_cache
     if _dcd_fallback_cache is not None:
+        return _dcd_fallback_cache
+    if not DCD_ENABLED:
+        log('  digimoncard.dev-Fallback deaktiviert (DCD_ENABLED=False) — übersprungen.')
+        _dcd_fallback_cache = {}
         return _dcd_fallback_cache
     if dcd_fetched_today():
         log('  digimoncard.dev heute bereits abgefragt — überspringe (max. 1×/Tag).')
